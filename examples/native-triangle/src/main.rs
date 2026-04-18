@@ -6,7 +6,7 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
-use w3gpu_assets::primitives;
+use w3gpu_assets::{load_from_bytes, primitives};
 use w3gpu_ecs::{
     Scheduler, World,
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
@@ -32,7 +32,7 @@ struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
-            .create_window(Window::default_attributes().with_title("w3gpu — rotating cube"))
+            .create_window(Window::default_attributes().with_title("w3gpu — native client"))
             .unwrap();
         self.state = Some(State::new(window).block_on());
     }
@@ -66,7 +66,7 @@ struct State {
     asset_registry: AssetRegistry,
     world: World,
     scheduler: Scheduler,
-    cube_entity: u32,
+    scene_entities: Vec<u32>,
     total_time: f32,
     last_instant: std::time::Instant,
 }
@@ -86,27 +86,66 @@ impl State {
             .expect("GPU context creation failed");
 
         let render_state = RenderState::new(&context.device, context.surface_format);
-
         let mut asset_registry = AssetRegistry::new();
-        let cube_mesh_id = asset_registry.upload_mesh(
-            &primitives::cube(),
-            &context.device,
-            &context.queue,
-        );
-
         let mut world = World::new();
 
-        // Camera at (0, 0, 5)
+        // Try loading a GLB from the first CLI arg, then the default demo asset location.
+        // Falls back to the built-in cube primitive if neither is found.
+        let glb_path = std::env::args().nth(1).unwrap_or_else(|| {
+            // Workspace-relative default: www/public/*.glb
+            let manifest = env!("CARGO_MANIFEST_DIR");
+            let workspace = std::path::Path::new(manifest)
+                .parent().unwrap()  // examples/native-triangle → examples
+                .parent().unwrap(); // examples → workspace root
+            workspace
+                .join("www/public/damaged_helmet_source_glb.glb")
+                .to_string_lossy()
+                .into_owned()
+        });
+
+        let scene_pairs: Vec<(u32, u32)> = match std::fs::read(&glb_path) {
+            Ok(bytes) => {
+                log::info!("Loading GLB: {glb_path}");
+                match load_from_bytes(&bytes) {
+                    Ok(pairs) => pairs
+                        .into_iter()
+                        .map(|(mesh, mat)| {
+                            let mesh_id = asset_registry.upload_mesh(&mesh, &context.device, &context.queue);
+                            let mat_id  = asset_registry.upload_material(&mat, &context.device, &render_state.material_bg_layout);
+                            (mesh_id, mat_id)
+                        })
+                        .collect(),
+                    Err(e) => {
+                        log::warn!("Failed to parse GLB ({e}), falling back to cube");
+                        fallback_cube(&mut asset_registry, &context, &render_state)
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Cannot read '{glb_path}' ({e}), falling back to cube");
+                fallback_cube(&mut asset_registry, &context, &render_state)
+            }
+        };
+
+        // Camera
         let camera = world.create_entity();
-        world.add_component(camera, CameraComponent::new(60.0, size.width as f32 / size.height as f32, 0.1, 1000.0));
-        let mut cam_t = TransformComponent::from_position(Vec3::new(0.0, 0.0, 5.0));
+        world.add_component(camera, CameraComponent::new(
+            60.0, size.width as f32 / size.height as f32, 0.1, 1000.0,
+        ));
+        let mut cam_t = TransformComponent::from_position(Vec3::new(0.0, 0.0, 3.0));
         cam_t.update_local_matrix();
         world.add_component(camera, cam_t);
 
-        // Cube at origin
-        let cube_entity = world.create_entity();
-        world.add_component(cube_entity, RenderableComponent::new(cube_mesh_id, 0));
-        world.add_component(cube_entity, TransformComponent::default());
+        // One entity per primitive
+        let scene_entities: Vec<u32> = scene_pairs
+            .into_iter()
+            .map(|(mesh_id, mat_id)| {
+                let entity = world.create_entity();
+                world.add_component(entity, RenderableComponent::new(mesh_id, mat_id));
+                world.add_component(entity, TransformComponent::default());
+                entity
+            })
+            .collect();
 
         let mut scheduler = Scheduler::new();
         scheduler
@@ -121,7 +160,7 @@ impl State {
             asset_registry,
             world,
             scheduler,
-            cube_entity,
+            scene_entities,
             total_time: 0.0,
             last_instant: std::time::Instant::now(),
         }
@@ -133,12 +172,13 @@ impl State {
         self.last_instant = now;
         self.total_time += dt;
 
-        // Rotate cube around Y axis
-        let angle = self.total_time * 0.8;
+        let angle = self.total_time * 0.4;
         let rot = Quat::from_rotation_y(angle);
-        if let Some(t) = self.world.get_component_mut::<TransformComponent>(self.cube_entity) {
-            t.rotation = rot;
-            t.update_local_matrix();
+        for &entity in &self.scene_entities {
+            if let Some(t) = self.world.get_component_mut::<TransformComponent>(entity) {
+                t.rotation = rot;
+                t.update_local_matrix();
+            }
         }
 
         self.scheduler.run(&mut self.world, dt, self.total_time);
@@ -152,16 +192,13 @@ impl State {
         };
         let view = output.texture.create_view(&Default::default());
 
-        // FrameUniforms
         let frame_uniforms = build_frame_uniforms(&self.world, self.total_time);
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer, 0,
             bytemuck::bytes_of(&frame_uniforms),
         );
 
-        // Render commands
         let commands = collect_render_commands(&self.world);
-
         for (i, cmd) in commands.iter().enumerate() {
             self.context.queue.write_buffer(
                 &self.render_state.object_uniform_buffer,
@@ -215,6 +252,23 @@ impl State {
         self.context.queue.submit(std::iter::once(enc.finish()));
         output.present();
     }
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+fn fallback_cube(
+    registry: &mut AssetRegistry,
+    context: &GpuContext,
+    render_state: &RenderState,
+) -> Vec<(u32, u32)> {
+    use w3gpu_assets::Material;
+    let mesh_id = registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
+    let mat_id  = registry.upload_material(
+        &Material::default(),
+        &context.device,
+        &render_state.material_bg_layout,
+    );
+    vec![(mesh_id, mat_id)]
 }
 
 fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
