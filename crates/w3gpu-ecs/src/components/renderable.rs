@@ -18,3 +18,18 @@ impl RenderableComponent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_defaults_visible_and_shadow() {
+        let r = RenderableComponent::new(1, 2);
+        assert_eq!(r.mesh_id, 1);
+        assert_eq!(r.material_id, 2);
+        assert!(r.visible);
+        assert!(r.cast_shadow);
+        assert!(r.receive_shadow);
+    }
+}

@@ -27,3 +27,35 @@ impl Vertex {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_is_80_bytes() {
+        assert_eq!(Vertex::SIZE, 80);
+        assert_eq!(std::mem::size_of::<Vertex>(), 80);
+    }
+
+    #[test]
+    fn new_sets_position_normal_uv() {
+        let v = Vertex::new([1.0, 2.0, 3.0], [0.0, 1.0, 0.0], [0.5, 0.5]);
+        assert_eq!(v.position, [1.0, 2.0, 3.0]);
+        assert_eq!(v.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(v.uv0, [0.5, 0.5]);
+        assert_eq!(v.uv1, [0.5, 0.5]); // uv1 mirrors uv0
+    }
+
+    #[test]
+    fn new_default_color_is_white() {
+        let v = Vertex::new([0.0; 3], [0.0, 1.0, 0.0], [0.0; 2]);
+        assert_eq!(v.color, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn pod_zeroable_safe() {
+        // bytemuck guarantees: all-zeros is a valid bit pattern
+        let _: Vertex = bytemuck::Zeroable::zeroed();
+    }
+}

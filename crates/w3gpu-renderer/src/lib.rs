@@ -2,6 +2,7 @@ pub mod asset_registry;
 pub mod error;
 pub mod frame_uniforms;
 pub mod gpu_context;
+pub mod ibl;
 pub mod material_uniforms;
 pub mod render_command;
 pub mod render_state;
@@ -12,6 +13,7 @@ pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh, GpuTexture, Materi
 pub use error::EngineError;
 pub use frame_uniforms::FrameUniforms;
 pub use gpu_context::{GpuContext, DEPTH_FORMAT};
+pub use ibl::IblContext;
 pub use material_uniforms::MaterialUniforms;
 pub use render_command::RenderCommand;
 pub use render_state::{ObjectUniforms, RenderState, OBJECT_ALIGN, MAX_OBJECTS};

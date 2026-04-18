@@ -1,6 +1,7 @@
-// group(0) = FrameUniforms   (per-frame, binding 0)
+// group(0) = FrameUniforms   (per-frame)
 // group(1) = ObjectUniforms  (per-object, dynamic offset)
 // group(2) = MaterialUniforms + textures (per-material)
+// group(3) = IBL (irradiance cube, prefiltered cube, BRDF LUT, sampler)
 
 struct FrameUniforms {
     projection:          mat4x4<f32>,
@@ -22,7 +23,6 @@ struct ObjectUniforms {
     world: mat4x4<f32>,
 }
 
-// Scalar multipliers — each is multiplied by the corresponding texture sample.
 struct MaterialUniforms {
     albedo:    vec4<f32>,
     emissive:  vec4<f32>,
@@ -35,11 +35,16 @@ struct MaterialUniforms {
 @group(0) @binding(0) var<uniform> frame:    FrameUniforms;
 @group(1) @binding(0) var<uniform> object:   ObjectUniforms;
 @group(2) @binding(0) var<uniform> material: MaterialUniforms;
-@group(2) @binding(1) var albedo_tex:  texture_2d<f32>;
-@group(2) @binding(2) var normal_tex:  texture_2d<f32>;
-@group(2) @binding(3) var mr_tex:      texture_2d<f32>; // G=roughness, B=metallic (glTF spec)
-@group(2) @binding(4) var emissive_tex: texture_2d<f32>;
-@group(2) @binding(5) var mat_sampler: sampler;
+@group(2) @binding(1) var albedo_tex:    texture_2d<f32>;
+@group(2) @binding(2) var normal_tex:    texture_2d<f32>;
+@group(2) @binding(3) var mr_tex:        texture_2d<f32>; // G=roughness, B=metallic
+@group(2) @binding(4) var emissive_tex:  texture_2d<f32>;
+@group(2) @binding(5) var mat_sampler:   sampler;
+
+@group(3) @binding(0) var irradiance_map:  texture_cube<f32>;
+@group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
+@group(3) @binding(2) var brdf_lut:        texture_2d<f32>;
+@group(3) @binding(3) var ibl_sampler:     sampler;
 
 struct VertexInput {
     @location(0) position:  vec3<f32>,
@@ -52,13 +57,13 @@ struct VertexInput {
 }
 
 struct VertexOutput {
-    @builtin(position) clip_pos:       vec4<f32>,
-    @location(0)       world_pos:      vec3<f32>,
-    @location(1)       world_normal:   vec3<f32>,
-    @location(2)       world_tangent:  vec3<f32>,
+    @builtin(position) clip_pos:        vec4<f32>,
+    @location(0)       world_pos:       vec3<f32>,
+    @location(1)       world_normal:    vec3<f32>,
+    @location(2)       world_tangent:   vec3<f32>,
     @location(3)       world_bitangent: vec3<f32>,
-    @location(4)       uv0:            vec2<f32>,
-    @location(5)       color:          vec4<f32>,
+    @location(4)       uv0:             vec2<f32>,
+    @location(5)       color:           vec4<f32>,
 }
 
 @vertex
@@ -108,6 +113,11 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let inv = vec3<f32>(1.0 - roughness);
+    return f0 + (max(inv, f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // ── texture sampling ──────────────────────────────────────────────────────
@@ -115,7 +125,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let mr_sample     = textureSample(mr_tex, mat_sampler, in.uv0);
     let emit_sample   = textureSample(emissive_tex, mat_sampler, in.uv0);
 
-    // glTF: B = metallic, G = roughness; multiply by scalar factors
     let albedo    = material.albedo.rgb * albedo_sample.rgb * in.color.rgb;
     let metallic  = material.metallic  * mr_sample.b;
     let roughness = clamp(material.roughness * mr_sample.g, 0.04, 1.0);
@@ -131,27 +140,38 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     );
     let n = normalize(tbn * n_tangent);
 
-    // ── Cook-Torrance BRDF ────────────────────────────────────────────────────
-    let v = normalize(frame.camera_position - in.world_pos);
-    let l = normalize(-frame.light_direction);
-    let h = normalize(v + l);
-
+    // ── Cook-Torrance BRDF (direct light) ─────────────────────────────────────
+    let v  = normalize(frame.camera_position - in.world_pos);
+    let l  = normalize(-frame.light_direction);
+    let h  = normalize(v + l);
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
-    let d  = distribution_ggx(n, h, roughness);
-    let g  = geometry_smith(n, v, l, roughness);
-    let f  = fresnel_schlick(max(dot(h, v), 0.0), f0);
+
+    let d = distribution_ggx(n, h, roughness);
+    let g = geometry_smith(n, v, l, roughness);
+    let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
 
     let nl    = max(dot(n, l), 0.0);
     let denom = 4.0 * max(dot(n, v), 0.0) * nl + 0.0001;
-    let specular = d * g * f / denom;
+    let specular_direct = d * g * f / denom;
+    let kd_direct       = (vec3<f32>(1.0) - f) * (1.0 - metallic);
+    let diffuse_direct  = kd_direct * albedo / PI;
+    let direct          = (diffuse_direct + specular_direct) * frame.light_color * nl;
 
-    let kd      = (vec3<f32>(1.0) - f) * (1.0 - metallic);
-    let diffuse = kd * albedo / PI;
+    // ── IBL ambient ───────────────────────────────────────────────────────────
+    let ks_ibl       = fresnel_schlick_roughness(max(dot(n, v), 0.0), f0, roughness);
+    let kd_ibl       = (vec3<f32>(1.0) - ks_ibl) * (1.0 - metallic);
+    let irradiance   = textureSample(irradiance_map, ibl_sampler, n).rgb;
+    let diffuse_ibl  = kd_ibl * irradiance * albedo;
 
-    let radiance = frame.light_color * nl;
-    let direct   = (diffuse + specular) * radiance;
-    let ambient  = frame.ambient_intensity * albedo;
-    let color    = ambient + direct + emissive;
+    let refl         = reflect(-v, n);
+    let max_lod      = 4.0;
+    let prefiltered  = textureSampleLevel(prefiltered_map, ibl_sampler, refl, roughness * max_lod).rgb;
+    let brdf_uv      = vec2<f32>(clamp(max(dot(n, v), 0.0), 0.001, 1.0), clamp(roughness, 0.0, 1.0));
+    let brdf_sample  = textureSample(brdf_lut, ibl_sampler, brdf_uv).rg;
+    let specular_ibl = prefiltered * (ks_ibl * brdf_sample.x + brdf_sample.y);
+
+    let ambient = diffuse_ibl + specular_ibl;
+    let color   = ambient + direct + emissive;
 
     // Reinhard tone mapping
     let mapped = color / (color + vec3<f32>(1.0));

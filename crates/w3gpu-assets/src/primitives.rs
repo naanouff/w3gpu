@@ -55,3 +55,57 @@ pub fn cube() -> Mesh {
 
     Mesh::new(vertices, indices)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn triangle_has_3_vertices_and_3_indices() {
+        let m = triangle();
+        assert_eq!(m.vertices.len(), 3);
+        assert_eq!(m.indices.len(), 3);
+    }
+
+    #[test]
+    fn cube_has_24_vertices_and_36_indices() {
+        let m = cube();
+        assert_eq!(m.vertices.len(), 24);
+        assert_eq!(m.indices.len(), 36);
+    }
+
+    #[test]
+    fn cube_positions_within_unit_cube() {
+        for v in cube().vertices {
+            assert!(v.position[0].abs() <= 0.5 + 1e-5);
+            assert!(v.position[1].abs() <= 0.5 + 1e-5);
+            assert!(v.position[2].abs() <= 0.5 + 1e-5);
+        }
+    }
+
+    #[test]
+    fn cube_normals_are_unit_length() {
+        for v in cube().vertices {
+            let n = v.normal;
+            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-5, "normal not unit: {}", len);
+        }
+    }
+
+    #[test]
+    fn cube_indices_in_range() {
+        let m = cube();
+        let max_idx = m.vertices.len() as u32;
+        for &i in &m.indices {
+            assert!(i < max_idx, "index {} out of range", i);
+        }
+    }
+
+    #[test]
+    fn triangle_indices_in_range() {
+        let m = triangle();
+        for &i in &m.indices {
+            assert!(i < m.vertices.len() as u32);
+        }
+    }
+}

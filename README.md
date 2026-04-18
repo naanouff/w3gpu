@@ -91,6 +91,10 @@ import init, { W3gpuEngine } from './pkg/w3gpu_wasm.js';
 await init();
 const engine = await W3gpuEngine.create('my-canvas');
 
+// Load an equirectangular HDR for image-based lighting (optional, call before load_gltf)
+const hdr = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());
+engine.load_hdr(hdr); // precomputes irradiance 32×32, prefiltered 128×128×5mips, BRDF LUT 256×256
+
 // Load a GLB at runtime
 const bytes = new Uint8Array(await (await fetch('/model.glb')).arrayBuffer());
 const ids = engine.load_gltf(bytes); // [mesh_id0, mat_id0, mesh_id1, mat_id1, ...]
@@ -124,7 +128,7 @@ git commit -m "assets: add my-model.glb"
 - [x] Phase 0 — Workspace scaffold, triangle on screen (native + WASM)
 - [x] Phase 1 — ECS-driven cube with perspective camera and frustum culling
 - [x] Phase 2 — PBR lighting, depth buffer, material system, glTF loader, texture sampling (albedo · normal · metallic-roughness · emissive)
-- [ ] Phase 3 — Render graph, shadow maps, IBL, post-processing (bloom, tone mapping, FXAA)
+- [~] Phase 3 — IBL (irradiance + prefiltered env + BRDF LUT, CPU precompute from equirectangular HDR) ✓ · Render graph, shadow maps, post-processing (bloom, tone mapping, FXAA) pending
 - [ ] Phase 4 — GPU instancing, LOD, occlusion culling (HZB)
 - [ ] Phase 5 — Native ray tracing (ray queries via wgpu, full RT pipeline via Vulkan/DXR)
 

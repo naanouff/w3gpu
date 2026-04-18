@@ -2120,6 +2120,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "gltf",
+ "image",
  "log",
  "serde",
  "serde_json",

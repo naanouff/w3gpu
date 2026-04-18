@@ -41,3 +41,31 @@ impl Default for Material {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_albedo_is_white_opaque() {
+        let m = Material::default();
+        assert_eq!(m.albedo, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(m.metallic, 0.0);
+        assert_eq!(m.roughness, 0.5);
+        assert_eq!(m.emissive, [0.0; 3]);
+        assert_eq!(m.alpha_cutoff, 0.5);
+        assert!(!m.double_sided);
+    }
+
+    #[test]
+    fn default_alpha_mode_opaque() {
+        let m = Material::default();
+        assert!(matches!(m.alpha_mode, AlphaMode::Opaque));
+    }
+
+    #[test]
+    fn default_shading_pbr() {
+        let m = Material::default();
+        assert!(matches!(m.shading_model, ShadingModel::Pbr));
+    }
+}

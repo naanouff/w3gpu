@@ -24,6 +24,7 @@ pub struct RenderState {
     pub frame_bg_layout: wgpu::BindGroupLayout,
     pub object_bg_layout: wgpu::BindGroupLayout,
     pub material_bg_layout: wgpu::BindGroupLayout,
+    pub ibl_bg_layout: wgpu::BindGroupLayout,
     pub frame_uniform_buffer: wgpu::Buffer,
     pub frame_bind_group: wgpu::BindGroup,
     pub object_uniform_buffer: wgpu::Buffer,
@@ -147,6 +148,42 @@ impl RenderState {
             }],
         });
 
+        // group 3: IBL (irradiance cube + prefiltered cube + brdf lut + sampler)
+        let cube_tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::Cube,
+                multisampled: false,
+            },
+            count: None,
+        };
+
+        let ibl_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ibl bg layout"),
+            entries: &[
+                cube_tex_entry(0), // irradiance_map
+                cube_tex_entry(1), // prefiltered_map
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
         // ── pipeline ─────────────────────────────────────────────────────────
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -156,7 +193,7 @@ impl RenderState {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout],
+            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout, &ibl_bg_layout],
             push_constant_ranges: &[],
         });
 
@@ -201,6 +238,7 @@ impl RenderState {
             frame_bg_layout,
             object_bg_layout,
             material_bg_layout,
+            ibl_bg_layout,
             frame_uniform_buffer,
             frame_bind_group,
             object_uniform_buffer,

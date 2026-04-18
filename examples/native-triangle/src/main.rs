@@ -6,13 +6,13 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
-use w3gpu_assets::{load_from_bytes, primitives};
+use w3gpu_assets::{load_from_bytes, load_hdr_from_bytes, primitives};
 use w3gpu_ecs::{
     Scheduler, World,
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    AssetRegistry, FrameUniforms, GpuContext, MaterialTextures, ObjectUniforms,
+    AssetRegistry, FrameUniforms, GpuContext, IblContext, MaterialTextures, ObjectUniforms,
     RenderCommand, RenderState,
     camera_system, frustum_culling_system, transform_system, OBJECT_ALIGN,
 };
@@ -65,6 +65,7 @@ struct State {
     context: GpuContext,
     render_state: RenderState,
     asset_registry: AssetRegistry,
+    ibl_context: IblContext,
     world: World,
     scheduler: Scheduler,
     scene_entities: Vec<u32>,
@@ -89,7 +90,6 @@ impl State {
         let render_state = RenderState::new(&context.device, context.surface_format);
         let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
-        // Default material at id=0
         use w3gpu_assets::Material;
         asset_registry.upload_material(
             &Material::default(),
@@ -99,18 +99,16 @@ impl State {
         );
         let mut world = World::new();
 
-        // Try loading a GLB from the first CLI arg, then the default demo asset location.
-        // Falls back to the built-in cube primitive if neither is found.
-        let glb_path = std::env::args().nth(1).unwrap_or_else(|| {
-            // Workspace-relative default: www/public/*.glb
+        let workspace = {
             let manifest = env!("CARGO_MANIFEST_DIR");
-            let workspace = std::path::Path::new(manifest)
-                .parent().unwrap()  // examples/native-triangle → examples
-                .parent().unwrap(); // examples → workspace root
-            workspace
-                .join("www/public/damaged_helmet_source_glb.glb")
-                .to_string_lossy()
-                .into_owned()
+            std::path::Path::new(manifest)
+                .parent().unwrap()
+                .parent().unwrap()
+                .to_path_buf()
+        };
+
+        let glb_path = std::env::args().nth(1).unwrap_or_else(|| {
+            workspace.join("www/public/damaged_helmet_source_glb.glb").to_string_lossy().into_owned()
         });
 
         let scene_pairs: Vec<(u32, u32)> = match std::fs::read(&glb_path) {
@@ -151,6 +149,25 @@ impl State {
             }
         };
 
+        // IBL: load HDR if present, otherwise use default
+        let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
+        let ibl_context = match std::fs::read(&hdr_path) {
+            Ok(bytes) => {
+                log::info!("Loading HDR: {}", hdr_path.display());
+                match load_hdr_from_bytes(&bytes) {
+                    Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue, &render_state.ibl_bg_layout),
+                    Err(e) => {
+                        log::warn!("Failed to parse HDR ({e}), using default IBL");
+                        IblContext::new_default(&context.device, &context.queue, &render_state.ibl_bg_layout)
+                    }
+                }
+            }
+            Err(_) => {
+                log::info!("No HDR found at {}, using default IBL", hdr_path.display());
+                IblContext::new_default(&context.device, &context.queue, &render_state.ibl_bg_layout)
+            }
+        };
+
         // Camera
         let camera = world.create_entity();
         world.add_component(camera, CameraComponent::new(
@@ -160,7 +177,6 @@ impl State {
         cam_t.update_local_matrix();
         world.add_component(camera, cam_t);
 
-        // One entity per primitive
         let scene_entities: Vec<u32> = scene_pairs
             .into_iter()
             .map(|(mesh_id, mat_id)| {
@@ -182,6 +198,7 @@ impl State {
             context,
             render_state,
             asset_registry,
+            ibl_context,
             world,
             scheduler,
             scene_entities,
@@ -197,7 +214,11 @@ impl State {
         self.total_time += dt;
 
         let angle = self.total_time * 0.4;
-        let rot = Quat::from_rotation_y(angle);
+        // -90° around X as base, then spin around world Y
+        let base_x = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        let y_spin = Quat::from_rotation_y(angle);
+        let rot = y_spin * base_x;
+
         for &entity in &self.scene_entities {
             if let Some(t) = self.world.get_component_mut::<TransformComponent>(entity) {
                 t.rotation = rot;
@@ -257,6 +278,7 @@ impl State {
 
             rp.set_pipeline(&self.render_state.pipeline);
             rp.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
+            rp.set_bind_group(3, &self.ibl_context.bind_group, &[]);
 
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;

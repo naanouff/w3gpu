@@ -18,3 +18,16 @@ impl Default for DirectionalLightComponent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_has_unit_intensity_and_shadow() {
+        let l = DirectionalLightComponent::default();
+        assert_eq!(l.intensity, 1.0);
+        assert!(l.cast_shadow);
+        assert!((l.direction.length() - 1.0).abs() < 1e-5, "direction must be normalized");
+    }
+}

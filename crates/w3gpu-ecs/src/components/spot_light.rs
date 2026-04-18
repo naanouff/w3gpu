@@ -20,3 +20,15 @@ impl Default for SpotLightComponent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_cone_angles_are_radians() {
+        let l = SpotLightComponent::default();
+        assert!(l.inner_cone_angle < l.outer_cone_angle);
+        assert!(l.outer_cone_angle < std::f32::consts::FRAC_PI_2);
+    }
+}

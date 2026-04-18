@@ -8,6 +8,18 @@ async function main(): Promise<void> {
   status.textContent = 'Creating engine...';
   const engine = await W3gpuEngine.create('w3gpu-canvas');
 
+  // IBL: load HDR environment map
+  status.textContent = 'Loading environment...';
+  try {
+    const hdrResponse = await fetch('/studio_small_03_2k.hdr');
+    if (hdrResponse.ok) {
+      const hdrBytes = new Uint8Array(await hdrResponse.arrayBuffer());
+      engine.load_hdr(hdrBytes);
+    }
+  } catch (e) {
+    console.warn('HDR load failed, using default IBL:', e);
+  }
+
   // Load GLB from public folder
   status.textContent = 'Loading model...';
   const response = await fetch('/damaged_helmet_source_glb.glb');
@@ -39,17 +51,26 @@ async function main(): Promise<void> {
   let prev = performance.now();
   let angle = 0;
 
+  // Composed quaternion: y_spin * base_x(+90°)
+  // base_x(+90°) = (qx=√2/2, qy=0, qz=0, qw=√2/2)
+  // y_spin(a)    = (qx=0, qy=sin(a/2), qz=0, qw=cos(a/2))
+  // product      = (√2/2·cos(a/2),  √2/2·sin(a/2),  -√2/2·sin(a/2),  √2/2·cos(a/2))
+  const S = Math.SQRT1_2;
+
   function frame(): void {
     const now = performance.now();
     const dt = (now - prev) / 1000;
     prev = now;
 
     angle += dt * 0.4;
-    const qy = Math.sin(angle / 2);
-    const qw = Math.cos(angle / 2);
+    const ha = angle / 2;
+    const qx =  S * Math.cos(ha);
+    const qy =  S * Math.sin(ha);
+    const qz = -S * Math.sin(ha);
+    const qw =  S * Math.cos(ha);
 
     for (const entity of meshEntities) {
-      engine.set_transform(entity, 0, 0, 0,  0, qy, 0, qw,  1, 1, 1);
+      engine.set_transform(entity, 0, 0, 0,  qx, qy, qz, qw,  1, 1, 1);
     }
 
     engine.tick(dt);

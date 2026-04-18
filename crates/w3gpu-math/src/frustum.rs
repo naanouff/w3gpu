@@ -43,3 +43,50 @@ impl Frustum {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::{Mat4, Vec3};
+
+    fn test_frustum() -> Frustum {
+        let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_2, 1.0, 0.1, 100.0);
+        Frustum::from_view_projection(&proj)
+    }
+
+    #[test]
+    fn sphere_in_front_not_culled() {
+        let f = test_frustum();
+        let s = BoundingSphere::new(Vec3::new(0.0, 0.0, -5.0), 0.5);
+        assert!(!f.cull_sphere(&s));
+    }
+
+    #[test]
+    fn sphere_far_behind_culled() {
+        let f = test_frustum();
+        let s = BoundingSphere::new(Vec3::new(0.0, 0.0, 200.0), 0.5);
+        assert!(f.cull_sphere(&s));
+    }
+
+    #[test]
+    fn sphere_far_right_culled() {
+        let f = test_frustum();
+        let s = BoundingSphere::new(Vec3::new(1000.0, 0.0, -5.0), 0.1);
+        assert!(f.cull_sphere(&s));
+    }
+
+    #[test]
+    fn large_sphere_enclosing_frustum_not_culled() {
+        let f = test_frustum();
+        let s = BoundingSphere::new(Vec3::new(0.0, 0.0, -50.0), 500.0);
+        assert!(!f.cull_sphere(&s));
+    }
+
+    #[test]
+    fn sphere_behind_near_plane_culled() {
+        let f = test_frustum();
+        // positive Z = behind camera in RH
+        let s = BoundingSphere::new(Vec3::new(0.0, 0.0, 1.0), 0.01);
+        assert!(f.cull_sphere(&s));
+    }
+}

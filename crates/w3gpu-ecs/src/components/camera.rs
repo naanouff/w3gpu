@@ -34,3 +34,36 @@ impl Default for CameraComponent {
         Self::new(60.0, 16.0 / 9.0, 0.1, 1000.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_sets_active_and_fov() {
+        let c = CameraComponent::new(90.0, 1.0, 0.1, 100.0);
+        assert!(c.is_active);
+        assert!((c.fov_y_radians - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert_eq!(c.near, 0.1);
+        assert_eq!(c.far, 100.0);
+        assert_eq!(c.aspect, 1.0);
+    }
+
+    #[test]
+    fn default_camera_is_active() {
+        let c = CameraComponent::default();
+        assert!(c.is_active);
+    }
+
+    #[test]
+    fn projection_matrix_not_identity() {
+        let c = CameraComponent::new(60.0, 16.0 / 9.0, 0.1, 1000.0);
+        assert_ne!(c.projection_matrix, Mat4::IDENTITY);
+    }
+
+    #[test]
+    fn view_matrix_starts_identity() {
+        let c = CameraComponent::default();
+        assert_eq!(c.view_matrix, Mat4::IDENTITY);
+    }
+}

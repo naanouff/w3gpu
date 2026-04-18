@@ -1,13 +1,13 @@
 use glam::{Mat4, Quat, Vec3};
 use wasm_bindgen::prelude::*;
-use w3gpu_assets::{load_from_bytes, primitives, Material};
+use w3gpu_assets::{load_from_bytes, load_hdr_from_bytes, primitives, Material};
 use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
 use w3gpu_renderer::{
     camera_system, frustum_culling_system, transform_system,
-    AssetRegistry, FrameUniforms, GpuContext, MaterialTextures, ObjectUniforms,
+    AssetRegistry, FrameUniforms, GpuContext, IblContext, MaterialTextures, ObjectUniforms,
     RenderCommand, RenderState, OBJECT_ALIGN,
 };
 
@@ -18,6 +18,7 @@ pub struct W3gpuEngine {
     context: GpuContext,
     asset_registry: AssetRegistry,
     render_state: RenderState,
+    ibl_context: IblContext,
     total_time: f32,
 }
 
@@ -44,12 +45,17 @@ impl W3gpuEngine {
         let render_state = RenderState::new(&context.device, context.surface_format);
         let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
-        // Pre-create default material at id=0 (used when material_id is not set)
         asset_registry.upload_material(
             &Material::default(),
             MaterialTextures::default(),
             &context.device,
             &render_state.material_bg_layout,
+        );
+
+        let ibl_context = IblContext::new_default(
+            &context.device,
+            &context.queue,
+            &render_state.ibl_bg_layout,
         );
 
         let mut scheduler = Scheduler::new();
@@ -64,6 +70,7 @@ impl W3gpuEngine {
             context,
             asset_registry,
             render_state,
+            ibl_context,
             total_time: 0.0,
         })
     }
@@ -114,7 +121,6 @@ impl W3gpuEngine {
             .upload_mesh(&mesh, &self.context.device, &self.context.queue)
     }
 
-    /// Upload a solid-color PBR material (no textures). Returns a material handle.
     pub fn upload_material(
         &mut self,
         r: f32, g: f32, b: f32, a: f32,
@@ -185,6 +191,19 @@ impl W3gpuEngine {
             ids.push(mat_id);
         }
         Ok(ids)
+    }
+
+    /// Load an equirectangular HDR image and precompute IBL (irradiance + prefiltered + BRDF LUT).
+    pub fn load_hdr(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+        let hdr = load_hdr_from_bytes(bytes)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.ibl_context = IblContext::from_hdr(
+            &hdr,
+            &self.context.device,
+            &self.context.queue,
+            &self.render_state.ibl_bg_layout,
+        );
+        Ok(())
     }
 
     // ── frame ─────────────────────────────────────────────────────────────
@@ -264,6 +283,7 @@ impl W3gpuEngine {
 
             rpass.set_pipeline(&self.render_state.pipeline);
             rpass.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
+            rpass.set_bind_group(3, &self.ibl_context.bind_group, &[]);
 
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
