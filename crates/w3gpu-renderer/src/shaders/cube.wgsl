@@ -12,7 +12,9 @@ struct FrameUniforms {
     light_color:         vec3<f32>,
     ambient_intensity:   f32,
     total_time:          f32,
-    _pad2:               vec3<f32>,
+    _pad2a:              f32,
+    _pad2b:              f32,
+    _pad2c:              f32,
 }
 
 struct ObjectUniforms {

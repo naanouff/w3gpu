@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 use w3gpu_assets::primitives;
 use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
-    Entity, Scheduler, World,
+    Scheduler, World,
 };
 use w3gpu_renderer::{
     camera_system, frustum_culling_system, transform_system,
