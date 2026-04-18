@@ -1,0 +1,8 @@
+[package]
+name = "w3gpu-math"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+glam.workspace = true
+bytemuck.workspace = true

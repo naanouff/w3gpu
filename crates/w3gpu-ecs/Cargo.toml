@@ -1,0 +1,9 @@
+[package]
+name = "w3gpu-ecs"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+w3gpu-math = { path = "../w3gpu-math" }
+glam.workspace = true
+log.workspace = true

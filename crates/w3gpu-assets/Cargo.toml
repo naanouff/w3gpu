@@ -1,0 +1,14 @@
+[package]
+name = "w3gpu-assets"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+w3gpu-math = { path = "../w3gpu-math" }
+glam.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+gltf = { version = "1.4", default-features = false, features = ["names", "utils"] }

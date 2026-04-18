@@ -1,0 +1,23 @@
+[package]
+name = "w3gpu-wasm"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+w3gpu-math = { path = "../w3gpu-math" }
+w3gpu-ecs = { path = "../w3gpu-ecs" }
+w3gpu-renderer = { path = "../w3gpu-renderer" }
+w3gpu-assets = { path = "../w3gpu-assets" }
+log.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+console_log = "1.0"
+wgpu = { workspace = true, features = ["wgsl", "webgpu"] }
+web-sys = { version = "0.3", features = [
+    "Window", "Document", "HtmlCanvasElement", "Performance", "console",
+] }
