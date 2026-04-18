@@ -65,6 +65,7 @@ struct State {
     context: GpuContext,
     render_state: RenderState,
     asset_registry: AssetRegistry,
+    #[allow(dead_code)]
     ibl_context: IblContext,
     shadow_pass: ShadowPass,
     env_bind_group: wgpu::BindGroup,
