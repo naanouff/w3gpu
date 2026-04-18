@@ -6,6 +6,7 @@
   "scripts": {
     "build:wasm": "wasm-pack build ../crates/w3gpu-wasm --target web --out-dir ../../www/pkg",
     "dev": "npm run build:wasm && vite",
+    "vite": "vite",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview"
   },
