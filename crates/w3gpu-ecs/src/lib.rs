@@ -1,7 +1,8 @@
 pub mod components;
 pub mod entity;
 pub mod scheduler;
-pub mod storage;
+pub(crate) mod archetype;
+pub(crate) mod storage;
 pub mod world;
 
 pub use components::*;
