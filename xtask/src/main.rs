@@ -124,7 +124,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn npm_cmd() -> &'static str {
-    "npm"
+    if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" }
 }
 
 fn run(cmd: &mut Command, label: &str) {
