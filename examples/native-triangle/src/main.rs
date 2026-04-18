@@ -201,6 +201,24 @@ impl State {
             })
             .collect();
 
+        // Ground plane
+        {
+            use w3gpu_assets::Material;
+            let floor_mesh = asset_registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
+            let floor_mat  = asset_registry.upload_material(
+                &Material { albedo: [0.45, 0.45, 0.45, 1.0], roughness: 0.8, ..Default::default() },
+                MaterialTextures::default(),
+                &context.device,
+                &render_state.material_bg_layout,
+            );
+            let floor = world.create_entity();
+            world.add_component(floor, RenderableComponent::new(floor_mesh, floor_mat));
+            let mut t = TransformComponent::from_position(Vec3::new(0.0, -1.2, 0.0));
+            t.scale = Vec3::new(4.0, 0.05, 4.0);
+            t.update_local_matrix();
+            world.add_component(floor, t);
+        }
+
         let mut scheduler = Scheduler::new();
         scheduler
             .add_system(transform_system)

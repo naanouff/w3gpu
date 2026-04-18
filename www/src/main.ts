@@ -46,6 +46,13 @@ async function main(): Promise<void> {
     meshEntities.push(entity);
   }
 
+  // Ground plane
+  const floorMesh = engine.upload_cube_mesh();
+  const floorMat  = engine.upload_material(0.45, 0.45, 0.45, 1.0, 0.0, 0.8, 0, 0, 0);
+  const floor = engine.create_entity();
+  engine.set_mesh_renderer(floor, floorMesh, floorMat);
+  engine.set_transform(floor, 0, -1.2, 0,  0, 0, 0, 1,  4, 0.05, 4);
+
   status.textContent = `w3gpu v${W3gpuEngine.version()} — ${meshEntities.length} primitives`;
 
   let prev = performance.now();
