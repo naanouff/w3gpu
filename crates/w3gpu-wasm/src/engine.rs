@@ -20,6 +20,7 @@ pub struct W3gpuEngine {
     render_state: RenderState,
     ibl_context: IblContext,
     shadow_pass: ShadowPass,
+    env_bind_group: wgpu::BindGroup,
     total_time: f32,
 }
 
@@ -56,13 +57,18 @@ impl W3gpuEngine {
         let ibl_context = IblContext::new_default(
             &context.device,
             &context.queue,
-            &render_state.ibl_bg_layout,
         );
 
         let shadow_pass = ShadowPass::new(
             &context.device,
-            &render_state.shadow_bg_layout,
             &render_state.object_bg_layout,
+        );
+
+        let env_bind_group = build_env_bind_group(
+            &context.device,
+            &render_state.ibl_bg_layout,
+            &ibl_context,
+            &shadow_pass,
         );
 
         let mut scheduler = Scheduler::new();
@@ -79,6 +85,7 @@ impl W3gpuEngine {
             render_state,
             ibl_context,
             shadow_pass,
+            env_bind_group,
             total_time: 0.0,
         })
     }
@@ -209,7 +216,12 @@ impl W3gpuEngine {
             &hdr,
             &self.context.device,
             &self.context.queue,
+        );
+        self.env_bind_group = build_env_bind_group(
+            &self.context.device,
             &self.render_state.ibl_bg_layout,
+            &self.ibl_context,
+            &self.shadow_pass,
         );
         Ok(())
     }
@@ -328,8 +340,7 @@ impl W3gpuEngine {
 
             rpass.set_pipeline(&self.render_state.pipeline);
             rpass.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
-            rpass.set_bind_group(3, &self.ibl_context.bind_group, &[]);
-            rpass.set_bind_group(4, &self.shadow_pass.main_bind_group, &[]);
+            rpass.set_bind_group(3, &self.env_bind_group, &[]);
 
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
@@ -383,7 +394,7 @@ impl W3gpuEngine {
             .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY, Vec3::ZERO));
 
         let inv_vp = (projection * view).inverse();
-        let light_dir = Vec3::new(-0.5, -1.0, -0.5).normalize();
+        let light_uniforms = Self::build_light_uniforms();
 
         FrameUniforms {
             projection: projection.to_cols_array_2d(),
@@ -391,12 +402,15 @@ impl W3gpuEngine {
             inv_view_projection: inv_vp.to_cols_array_2d(),
             camera_position: cam_pos.to_array(),
             _pad0: 0.0,
-            light_direction: light_dir.to_array(),
+            light_direction: Vec3::new(-0.5, -1.0, -0.5).normalize().to_array(),
             _pad1: 0.0,
             light_color: [1.0, 0.95, 0.9],
             ambient_intensity: 0.12,
             total_time: self.total_time,
             _pad2: [0.0; 3],
+            light_view_proj: light_uniforms.view_proj,
+            shadow_bias: light_uniforms.shadow_bias,
+            _pad3: [0.0; 3],
         }
     }
 
@@ -423,6 +437,26 @@ impl W3gpuEngine {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+fn build_env_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    ibl: &IblContext,
+    shadow: &ShadowPass,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("env bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&ibl.irradiance_view) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&ibl.prefiltered_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&ibl.brdf_lut_view) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&ibl.sampler) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&shadow.shadow_view) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&shadow.comparison_sampler) },
+        ],
+    })
+}
 
 fn get_canvas(id: &str) -> Result<web_sys::HtmlCanvasElement, JsValue> {
     use wasm_bindgen::JsCast;

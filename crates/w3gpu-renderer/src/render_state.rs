@@ -1,7 +1,6 @@
 use crate::{
     frame_uniforms::FrameUniforms,
     gpu_context::DEPTH_FORMAT,
-    light_uniforms::LightUniforms,
     material_uniforms::MaterialUniforms,
     vertex_layout::VERTEX_BUFFER_LAYOUT,
 };
@@ -25,8 +24,9 @@ pub struct RenderState {
     pub frame_bg_layout: wgpu::BindGroupLayout,
     pub object_bg_layout: wgpu::BindGroupLayout,
     pub material_bg_layout: wgpu::BindGroupLayout,
+    /// Group 3: IBL cubemaps + BRDF LUT (bindings 0-3) + shadow map + comparison
+    /// sampler (bindings 4-5). Combined to stay within max_bind_groups = 4.
     pub ibl_bg_layout: wgpu::BindGroupLayout,
-    pub shadow_bg_layout: wgpu::BindGroupLayout,
     pub frame_uniform_buffer: wgpu::Buffer,
     pub frame_bind_group: wgpu::BindGroup,
     pub object_uniform_buffer: wgpu::Buffer,
@@ -150,43 +150,8 @@ impl RenderState {
             }],
         });
 
-        // group 4: shadow (LightUniforms + depth texture + comparison sampler)
-        let shadow_bg_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("shadow bg layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                std::mem::size_of::<LightUniforms>() as u64,
-                            ),
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Depth,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                        count: None,
-                    },
-                ],
-            });
-
-        // group 3: IBL (irradiance cube + prefiltered cube + brdf lut + sampler)
+        // group 3: IBL (bindings 0-3) + shadow map/sampler (bindings 4-5)
+        // Merged into one group to respect max_bind_groups = 4 (WebGPU spec limit).
         let cube_tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -199,7 +164,7 @@ impl RenderState {
         };
 
         let ibl_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ibl bg layout"),
+            label: Some("ibl+shadow bg layout"),
             entries: &[
                 cube_tex_entry(0), // irradiance_map
                 cube_tex_entry(1), // prefiltered_map
@@ -219,6 +184,23 @@ impl RenderState {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // shadow map + comparison sampler (folded into group 3)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
             ],
         });
 
@@ -231,7 +213,7 @@ impl RenderState {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout, &ibl_bg_layout, &shadow_bg_layout],
+            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout, &ibl_bg_layout],
             push_constant_ranges: &[],
         });
 
@@ -277,7 +259,6 @@ impl RenderState {
             object_bg_layout,
             material_bg_layout,
             ibl_bg_layout,
-            shadow_bg_layout,
             frame_uniform_buffer,
             frame_bind_group,
             object_uniform_buffer,

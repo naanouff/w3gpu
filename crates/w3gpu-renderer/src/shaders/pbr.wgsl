@@ -1,8 +1,7 @@
-// group(0) = FrameUniforms   (per-frame)
+// group(0) = FrameUniforms   (per-frame, includes shadow light_view_proj)
 // group(1) = ObjectUniforms  (per-object, dynamic offset)
 // group(2) = MaterialUniforms + textures (per-material)
-// group(3) = IBL (irradiance cube, prefiltered cube, BRDF LUT, sampler)
-// group(4) = Shadow (LightUniforms, shadow_map depth_2d, comparison sampler)
+// group(3) = IBL (bindings 0-3) + shadow map/sampler (bindings 4-5)
 
 struct FrameUniforms {
     projection:          mat4x4<f32>,
@@ -18,6 +17,10 @@ struct FrameUniforms {
     _pad2a:              f32,
     _pad2b:              f32,
     _pad2c:              f32,
+    // shadow data (folded in to stay within max_bind_groups = 4)
+    light_view_proj:     mat4x4<f32>,
+    shadow_bias:         f32,
+    _pad3a: f32, _pad3b: f32, _pad3c: f32,
 }
 
 struct ObjectUniforms {
@@ -46,16 +49,8 @@ struct MaterialUniforms {
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
 @group(3) @binding(2) var brdf_lut:        texture_2d<f32>;
 @group(3) @binding(3) var ibl_sampler:     sampler;
-
-struct LightUniforms {
-    view_proj:   mat4x4<f32>,
-    shadow_bias: f32,
-    _pad0: f32, _pad1: f32, _pad2: f32,
-}
-
-@group(4) @binding(0) var<uniform> shadow_data: LightUniforms;
-@group(4) @binding(1) var shadow_map:            texture_depth_2d;
-@group(4) @binding(2) var shadow_sampler:        sampler_comparison;
+@group(3) @binding(4) var shadow_map:      texture_depth_2d;
+@group(3) @binding(5) var shadow_sampler:  sampler_comparison;
 
 struct VertexInput {
     @location(0) position:  vec3<f32>,
@@ -131,11 +126,11 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
 
 // 3×3 PCF shadow factor: 1.0 = fully lit, 0.0 = fully in shadow.
 fn pcf_shadow(world_pos: vec3<f32>) -> f32 {
-    let light_clip = shadow_data.view_proj * vec4<f32>(world_pos, 1.0);
+    let light_clip = frame.light_view_proj * vec4<f32>(world_pos, 1.0);
     let ndc        = light_clip.xyz / light_clip.w;
     // NDC [-1,1] → UV [0,1], flip Y (WebGPU NDC Y-up, UV Y-down)
     let uv        = ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-    let depth_ref = ndc.z - shadow_data.shadow_bias;
+    let depth_ref = ndc.z - frame.shadow_bias;
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth_ref > 1.0) {
         return 1.0; // outside shadow frustum — treat as lit
     }

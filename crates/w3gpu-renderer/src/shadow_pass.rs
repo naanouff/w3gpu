@@ -10,24 +10,18 @@ pub struct ShadowPass {
     pub depth_pipeline: wgpu::RenderPipeline,
     pub shadow_texture: wgpu::Texture,
     /// View into `shadow_texture` — used as depth attachment in shadow pass
-    /// and as `texture_depth_2d` in PBR group 4.
+    /// and as `texture_depth_2d` in the combined IBL+shadow bind group (group 3).
     pub shadow_view: wgpu::TextureView,
+    /// Comparison sampler for PCF — exposed so the engine can build group 3.
+    pub comparison_sampler: wgpu::Sampler,
     pub light_uniform_buffer: wgpu::Buffer,
     /// Bind group for group(0) in the shadow depth pass (LightUniforms, VERTEX).
     pub shadow_light_bind_group: wgpu::BindGroup,
-    /// Bind group for group(4) in the PBR main pass
-    /// (LightUniforms + shadow_map + comparison sampler).
-    pub main_bind_group: wgpu::BindGroup,
 }
 
 impl ShadowPass {
-    /// `shadow_bg_layout`  — group 4 layout already created by `RenderState`.
-    /// `object_bg_layout`  — dynamic-offset object layout, reused from `RenderState`.
-    pub fn new(
-        device: &wgpu::Device,
-        shadow_bg_layout: &wgpu::BindGroupLayout,
-        object_bg_layout: &wgpu::BindGroupLayout,
-    ) -> Self {
+    /// `object_bg_layout` — dynamic-offset object layout reused from `RenderState`.
+    pub fn new(device: &wgpu::Device, object_bg_layout: &wgpu::BindGroupLayout) -> Self {
         // ── shadow depth texture ─────────────────────────────────────────────
         let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow map"),
@@ -80,7 +74,7 @@ impl ShadowPass {
             }],
         });
 
-        // ── comparison sampler (PCF) ─────────────────────────────────────────
+        // ── comparison sampler (PCF) — stored so engine can build group 3 ────
         let comparison_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow comparison sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -90,26 +84,6 @@ impl ShadowPass {
             min_filter: wgpu::FilterMode::Linear,
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
-        });
-
-        // ── group 4 bind group for PBR main pass ─────────────────────────────
-        let main_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow main bind group"),
-            layout: shadow_bg_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: light_uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&comparison_sampler),
-                },
-            ],
         });
 
         // ── shadow depth pipeline ─────────────────────────────────────────────
@@ -162,9 +136,9 @@ impl ShadowPass {
             depth_pipeline,
             shadow_texture,
             shadow_view,
+            comparison_sampler,
             light_uniform_buffer,
             shadow_light_bind_group,
-            main_bind_group,
         }
     }
 

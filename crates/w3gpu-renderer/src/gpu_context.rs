@@ -34,11 +34,8 @@ impl GpuContext {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("w3gpu device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits {
-                    max_bind_groups: 5,
-                    ..wgpu::Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits())
-                },
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    .using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::default(),
             }, None)
             .await?;

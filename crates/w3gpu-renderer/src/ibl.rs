@@ -9,6 +9,8 @@ const BRDF_LUT_SIZE: u32 = 256;
 const BRDF_LUT_SAMPLES: u32 = 256;
 const MAX_MIP_LEVELS: u32 = 5;
 
+/// IBL textures + sampler. The bind group (group 3) is built externally by the
+/// engine, combined with the shadow map, to stay within `max_bind_groups = 4`.
 pub struct IblContext {
     pub irradiance_texture: wgpu::Texture,
     pub irradiance_view: wgpu::TextureView,
@@ -17,16 +19,11 @@ pub struct IblContext {
     pub brdf_lut_texture: wgpu::Texture,
     pub brdf_lut_view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub bind_group: wgpu::BindGroup,
 }
 
 impl IblContext {
     /// Flat ambient fallback (no HDR): constant grey irradiance + pre-computed BRDF LUT.
-    pub fn new_default(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        layout: &wgpu::BindGroupLayout,
-    ) -> Self {
+    pub fn new_default(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         // 1×1 grey irradiance/prefiltered cubemap (matches frame.ambient_intensity = 0.12)
         const AMB: f32 = 0.12;
         let grey_f16 = [f32_to_f16(AMB), f32_to_f16(AMB), f32_to_f16(AMB), f32_to_f16(1.0)];
@@ -43,16 +40,11 @@ impl IblContext {
         let brdf_tex = create_brdf_lut_texture(device, BRDF_LUT_SIZE);
         upload_brdf_lut(queue, &brdf_tex, &brdf_data, BRDF_LUT_SIZE);
 
-        build_context(device, layout, irr_tex, pre_tex, brdf_tex, 1, 1)
+        build_context(device, irr_tex, pre_tex, brdf_tex, 1)
     }
 
     /// Full IBL from an equirectangular HDR image.
-    pub fn from_hdr(
-        hdr: &HdrImage,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        layout: &wgpu::BindGroupLayout,
-    ) -> Self {
+    pub fn from_hdr(hdr: &HdrImage, device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         log::info!("IBL: computing irradiance map ({}×{}×6)…", IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         let irr_tex = create_cubemap(device, IRRADIANCE_SIZE, IRRADIANCE_SIZE, 1);
         for face in 0..6usize {
@@ -77,7 +69,7 @@ impl IblContext {
         upload_brdf_lut(queue, &brdf_tex, &brdf_data, BRDF_LUT_SIZE);
 
         log::info!("IBL: done.");
-        build_context(device, layout, irr_tex, pre_tex, brdf_tex, IRRADIANCE_SIZE, PREFILTERED_SIZE)
+        build_context(device, irr_tex, pre_tex, brdf_tex, IRRADIANCE_SIZE)
     }
 }
 
@@ -155,12 +147,10 @@ fn upload_brdf_lut(queue: &wgpu::Queue, tex: &wgpu::Texture, data: &[u8], size: 
 
 fn build_context(
     device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
     irr_tex: wgpu::Texture,
     pre_tex: wgpu::Texture,
     brdf_tex: wgpu::Texture,
     irr_size: u32,
-    _pre_size: u32,
 ) -> IblContext {
     let irradiance_view = irr_tex.create_view(&wgpu::TextureViewDescriptor {
         dimension: Some(wgpu::TextureViewDimension::Cube),
@@ -191,17 +181,6 @@ fn build_context(
         ..Default::default()
     });
 
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("ibl bind group"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&irradiance_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&prefiltered_view) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&brdf_lut_view) },
-            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&sampler) },
-        ],
-    });
-
     IblContext {
         irradiance_texture: irr_tex,
         irradiance_view,
@@ -210,7 +189,6 @@ fn build_context(
         brdf_lut_texture: brdf_tex,
         brdf_lut_view,
         sampler,
-        bind_group,
     }
 }
 
