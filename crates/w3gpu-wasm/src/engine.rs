@@ -1,6 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
 use wasm_bindgen::prelude::*;
-use w3gpu_assets::primitives;
+use w3gpu_assets::{primitives, load_from_bytes, Material};
 use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
@@ -103,11 +103,48 @@ impl W3gpuEngine {
 
     // ── asset API ────────────────────────────────────────────────────────
 
-    /// Upload the built-in cube primitive to the GPU and return its mesh handle.
+    /// Upload the built-in cube primitive and return its mesh handle.
     pub fn upload_cube_mesh(&mut self) -> u32 {
         let mesh = primitives::cube();
         self.asset_registry
             .upload_mesh(&mesh, &self.context.device, &self.context.queue)
+    }
+
+    /// Upload a PBR material and return its handle.
+    /// albedo: [r,g,b,a], emissive: [r,g,b], metallic/roughness in [0,1].
+    pub fn upload_material(
+        &mut self,
+        r: f32, g: f32, b: f32, a: f32,
+        metallic: f32, roughness: f32,
+        er: f32, eg: f32, eb: f32,
+    ) -> u32 {
+        let mat = Material {
+            albedo: [r, g, b, a],
+            metallic,
+            roughness,
+            emissive: [er, eg, eb],
+            ..Default::default()
+        };
+        self.asset_registry
+            .upload_material(&mat, &self.context.device, &self.render_state.material_bg_layout)
+    }
+
+    /// Load all mesh/material pairs from a GLB byte slice.
+    /// Returns a flat array [mesh_id0, mat_id0, mesh_id1, mat_id1, …].
+    pub fn load_gltf(&mut self, bytes: &[u8]) -> Result<Vec<u32>, JsValue> {
+        let pairs = load_from_bytes(bytes)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        let mut ids = Vec::with_capacity(pairs.len() * 2);
+        for (mesh, mat) in pairs {
+            let mesh_id = self.asset_registry
+                .upload_mesh(&mesh, &self.context.device, &self.context.queue);
+            let mat_id = self.asset_registry
+                .upload_material(&mat, &self.context.device, &self.render_state.material_bg_layout);
+            ids.push(mesh_id);
+            ids.push(mat_id);
+        }
+        Ok(ids)
     }
 
     // ── frame ─────────────────────────────────────────────────────────────
@@ -120,7 +157,6 @@ impl W3gpuEngine {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        // Keep active camera aspect ratio in sync with canvas
         for entity in self.world.query_entities::<CameraComponent>() {
             if let Some(cam) = self.world.get_component_mut::<CameraComponent>(entity) {
                 if cam.is_active {
@@ -159,7 +195,7 @@ impl W3gpuEngine {
         // Collect non-culled render commands
         let commands = self.collect_render_commands();
 
-        // Upload per-object world matrices into the dynamic uniform buffer
+        // Upload per-object world matrices
         for (i, cmd) in commands.iter().enumerate() {
             self.context.queue.write_buffer(
                 &self.render_state.object_uniform_buffer,
@@ -189,7 +225,14 @@ impl W3gpuEngine {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.context.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
@@ -200,6 +243,13 @@ impl W3gpuEngine {
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
                 rpass.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
+
+                let mat_bg = self
+                    .asset_registry
+                    .get_material(cmd.material_id)
+                    .map(|m| &m.bind_group)
+                    .unwrap_or(&self.render_state.fallback_material_bind_group);
+                rpass.set_bind_group(2, mat_bg, &[]);
 
                 if let Some(gpu_mesh) = self.asset_registry.get_mesh(cmd.mesh_id) {
                     rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));

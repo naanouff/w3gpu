@@ -1,6 +1,11 @@
-use crate::{frame_uniforms::FrameUniforms, vertex_layout::VERTEX_BUFFER_LAYOUT};
+use crate::{
+    frame_uniforms::FrameUniforms,
+    gpu_context::DEPTH_FORMAT,
+    material_uniforms::MaterialUniforms,
+    vertex_layout::VERTEX_BUFFER_LAYOUT,
+};
 
-pub const CUBE_WGSL: &str = include_str!("shaders/cube.wgsl");
+pub const PBR_WGSL: &str = include_str!("shaders/pbr.wgsl");
 
 /// Per-object GPU uniform — one mat4 world transform.
 #[repr(C)]
@@ -9,8 +14,7 @@ pub struct ObjectUniforms {
     pub world: [[f32; 4]; 4],
 }
 
-/// WebGPU requires uniform buffer dynamic offsets to be aligned to
-/// `min_uniform_buffer_offset_alignment` (256 bytes on all WebGPU devices).
+/// WebGPU requires uniform buffer dynamic offsets to be aligned to 256 bytes.
 pub const OBJECT_ALIGN: u64 = 256;
 pub const MAX_OBJECTS: u64 = 1024;
 
@@ -19,10 +23,13 @@ pub struct RenderState {
     pub pipeline: wgpu::RenderPipeline,
     pub frame_bg_layout: wgpu::BindGroupLayout,
     pub object_bg_layout: wgpu::BindGroupLayout,
+    pub material_bg_layout: wgpu::BindGroupLayout,
     pub frame_uniform_buffer: wgpu::Buffer,
     pub frame_bind_group: wgpu::BindGroup,
     pub object_uniform_buffer: wgpu::Buffer,
     pub object_bind_group: wgpu::BindGroup,
+    pub fallback_material_bind_group: wgpu::BindGroup,
+    fallback_material_buffer: wgpu::Buffer,
 }
 
 impl RenderState {
@@ -57,6 +64,23 @@ impl RenderState {
                         has_dynamic_offset: true,
                         min_binding_size: wgpu::BufferSize::new(
                             std::mem::size_of::<ObjectUniforms>() as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
+        let material_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("material bg layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<MaterialUniforms>() as u64,
                         ),
                     },
                     count: None,
@@ -101,21 +125,45 @@ impl RenderState {
             }],
         });
 
+        // Fallback white material (used when entity has no material uploaded)
+        use wgpu::util::DeviceExt;
+        let fallback_uniforms = MaterialUniforms {
+            albedo:    [1.0, 1.0, 1.0, 1.0],
+            emissive:  [0.0; 4],
+            metallic:  0.0,
+            roughness: 0.5,
+            _pad:      [0.0; 2],
+        };
+        let fallback_material_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fallback material"),
+                contents: bytemuck::bytes_of(&fallback_uniforms),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let fallback_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fallback material bind group"),
+            layout: &material_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: fallback_material_buffer.as_entire_binding(),
+            }],
+        });
+
         // ── pipeline ─────────────────────────────────────────────────────────
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("cube shader"),
-            source: wgpu::ShaderSource::Wgsl(CUBE_WGSL.into()),
+            label: Some("pbr shader"),
+            source: wgpu::ShaderSource::Wgsl(PBR_WGSL.into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout],
+            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cube pipeline"),
+            label: Some("pbr pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -138,7 +186,13 @@ impl RenderState {
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
-            depth_stencil: None, // Phase 3: depth buffer
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -148,10 +202,13 @@ impl RenderState {
             pipeline,
             frame_bg_layout,
             object_bg_layout,
+            material_bg_layout,
             frame_uniform_buffer,
             frame_bind_group,
             object_uniform_buffer,
             object_bind_group,
+            fallback_material_bind_group,
+            fallback_material_buffer,
         }
     }
 }

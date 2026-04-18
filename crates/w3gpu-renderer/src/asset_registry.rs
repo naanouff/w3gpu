@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
 use bytemuck::cast_slice;
-use w3gpu_assets::{Mesh, Vertex};
+use w3gpu_assets::{Material, Mesh, Vertex};
 use w3gpu_math::BoundingSphere;
 use wgpu::util::DeviceExt;
+
+use crate::material_uniforms::MaterialUniforms;
 
 pub struct GpuMesh {
     pub vertex_buffer: wgpu::Buffer,
@@ -12,10 +14,17 @@ pub struct GpuMesh {
     pub bounding_sphere: BoundingSphere,
 }
 
+pub struct GpuMaterial {
+    pub uniform_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+}
+
 #[derive(Default)]
 pub struct AssetRegistry {
     meshes: HashMap<u32, GpuMesh>,
-    next_id: u32,
+    materials: HashMap<u32, GpuMaterial>,
+    next_mesh_id: u32,
+    next_material_id: u32,
 }
 
 impl AssetRegistry {
@@ -40,8 +49,8 @@ impl AssetRegistry {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.next_mesh_id;
+        self.next_mesh_id += 1;
         self.meshes.insert(
             id,
             GpuMesh {
@@ -54,7 +63,38 @@ impl AssetRegistry {
         id
     }
 
+    pub fn upload_material(
+        &mut self,
+        material: &Material,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+    ) -> u32 {
+        let uniforms = MaterialUniforms::from(material);
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("material uniforms"),
+            contents: bytemuck::bytes_of(&uniforms),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("material bind group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let id = self.next_material_id;
+        self.next_material_id += 1;
+        self.materials.insert(id, GpuMaterial { uniform_buffer, bind_group });
+        id
+    }
+
     pub fn get_mesh(&self, id: u32) -> Option<&GpuMesh> {
         self.meshes.get(&id)
+    }
+
+    pub fn get_material(&self, id: u32) -> Option<&GpuMaterial> {
+        self.materials.get(&id)
     }
 }
