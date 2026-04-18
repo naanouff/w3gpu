@@ -209,11 +209,60 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 
 ---
 
+## Examples Policy
+
+### Examples Must Stay in Sync with the Engine
+
+Every engine API change that affects the public surface (`RenderState`, `GpuContext`, `AssetRegistry`, bind group layout, shader interface) **must be reflected in all examples in the same PR**:
+
+- `examples/native-triangle/` — native desktop smoke test; uses `RenderState` and the full render loop directly
+- `www/src/main.ts` — WASM/browser demo; uses the `W3gpuEngine` public JS API
+
+**Checklist for API-breaking changes:**
+
+- [ ] `examples/native-triangle/src/main.rs` updated and compiles
+- [ ] `www/src/main.ts` updated (new methods, removed methods, changed signatures)
+- [ ] `cargo xtask check` passes on both native and wasm32 targets
+- [ ] New features have a visible counterpart in at least one example
+
+If an example cannot yet demonstrate a new feature (e.g. native-only ray tracing), add a `// TODO:` comment in the relevant example with a tracking reference.
+
+---
+
 ## Git & Branches
 
-### Pre-commit
+### Pre-commit Hook
 
-There is no Husky hook; run manually before committing:
+A pre-commit hook runs `cargo check` on both native and `wasm32-unknown-unknown` targets before every commit. Install it once after cloning:
+
+```bash
+cargo xtask setup-hooks
+```
+
+The hook source lives in `.githooks/pre-commit` (tracked in the repo). The hook runs:
+
+1. `cargo check --workspace --exclude w3gpu-wasm` — all native crates including examples
+2. `cargo check -p w3gpu-wasm --target wasm32-unknown-unknown` — WASM API
+
+You can run the same checks manually at any time:
+
+```bash
+cargo xtask check
+```
+
+**Emergency bypass (use sparingly — only if the hook itself is broken):**
+
+```bash
+# Unix
+SKIP_HOOKS=1 git commit
+
+# Windows PowerShell
+git commit --no-verify
+```
+
+Prefer fixing the underlying error instead of skipping the hook.
+
+Run additionally before submitting a PR:
 
 ```bash
 cargo fmt
@@ -246,20 +295,24 @@ Scope examples: `renderer`, `ecs`, `assets`, `wasm`, `shader`
 ## Build Commands
 
 ```bash
-# Check all crates (native)
-cargo check
+# Install pre-commit hook (run once after cloning)
+cargo xtask setup-hooks
 
-# Check WASM target
-cargo check -p w3gpu-wasm --target wasm32-unknown-unknown
-
-# Run unit tests (no GPU needed)
-cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets
+# Check native + wasm32 targets (same as pre-commit hook)
+cargo xtask check
 
 # Build WASM + start Vite dev server
 cargo xtask www
 
-# Run native desktop example
+# Build and run native desktop example
 cargo xtask client
+
+# Run unit tests (no GPU needed)
+cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets
+
+# Lint
+cargo clippy -- -D warnings
+cargo fmt --check
 ```
 
 ---

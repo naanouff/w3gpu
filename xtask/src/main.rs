@@ -7,19 +7,23 @@ fn main() {
         eprintln!("Usage: cargo xtask <task>");
         eprintln!();
         eprintln!("Tasks:");
-        eprintln!("  www      Build WASM then start Vite dev server");
-        eprintln!("  client   Build and run the native desktop client");
+        eprintln!("  www          Build WASM then start Vite dev server");
+        eprintln!("  client       Build and run the native desktop client");
+        eprintln!("  check        cargo check for all targets (native + wasm32)");
+        eprintln!("  setup-hooks  Install .githooks/pre-commit into .git/hooks");
         std::process::exit(1);
     });
 
     let root = workspace_root();
 
     match task.as_str() {
-        "www" => run_www(&root),
-        "client" => run_client(&root),
+        "www"         => run_www(&root),
+        "client"      => run_client(&root),
+        "check"       => run_check(&root),
+        "setup-hooks" => setup_hooks(&root),
         other => {
             eprintln!("Unknown task: '{other}'");
-            eprintln!("Available tasks: www, client");
+            eprintln!("Available tasks: www, client, check, setup-hooks");
             std::process::exit(1);
         }
     }
@@ -42,15 +46,14 @@ fn run_www(root: &Path) {
 
     let npm = npm_cmd();
 
-    // Install node_modules if needed
     if !www_dir.join("node_modules").exists() {
         println!("==> Installing npm dependencies...");
-        run(Command::new(&npm).arg("install").current_dir(&www_dir), "npm install");
+        run(Command::new(npm).arg("install").current_dir(&www_dir), "npm install");
     }
 
     println!("==> Starting Vite dev server  (http://localhost:5173)");
     run(
-        Command::new(&npm).args(["run", "vite"]).current_dir(&www_dir),
+        Command::new(npm).args(["run", "vite"]).current_dir(&www_dir),
         "vite dev",
     );
 }
@@ -65,10 +68,54 @@ fn run_client(root: &Path) {
     );
 }
 
+fn run_check(root: &Path) {
+    println!("==> cargo check — native targets...");
+    run(
+        Command::new("cargo")
+            .args(["check", "--workspace", "--exclude", "w3gpu-wasm"])
+            .current_dir(root),
+        "cargo check native",
+    );
+
+    println!("==> cargo check — wasm32 target...");
+    run(
+        Command::new("cargo")
+            .args(["check", "-p", "w3gpu-wasm", "--target", "wasm32-unknown-unknown"])
+            .current_dir(root),
+        "cargo check wasm32",
+    );
+
+    println!("==> All checks passed.");
+}
+
+fn setup_hooks(root: &Path) {
+    let hooks_src = root.join(".githooks").join("pre-commit");
+    let hooks_dst = root.join(".git").join("hooks").join("pre-commit");
+
+    if !hooks_src.exists() {
+        eprintln!("Hook source not found: {}", hooks_src.display());
+        std::process::exit(1);
+    }
+
+    std::fs::copy(&hooks_src, &hooks_dst)
+        .unwrap_or_else(|e| panic!("Failed to copy hook: {e}"));
+
+    // Make executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&hooks_dst).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&hooks_dst, perms).unwrap();
+    }
+
+    println!("==> Installed .githooks/pre-commit → .git/hooks/pre-commit");
+    println!("    Run 'cargo xtask check' to test it manually.");
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 fn workspace_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR points to xtask/, parent is workspace root
     let manifest = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     PathBuf::from(manifest)
         .parent()
@@ -77,7 +124,6 @@ fn workspace_root() -> PathBuf {
 }
 
 fn npm_cmd() -> &'static str {
-    // prefer npm, works on all platforms
     "npm"
 }
 
