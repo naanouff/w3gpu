@@ -10,6 +10,7 @@ pub(crate) trait ErasedVec: 'static {
     fn get_any(&self, index: usize) -> &dyn Any;
     fn get_any_mut(&mut self, index: usize) -> &mut dyn Any;
     fn len(&self) -> usize;
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool { self.len() == 0 }
     /// Create a new empty column of the same concrete type.
     fn new_empty(&self) -> Box<dyn ErasedVec>;
