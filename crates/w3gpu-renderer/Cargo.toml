@@ -7,6 +7,7 @@ version.workspace = true
 w3gpu-math = { path = "../w3gpu-math" }
 w3gpu-ecs = { path = "../w3gpu-ecs" }
 w3gpu-assets = { path = "../w3gpu-assets" }
+glam.workspace = true
 bytemuck.workspace = true
 log.workspace = true
 thiserror.workspace = true

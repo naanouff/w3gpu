@@ -10,7 +10,10 @@ path = "src/main.rs"
 [dependencies]
 w3gpu-renderer = { path = "../../crates/w3gpu-renderer" }
 w3gpu-assets = { path = "../../crates/w3gpu-assets" }
+w3gpu-ecs = { path = "../../crates/w3gpu-ecs" }
 wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+glam.workspace = true
+bytemuck.workspace = true
 winit = "0.30"
 pollster = "0.4"
 log = { workspace = true }

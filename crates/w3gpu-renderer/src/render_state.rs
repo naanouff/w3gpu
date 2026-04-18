@@ -1,0 +1,157 @@
+use crate::{frame_uniforms::FrameUniforms, vertex_layout::VERTEX_BUFFER_LAYOUT};
+
+pub const CUBE_WGSL: &str = include_str!("shaders/cube.wgsl");
+
+/// Per-object GPU uniform — one mat4 world transform.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ObjectUniforms {
+    pub world: [[f32; 4]; 4],
+}
+
+/// WebGPU requires uniform buffer dynamic offsets to be aligned to
+/// `min_uniform_buffer_offset_alignment` (256 bytes on all WebGPU devices).
+pub const OBJECT_ALIGN: u64 = 256;
+pub const MAX_OBJECTS: u64 = 1024;
+
+/// All GPU resources needed for a single render pass (pipeline, bind groups, buffers).
+pub struct RenderState {
+    pub pipeline: wgpu::RenderPipeline,
+    pub frame_bg_layout: wgpu::BindGroupLayout,
+    pub object_bg_layout: wgpu::BindGroupLayout,
+    pub frame_uniform_buffer: wgpu::Buffer,
+    pub frame_bind_group: wgpu::BindGroup,
+    pub object_uniform_buffer: wgpu::Buffer,
+    pub object_bind_group: wgpu::BindGroup,
+}
+
+impl RenderState {
+    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
+        // ── bind group layouts ──────────────────────────────────────────────
+
+        let frame_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("frame bg layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<FrameUniforms>() as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
+        let object_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("object bg layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<ObjectUniforms>() as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
+        // ── buffers ─────────────────────────────────────────────────────────
+
+        let frame_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("frame uniforms"),
+            size: std::mem::size_of::<FrameUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("frame bind group"),
+            layout: &frame_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: frame_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let object_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("object uniforms"),
+            size: MAX_OBJECTS * OBJECT_ALIGN,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let object_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("object bind group"),
+            layout: &object_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &object_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(std::mem::size_of::<ObjectUniforms>() as u64),
+                }),
+            }],
+        });
+
+        // ── pipeline ─────────────────────────────────────────────────────────
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("cube shader"),
+            source: wgpu::ShaderSource::Wgsl(CUBE_WGSL.into()),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("cube pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[VERTEX_BUFFER_LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None, // Phase 3: depth buffer
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Self {
+            pipeline,
+            frame_bg_layout,
+            object_bg_layout,
+            frame_uniform_buffer,
+            frame_bind_group,
+            object_uniform_buffer,
+            object_bind_group,
+        }
+    }
+}
