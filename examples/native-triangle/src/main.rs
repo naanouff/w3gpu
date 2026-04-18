@@ -376,7 +376,7 @@ fn build_light_uniforms() -> LightUniforms {
     let light_proj = glam::Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 50.0);
     LightUniforms {
         view_proj: (light_proj * light_view).to_cols_array_2d(),
-        shadow_bias: 0.005,
+        shadow_bias: 0.001,
         _pad: [0.0; 3],
     }
 }

@@ -122,8 +122,8 @@ impl ShadowPass {
                     stencil: wgpu::StencilState::default(),
                     // slope-scaled bias prevents self-shadowing artifacts
                     bias: wgpu::DepthBiasState {
-                        constant: 2,
-                        slope_scale: 2.0,
+                        constant: 1,
+                        slope_scale: 1.0,
                         clamp: 0.0,
                     },
                 }),
