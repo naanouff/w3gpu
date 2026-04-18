@@ -182,7 +182,14 @@ impl State {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.context.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
@@ -193,6 +200,11 @@ impl State {
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
                 rp.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
+                let mat_bg = self.asset_registry
+                    .get_material(cmd.material_id)
+                    .map(|m| &m.bind_group)
+                    .unwrap_or(&self.render_state.fallback_material_bind_group);
+                rp.set_bind_group(2, mat_bg, &[]);
                 if let Some(m) = self.asset_registry.get_mesh(cmd.mesh_id) {
                     rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
                     rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
