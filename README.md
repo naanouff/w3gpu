@@ -38,27 +38,29 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 ```
 
-### Run on desktop
+### Quick start
 
 ```bash
-cargo run -p native-triangle
+cargo xtask www      # build WASM + start Vite dev server (http://localhost:5173)
+cargo xtask client   # build + run the native desktop client
 ```
 
-### Run in the browser
+Both commands handle all build steps automatically. `cargo xtask www` also runs `npm install` if `node_modules` is missing.
+
+### Manual commands
 
 ```bash
-cd www
-npm install
-npm run dev
+# Desktop only
+cargo run -p native-triangle
+
+# Browser only
+cd www && npm install && npm run dev
+
+# Build WASM only
+wasm-pack build crates/w3gpu-wasm --target web --out-dir www/pkg
 ```
 
 Open `http://localhost:5173` in a browser that supports WebGPU (Chrome 113+, Edge 113+).
-
-### Build WASM only
-
-```bash
-wasm-pack build crates/w3gpu-wasm --target web --out-dir www/pkg
-```
 
 ## TypeScript API
 
