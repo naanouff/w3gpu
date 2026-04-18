@@ -125,24 +125,27 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
 }
 
 // 3×3 PCF shadow factor: 1.0 = fully lit, 0.0 = fully in shadow.
+// textureSampleCompare must be in uniform control flow, so we always run the
+// loop on clamped coordinates and use select() instead of an early return.
 fn pcf_shadow(world_pos: vec3<f32>) -> f32 {
-    let light_clip = frame.light_view_proj * vec4<f32>(world_pos, 1.0);
-    let ndc        = light_clip.xyz / light_clip.w;
+    let light_clip  = frame.light_view_proj * vec4<f32>(world_pos, 1.0);
+    let ndc         = light_clip.xyz / light_clip.w;
     // NDC [-1,1] → UV [0,1], flip Y (WebGPU NDC Y-up, UV Y-down)
-    let uv        = ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-    let depth_ref = ndc.z - frame.shadow_bias;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth_ref > 1.0) {
-        return 1.0; // outside shadow frustum — treat as lit
-    }
+    let uv          = ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    let depth_ref   = ndc.z - frame.shadow_bias;
+    let in_frustum  = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0 && depth_ref <= 1.0;
+    // Clamp so out-of-frustum taps don't sample outside [0,1]
+    let safe_uv     = clamp(uv, vec2<f32>(0.001), vec2<f32>(0.999));
+    let safe_depth  = clamp(depth_ref, 0.0, 1.0);
     var shadow = 0.0;
     let texel = 1.0 / 2048.0;
     for (var xi: i32 = -1; xi <= 1; xi = xi + 1) {
         for (var yi: i32 = -1; yi <= 1; yi = yi + 1) {
             let off = vec2<f32>(f32(xi), f32(yi)) * texel;
-            shadow += textureSampleCompare(shadow_map, shadow_sampler, uv + off, depth_ref);
+            shadow += textureSampleCompare(shadow_map, shadow_sampler, safe_uv + off, safe_depth);
         }
     }
-    return shadow / 9.0;
+    return select(1.0, shadow / 9.0, in_frustum);
 }
 
 @fragment
