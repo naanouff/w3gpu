@@ -29,7 +29,7 @@ pub struct RenderState {
     pub object_uniform_buffer: wgpu::Buffer,
     pub object_bind_group: wgpu::BindGroup,
     pub fallback_material_bind_group: wgpu::BindGroup,
-    fallback_material_buffer: wgpu::Buffer,
+    _fallback_material_buffer: wgpu::Buffer,
 }
 
 impl RenderState {
@@ -208,7 +208,7 @@ impl RenderState {
             object_uniform_buffer,
             object_bind_group,
             fallback_material_bind_group,
-            fallback_material_buffer,
+            _fallback_material_buffer: fallback_material_buffer,
         }
     }
 }
