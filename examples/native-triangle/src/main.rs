@@ -12,8 +12,8 @@ use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    AssetRegistry, FrameUniforms, GpuContext, IblContext, MaterialTextures, ObjectUniforms,
-    RenderCommand, RenderState,
+    AssetRegistry, FrameUniforms, GpuContext, IblContext, LightUniforms, MaterialTextures,
+    ObjectUniforms, RenderCommand, RenderState, ShadowPass,
     camera_system, frustum_culling_system, transform_system, OBJECT_ALIGN,
 };
 
@@ -66,6 +66,7 @@ struct State {
     render_state: RenderState,
     asset_registry: AssetRegistry,
     ibl_context: IblContext,
+    shadow_pass: ShadowPass,
     world: World,
     scheduler: Scheduler,
     scene_entities: Vec<u32>,
@@ -149,6 +150,12 @@ impl State {
             }
         };
 
+        let shadow_pass = ShadowPass::new(
+            &context.device,
+            &render_state.shadow_bg_layout,
+            &render_state.object_bg_layout,
+        );
+
         // IBL: load HDR if present, otherwise use default
         let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
         let ibl_context = match std::fs::read(&hdr_path) {
@@ -199,6 +206,7 @@ impl State {
             render_state,
             asset_registry,
             ibl_context,
+            shadow_pass,
             world,
             scheduler,
             scene_entities,
@@ -243,6 +251,9 @@ impl State {
             bytemuck::bytes_of(&frame_uniforms),
         );
 
+        let light_uniforms = build_light_uniforms();
+        self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
+
         let commands = collect_render_commands(&self.world);
         for (i, cmd) in commands.iter().enumerate() {
             self.context.queue.write_buffer(
@@ -253,9 +264,41 @@ impl State {
         }
 
         let mut enc = self.context.device.create_command_encoder(&Default::default());
+
+        // ── pass 1 : shadow depth ──────────────────────────────────────────────
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
+                label: Some("shadow pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_pass.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            rp.set_pipeline(&self.shadow_pass.depth_pipeline);
+            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            for (i, cmd) in commands.iter().enumerate() {
+                if !cmd.cast_shadow { continue; }
+                let offset = (i as u32) * OBJECT_ALIGN as u32;
+                rp.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
+                if let Some(m) = self.asset_registry.get_mesh(cmd.mesh_id) {
+                    rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
+                    rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    rp.draw_indexed(0..m.index_count, 0, 0..1);
+                }
+            }
+        }
+
+        // ── pass 2 : PBR main ───────────────────────────��─────────────────────
+        {
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("main pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -279,6 +322,7 @@ impl State {
             rp.set_pipeline(&self.render_state.pipeline);
             rp.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
             rp.set_bind_group(3, &self.ibl_context.bind_group, &[]);
+            rp.set_bind_group(4, &self.shadow_pass.main_bind_group, &[]);
 
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
@@ -294,6 +338,7 @@ impl State {
                 }
             }
         }
+
         self.context.queue.submit(std::iter::once(enc.finish()));
         output.present();
     }
@@ -315,6 +360,18 @@ fn fallback_cube(
         &render_state.material_bg_layout,
     );
     vec![(mesh_id, mat_id)]
+}
+
+fn build_light_uniforms() -> LightUniforms {
+    let light_dir = glam::Vec3::new(-0.5, -1.0, -0.5).normalize();
+    let light_pos = -light_dir * 20.0;
+    let light_view = glam::Mat4::look_at_rh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
+    let light_proj = glam::Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 50.0);
+    LightUniforms {
+        view_proj: (light_proj * light_view).to_cols_array_2d(),
+        shadow_bias: 0.005,
+        _pad: [0.0; 3],
+    }
 }
 
 fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {

@@ -7,8 +7,8 @@ use w3gpu_ecs::{
 };
 use w3gpu_renderer::{
     camera_system, frustum_culling_system, transform_system,
-    AssetRegistry, FrameUniforms, GpuContext, IblContext, MaterialTextures, ObjectUniforms,
-    RenderCommand, RenderState, OBJECT_ALIGN,
+    AssetRegistry, FrameUniforms, GpuContext, IblContext, LightUniforms, MaterialTextures,
+    ObjectUniforms, RenderCommand, RenderState, ShadowPass, OBJECT_ALIGN,
 };
 
 #[wasm_bindgen]
@@ -19,6 +19,7 @@ pub struct W3gpuEngine {
     asset_registry: AssetRegistry,
     render_state: RenderState,
     ibl_context: IblContext,
+    shadow_pass: ShadowPass,
     total_time: f32,
 }
 
@@ -58,6 +59,12 @@ impl W3gpuEngine {
             &render_state.ibl_bg_layout,
         );
 
+        let shadow_pass = ShadowPass::new(
+            &context.device,
+            &render_state.shadow_bg_layout,
+            &render_state.object_bg_layout,
+        );
+
         let mut scheduler = Scheduler::new();
         scheduler
             .add_system(transform_system)
@@ -71,6 +78,7 @@ impl W3gpuEngine {
             asset_registry,
             render_state,
             ibl_context,
+            shadow_pass,
             total_time: 0.0,
         })
     }
@@ -240,11 +248,15 @@ impl W3gpuEngine {
         };
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        // upload per-frame uniforms
         let frame_uniforms = self.build_frame_uniforms();
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer, 0,
             bytemuck::bytes_of(&frame_uniforms),
         );
+
+        let light_uniforms = Self::build_light_uniforms();
+        self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
 
         let commands = self.collect_render_commands();
         for (i, cmd) in commands.iter().enumerate() {
@@ -258,6 +270,39 @@ impl W3gpuEngine {
         let mut encoder = self.context.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
 
+        // ── pass 1 : shadow depth ─────────────────────────────────────────────
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_pass.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            rpass.set_pipeline(&self.shadow_pass.depth_pipeline);
+            rpass.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+
+            for (i, cmd) in commands.iter().enumerate() {
+                if !cmd.cast_shadow { continue; }
+                let offset = (i as u32) * OBJECT_ALIGN as u32;
+                rpass.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
+                if let Some(gpu_mesh) = self.asset_registry.get_mesh(cmd.mesh_id) {
+                    rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                    rpass.set_index_buffer(gpu_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    rpass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
+                }
+            }
+        }
+
+        // ── pass 2 : PBR main ─────────────────────────────────────────────────
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main pass"),
@@ -284,6 +329,7 @@ impl W3gpuEngine {
             rpass.set_pipeline(&self.render_state.pipeline);
             rpass.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
             rpass.set_bind_group(3, &self.ibl_context.bind_group, &[]);
+            rpass.set_bind_group(4, &self.shadow_pass.main_bind_group, &[]);
 
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
@@ -307,6 +353,18 @@ impl W3gpuEngine {
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+    }
+
+    fn build_light_uniforms() -> LightUniforms {
+        let light_dir = glam::Vec3::new(-0.5, -1.0, -0.5).normalize();
+        let light_pos = -light_dir * 20.0;
+        let light_view = glam::Mat4::look_at_rh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
+        let light_proj = glam::Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 50.0);
+        LightUniforms {
+            view_proj: (light_proj * light_view).to_cols_array_2d(),
+            shadow_bias: 0.005,
+            _pad: [0.0; 3],
+        }
     }
 
     fn build_frame_uniforms(&self) -> FrameUniforms {

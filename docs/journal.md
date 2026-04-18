@@ -103,9 +103,39 @@
 
 ---
 
+---
+
+## Phase 3a — Shadow maps + Plugin system
+
+**Réalisé :**
+
+### Shadow maps (directional light, PCF 3×3)
+- `LightUniforms` (80 bytes) : `view_proj mat4 + shadow_bias f32 + padding`
+- `ShadowPass` : texture Depth32Float 2048×2048, pipeline depth-only, deux bind groups
+  - `shadow_light_bind_group` : group 0 du shadow pass (LightUniforms, VERTEX)
+  - `main_bind_group` : group 4 du PBR pass (LightUniforms + shadow_map + comparison sampler)
+- `shadow_depth.wgsl` : vertex-only shader, lit seulement `@location(0) position`
+- `pbr.wgsl` group 4 + `pcf_shadow()` 3×3 samples, `shadow_factor` appliqué à `direct`
+- `RenderState` : `shadow_bg_layout` (group 4), pipeline layout étendu à 5 groupes
+- Render loop two-pass : shadow depth → PBR main (natif + WASM)
+- `build_light_uniforms()` : ortho [-10,10]³, lumière à `-light_dir * 20`
+- Depth bias hardware : `constant=2, slope_scale=2.0` (anti-acne sans front-face trick)
+
+### Plugin system (fondation Phase 3b)
+- Trait `Plugin: 'static { fn name() → &str; fn build(&mut App) }`
+- Struct `App { world: World, scheduler: Scheduler }` + `add_plugin<P: Plugin>()`
+- Prévu pour enregistrer `PbrPlugin`, `ShadowPlugin`, `IblPlugin` en Phase 3b
+
+**Décisions :**
+- Pas de render graph déclaratif pour Phase 3a — passes séquentielles explicites
+- `CompareFunction::LessEqual` dans le sampler de comparaison : 1.0 = lit, 0.0 = ombre
+- Y-flip en WGSL : `ndc.xy * vec2(0.5, -0.5) + 0.5` (WebGPU NDC Y-up, UV Y-down)
+- Frustum ortho fixe 20×20×50u centré à l'origine — suffisant pour le casque
+
+---
+
 ## À venir
 
-- **Phase 3a** : Shadow maps (depth pass + PCF), Render graph, Plugin system
-- **Phase 3b** : ECS Archetypes SoA + Rayon
-- **Phase 4** : GPU-driven (Draw Indirect, Hi-Z)
-- **Phase 5** : Post-processing (bloom, ACES, FXAA)
+- **Phase 3b** : ECS Archetypes SoA + Rayon (migration HashMap → stockage contigu)
+- **Phase 4** : GPU-driven (Draw Indirect, Hi-Z occlusion culling)
+- **Phase 5** : Post-processing (bloom, ACES tone mapping, FXAA)
