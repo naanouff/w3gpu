@@ -28,8 +28,6 @@ pub struct RenderState {
     pub frame_bind_group: wgpu::BindGroup,
     pub object_uniform_buffer: wgpu::Buffer,
     pub object_bind_group: wgpu::BindGroup,
-    pub fallback_material_bind_group: wgpu::BindGroup,
-    _fallback_material_buffer: wgpu::Buffer,
 }
 
 impl RenderState {
@@ -70,21 +68,45 @@ impl RenderState {
                 }],
             });
 
+        // group 2: uniform + 4 textures (albedo, normal, metallic-roughness, emissive) + 1 sampler
+        let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+
         let material_bg_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("material bg layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<MaterialUniforms>() as u64,
-                        ),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(
+                                std::mem::size_of::<MaterialUniforms>() as u64,
+                            ),
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    tex_entry(1), // albedo
+                    tex_entry(2), // normal
+                    tex_entry(3), // metallic-roughness
+                    tex_entry(4), // emissive
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
             });
 
         // ── buffers ─────────────────────────────────────────────────────────
@@ -122,30 +144,6 @@ impl RenderState {
                     offset: 0,
                     size: wgpu::BufferSize::new(std::mem::size_of::<ObjectUniforms>() as u64),
                 }),
-            }],
-        });
-
-        // Fallback white material (used when entity has no material uploaded)
-        use wgpu::util::DeviceExt;
-        let fallback_uniforms = MaterialUniforms {
-            albedo:    [1.0, 1.0, 1.0, 1.0],
-            emissive:  [0.0; 4],
-            metallic:  0.0,
-            roughness: 0.5,
-            _pad:      [0.0; 2],
-        };
-        let fallback_material_buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("fallback material"),
-                contents: bytemuck::bytes_of(&fallback_uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-        let fallback_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("fallback material bind group"),
-            layout: &material_bg_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: fallback_material_buffer.as_entire_binding(),
             }],
         });
 
@@ -207,8 +205,6 @@ impl RenderState {
             frame_bind_group,
             object_uniform_buffer,
             object_bind_group,
-            fallback_material_bind_group,
-            _fallback_material_buffer: fallback_material_buffer,
         }
     }
 }

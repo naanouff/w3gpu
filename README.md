@@ -123,7 +123,7 @@ git commit -m "assets: add my-model.glb"
 
 - [x] Phase 0 — Workspace scaffold, triangle on screen (native + WASM)
 - [x] Phase 1 — ECS-driven cube with perspective camera and frustum culling
-- [x] Phase 2 — PBR lighting, depth buffer, material system, glTF loader
+- [x] Phase 2 — PBR lighting, depth buffer, material system, glTF loader, texture sampling (albedo · normal · metallic-roughness · emissive)
 - [ ] Phase 3 — Render graph, shadow maps, IBL, post-processing (bloom, tone mapping, FXAA)
 - [ ] Phase 4 — GPU instancing, LOD, occlusion culling (HZB)
 - [ ] Phase 5 — Native ray tracing (ray queries via wgpu, full RT pipeline via Vulkan/DXR)

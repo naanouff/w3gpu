@@ -12,7 +12,8 @@ use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    AssetRegistry, FrameUniforms, GpuContext, ObjectUniforms, RenderCommand, RenderState,
+    AssetRegistry, FrameUniforms, GpuContext, MaterialTextures, ObjectUniforms,
+    RenderCommand, RenderState,
     camera_system, frustum_culling_system, transform_system, OBJECT_ALIGN,
 };
 
@@ -86,7 +87,16 @@ impl State {
             .expect("GPU context creation failed");
 
         let render_state = RenderState::new(&context.device, context.surface_format);
-        let mut asset_registry = AssetRegistry::new();
+        let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
+
+        // Default material at id=0
+        use w3gpu_assets::Material;
+        asset_registry.upload_material(
+            &Material::default(),
+            MaterialTextures::default(),
+            &context.device,
+            &render_state.material_bg_layout,
+        );
         let mut world = World::new();
 
         // Try loading a GLB from the first CLI arg, then the default demo asset location.
@@ -107,11 +117,25 @@ impl State {
             Ok(bytes) => {
                 log::info!("Loading GLB: {glb_path}");
                 match load_from_bytes(&bytes) {
-                    Ok(pairs) => pairs
+                    Ok(prims) => prims
                         .into_iter()
-                        .map(|(mesh, mat)| {
-                            let mesh_id = asset_registry.upload_mesh(&mesh, &context.device, &context.queue);
-                            let mat_id  = asset_registry.upload_material(&mat, &context.device, &render_state.material_bg_layout);
+                        .map(|prim| {
+                            let mesh_id = asset_registry.upload_mesh(&prim.mesh, &context.device, &context.queue);
+                            let textures = MaterialTextures {
+                                albedo: prim.albedo_image.map(|img| {
+                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, true, &context.device, &context.queue)
+                                }),
+                                normal: prim.normal_image.map(|img| {
+                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, false, &context.device, &context.queue)
+                                }),
+                                metallic_roughness: prim.metallic_roughness_image.map(|img| {
+                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, false, &context.device, &context.queue)
+                                }),
+                                emissive: prim.emissive_image.map(|img| {
+                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, true, &context.device, &context.queue)
+                                }),
+                            };
+                            let mat_id = asset_registry.upload_material(&prim.material, textures, &context.device, &render_state.material_bg_layout);
                             (mesh_id, mat_id)
                         })
                         .collect(),
@@ -237,11 +261,10 @@ impl State {
             for (i, cmd) in commands.iter().enumerate() {
                 let offset = (i as u32) * OBJECT_ALIGN as u32;
                 rp.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
-                let mat_bg = self.asset_registry
-                    .get_material(cmd.material_id)
-                    .map(|m| &m.bind_group)
-                    .unwrap_or(&self.render_state.fallback_material_bind_group);
-                rp.set_bind_group(2, mat_bg, &[]);
+                let mat = self.asset_registry.get_material(cmd.material_id)
+                    .or_else(|| self.asset_registry.get_material(0));
+                let Some(mat) = mat else { continue };
+                rp.set_bind_group(2, &mat.bind_group, &[]);
                 if let Some(m) = self.asset_registry.get_mesh(cmd.mesh_id) {
                     rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
                     rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -265,6 +288,7 @@ fn fallback_cube(
     let mesh_id = registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
     let mat_id  = registry.upload_material(
         &Material::default(),
+        MaterialTextures::default(),
         &context.device,
         &render_state.material_bg_layout,
     );

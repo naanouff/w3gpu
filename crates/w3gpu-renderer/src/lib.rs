@@ -8,7 +8,7 @@ pub mod render_state;
 pub mod systems;
 pub mod vertex_layout;
 
-pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh};
+pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh, GpuTexture, MaterialTextures};
 pub use error::EngineError;
 pub use frame_uniforms::FrameUniforms;
 pub use gpu_context::{GpuContext, DEPTH_FORMAT};
