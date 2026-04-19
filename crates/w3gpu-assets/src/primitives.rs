@@ -91,7 +91,7 @@ pub fn uv_sphere(radius: f32, stacks: u32, sectors: u32) -> Mesh {
         for j in 0..sectors {
             let k0 = i * sw + j;
             let k1 = (i + 1) * sw + j;
-            indices.extend_from_slice(&[k0, k1, k0 + 1, k0 + 1, k1, k1 + 1]);
+            indices.extend_from_slice(&[k0, k0 + 1, k1, k1, k0 + 1, k1 + 1]);
         }
     }
 
