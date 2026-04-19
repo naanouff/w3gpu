@@ -34,7 +34,9 @@ impl GpuContext {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("w3gpu device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                // Use WebGPU-tier limits (not WebGL2 downlevel) — storage buffers
+                // in vertex shaders are required for instanced draw indirect (Phase 4).
+                required_limits: wgpu::Limits::default()
                     .using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::default(),
             }, None)
