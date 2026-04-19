@@ -20,8 +20,8 @@ pub struct ShadowPass {
 }
 
 impl ShadowPass {
-    /// `object_bg_layout` — dynamic-offset object layout reused from `RenderState`.
-    pub fn new(device: &wgpu::Device, object_bg_layout: &wgpu::BindGroupLayout) -> Self {
+    /// `instance_bg_layout` — storage-buffer instance layout from `RenderState`.
+    pub fn new(device: &wgpu::Device, instance_bg_layout: &wgpu::BindGroupLayout) -> Self {
         // ── shadow depth texture ─────────────────────────────────────────────
         let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow map"),
@@ -95,7 +95,7 @@ impl ShadowPass {
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("shadow depth pipeline layout"),
-                bind_group_layouts: &[&shadow_light_bg_layout, object_bg_layout],
+                bind_group_layouts: &[&shadow_light_bg_layout, instance_bg_layout],
                 push_constant_ranges: &[],
             });
 

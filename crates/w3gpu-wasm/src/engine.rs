@@ -6,9 +6,9 @@ use w3gpu_ecs::{
     Scheduler, World,
 };
 use w3gpu_renderer::{
-    camera_system, frustum_culling_system, transform_system,
-    AssetRegistry, FrameUniforms, GpuContext, IblContext, LightUniforms, MaterialTextures,
-    ObjectUniforms, RenderCommand, RenderState, ShadowPass, OBJECT_ALIGN,
+    build_batches, camera_system, frustum_culling_system, transform_system,
+    AssetRegistry, DrawIndexedIndirectArgs, FrameUniforms, GpuContext, IblContext,
+    LightUniforms, MaterialTextures, RenderCommand, RenderState, ShadowPass,
 };
 
 #[wasm_bindgen]
@@ -61,7 +61,7 @@ impl W3gpuEngine {
 
         let shadow_pass = ShadowPass::new(
             &context.device,
-            &render_state.object_bg_layout,
+            &render_state.instance_bg_layout,
         );
 
         let env_bind_group = build_env_bind_group(
@@ -271,14 +271,35 @@ impl W3gpuEngine {
         self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
 
         let commands = self.collect_render_commands();
-        for (i, cmd) in commands.iter().enumerate() {
+        let (matrices, batches) = build_batches(commands);
+
+        if !matrices.is_empty() {
             self.context.queue.write_buffer(
-                &self.render_state.object_uniform_buffer,
-                i as u64 * OBJECT_ALIGN,
-                bytemuck::bytes_of(&ObjectUniforms { world: cmd.world_matrix }),
+                &self.render_state.instance_buffer, 0,
+                bytemuck::cast_slice(&matrices),
             );
         }
 
+        let indirect_args: Vec<DrawIndexedIndirectArgs> = batches.iter().map(|b| {
+            let index_count = self.asset_registry.get_mesh(b.mesh_id)
+                .map(|m| m.index_count).unwrap_or(0);
+            DrawIndexedIndirectArgs {
+                index_count,
+                instance_count: b.instance_count,
+                first_index:    0,
+                base_vertex:    0,
+                first_instance: b.first_instance,
+            }
+        }).collect();
+
+        if !indirect_args.is_empty() {
+            self.context.queue.write_buffer(
+                &self.render_state.indirect_buffer, 0,
+                bytemuck::cast_slice(&indirect_args),
+            );
+        }
+
+        let indirect_stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut encoder = self.context.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
 
@@ -301,16 +322,17 @@ impl W3gpuEngine {
 
             rpass.set_pipeline(&self.shadow_pass.depth_pipeline);
             rpass.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            rpass.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
 
-            for (i, cmd) in commands.iter().enumerate() {
-                if !cmd.cast_shadow { continue; }
-                let offset = (i as u32) * OBJECT_ALIGN as u32;
-                rpass.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
-                if let Some(gpu_mesh) = self.asset_registry.get_mesh(cmd.mesh_id) {
-                    rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-                    rpass.set_index_buffer(gpu_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rpass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
-                }
+            for (idx, batch) in batches.iter().enumerate() {
+                if !batch.cast_shadow { continue; }
+                let Some(gpu_mesh) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
+                rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                rpass.set_index_buffer(gpu_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rpass.draw_indexed_indirect(
+                    &self.render_state.indirect_buffer,
+                    idx as u64 * indirect_stride,
+                );
             }
         }
 
@@ -340,25 +362,21 @@ impl W3gpuEngine {
 
             rpass.set_pipeline(&self.render_state.pipeline);
             rpass.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
+            rpass.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             rpass.set_bind_group(3, &self.env_bind_group, &[]);
 
-            for (i, cmd) in commands.iter().enumerate() {
-                let offset = (i as u32) * OBJECT_ALIGN as u32;
-                rpass.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
-
-                if let Some(mat) = self.asset_registry.get_material(cmd.material_id) {
-                    rpass.set_bind_group(2, &mat.bind_group, &[]);
-                } else if let Some(default_mat) = self.asset_registry.get_material(0) {
-                    rpass.set_bind_group(2, &default_mat.bind_group, &[]);
-                } else {
-                    continue;
-                }
-
-                if let Some(gpu_mesh) = self.asset_registry.get_mesh(cmd.mesh_id) {
-                    rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-                    rpass.set_index_buffer(gpu_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rpass.draw_indexed(0..gpu_mesh.index_count, 0, 0..1);
-                }
+            for (idx, batch) in batches.iter().enumerate() {
+                let mat = self.asset_registry.get_material(batch.material_id)
+                    .or_else(|| self.asset_registry.get_material(0));
+                let Some(mat) = mat else { continue };
+                let Some(gpu_mesh) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
+                rpass.set_bind_group(2, &mat.bind_group, &[]);
+                rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+                rpass.set_index_buffer(gpu_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rpass.draw_indexed_indirect(
+                    &self.render_state.indirect_buffer,
+                    idx as u64 * indirect_stride,
+                );
             }
         }
 

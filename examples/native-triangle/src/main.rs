@@ -12,9 +12,9 @@ use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    AssetRegistry, FrameUniforms, GpuContext, IblContext, LightUniforms, MaterialTextures,
-    ObjectUniforms, RenderCommand, RenderState, ShadowPass,
-    camera_system, frustum_culling_system, transform_system, OBJECT_ALIGN,
+    build_batches, AssetRegistry, DrawIndexedIndirectArgs, FrameUniforms, GpuContext,
+    IblContext, LightUniforms, MaterialTextures, RenderCommand, RenderState, ShadowPass,
+    camera_system, frustum_culling_system, transform_system,
 };
 
 fn main() {
@@ -154,7 +154,7 @@ impl State {
 
         let shadow_pass = ShadowPass::new(
             &context.device,
-            &render_state.object_bg_layout,
+            &render_state.instance_bg_layout,
         );
 
         // IBL: load HDR if present, otherwise use default
@@ -282,14 +282,36 @@ impl State {
         self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
 
         let commands = collect_render_commands(&self.world);
-        for (i, cmd) in commands.iter().enumerate() {
+        let (matrices, batches) = build_batches(commands);
+
+        if !matrices.is_empty() {
             self.context.queue.write_buffer(
-                &self.render_state.object_uniform_buffer,
-                i as u64 * OBJECT_ALIGN,
-                bytemuck::bytes_of(&ObjectUniforms { world: cmd.world_matrix }),
+                &self.render_state.instance_buffer, 0,
+                bytemuck::cast_slice(&matrices),
             );
         }
 
+        // Build indirect args for all batches (CPU-side for now; Phase 4.2 moves this to GPU).
+        let indirect_args: Vec<DrawIndexedIndirectArgs> = batches.iter().map(|b| {
+            let index_count = self.asset_registry.get_mesh(b.mesh_id)
+                .map(|m| m.index_count).unwrap_or(0);
+            DrawIndexedIndirectArgs {
+                index_count,
+                instance_count: b.instance_count,
+                first_index:    0,
+                base_vertex:    0,
+                first_instance: b.first_instance,
+            }
+        }).collect();
+
+        if !indirect_args.is_empty() {
+            self.context.queue.write_buffer(
+                &self.render_state.indirect_buffer, 0,
+                bytemuck::cast_slice(&indirect_args),
+            );
+        }
+
+        let indirect_stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut enc = self.context.device.create_command_encoder(&Default::default());
 
         // ── pass 1 : shadow depth ──────────────────────────────────────────────
@@ -310,19 +332,20 @@ impl State {
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
             rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
-            for (i, cmd) in commands.iter().enumerate() {
-                if !cmd.cast_shadow { continue; }
-                let offset = (i as u32) * OBJECT_ALIGN as u32;
-                rp.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
-                if let Some(m) = self.asset_registry.get_mesh(cmd.mesh_id) {
-                    rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
-                    rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rp.draw_indexed(0..m.index_count, 0, 0..1);
-                }
+            rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
+            for (idx, batch) in batches.iter().enumerate() {
+                if !batch.cast_shadow { continue; }
+                let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
+                rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
+                rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed_indirect(
+                    &self.render_state.indirect_buffer,
+                    idx as u64 * indirect_stride,
+                );
             }
         }
 
-        // ── pass 2 : PBR main ───────────────────────────��─────────────────────
+        // ── pass 2 : PBR main ──────────────────────────────────────────────────
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main pass"),
@@ -348,20 +371,21 @@ impl State {
 
             rp.set_pipeline(&self.render_state.pipeline);
             rp.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
+            rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             rp.set_bind_group(3, &self.env_bind_group, &[]);
 
-            for (i, cmd) in commands.iter().enumerate() {
-                let offset = (i as u32) * OBJECT_ALIGN as u32;
-                rp.set_bind_group(1, &self.render_state.object_bind_group, &[offset]);
-                let mat = self.asset_registry.get_material(cmd.material_id)
+            for (idx, batch) in batches.iter().enumerate() {
+                let mat = self.asset_registry.get_material(batch.material_id)
                     .or_else(|| self.asset_registry.get_material(0));
                 let Some(mat) = mat else { continue };
+                let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
                 rp.set_bind_group(2, &mat.bind_group, &[]);
-                if let Some(m) = self.asset_registry.get_mesh(cmd.mesh_id) {
-                    rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
-                    rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rp.draw_indexed(0..m.index_count, 0, 0..1);
-                }
+                rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
+                rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed_indirect(
+                    &self.render_state.indirect_buffer,
+                    idx as u64 * indirect_stride,
+                );
             }
         }
 

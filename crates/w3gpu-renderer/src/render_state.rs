@@ -7,30 +7,25 @@ use crate::{
 
 pub const PBR_WGSL: &str = include_str!("shaders/pbr.wgsl");
 
-/// Per-object GPU uniform — one mat4 world transform.
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ObjectUniforms {
-    pub world: [[f32; 4]; 4],
-}
+/// Maximum number of instances (world matrices) per frame.
+pub const MAX_INSTANCES: u64 = 1024;
 
-/// WebGPU requires uniform buffer dynamic offsets to be aligned to 256 bytes.
-pub const OBJECT_ALIGN: u64 = 256;
-pub const MAX_OBJECTS: u64 = 1024;
-
-/// All GPU resources needed for a single render pass (pipeline, bind groups, buffers).
+/// All GPU resources needed for the PBR render pass.
 pub struct RenderState {
     pub pipeline: wgpu::RenderPipeline,
     pub frame_bg_layout: wgpu::BindGroupLayout,
-    pub object_bg_layout: wgpu::BindGroupLayout,
+    /// Group 1: storage buffer of mat4x4 world transforms, indexed by instance_index.
+    pub instance_bg_layout: wgpu::BindGroupLayout,
     pub material_bg_layout: wgpu::BindGroupLayout,
-    /// Group 3: IBL cubemaps + BRDF LUT (bindings 0-3) + shadow map + comparison
-    /// sampler (bindings 4-5). Combined to stay within max_bind_groups = 4.
+    /// Group 3: IBL cubemaps + BRDF LUT (bindings 0-3) + shadow map + sampler (4-5).
     pub ibl_bg_layout: wgpu::BindGroupLayout,
     pub frame_uniform_buffer: wgpu::Buffer,
     pub frame_bind_group: wgpu::BindGroup,
-    pub object_uniform_buffer: wgpu::Buffer,
-    pub object_bind_group: wgpu::BindGroup,
+    /// Storage buffer: MAX_INSTANCES × mat4x4<f32> (64 bytes each).
+    pub instance_buffer: wgpu::Buffer,
+    pub instance_bind_group: wgpu::BindGroup,
+    /// Indirect draw args: MAX_INSTANCES × DrawIndexedIndirectArgs (20 bytes each).
+    pub indirect_buffer: wgpu::Buffer,
 }
 
 impl RenderState {
@@ -54,24 +49,24 @@ impl RenderState {
                 }],
             });
 
-        let object_bg_layout =
+        // Group 1: read-only storage buffer — world matrices for all instances.
+        // The vertex shader indexes this with @builtin(instance_index).
+        let instance_bg_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("object bg layout"),
+                label: Some("instance bg layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<ObjectUniforms>() as u64,
-                        ),
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 }],
             });
 
-        // group 2: uniform + 4 textures (albedo, normal, metallic-roughness, emissive) + 1 sampler
+        // Group 2: uniform + 4 textures (albedo, normal, metallic-roughness, emissive) + sampler.
         let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -130,28 +125,33 @@ impl RenderState {
             }],
         });
 
-        let object_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("object uniforms"),
-            size: MAX_OBJECTS * OBJECT_ALIGN,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        // mat4x4<f32> = 64 bytes per instance
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("instance buffer"),
+            size: MAX_INSTANCES * 64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let object_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("object bind group"),
-            layout: &object_bg_layout,
+        let instance_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("instance bind group"),
+            layout: &instance_bg_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &object_uniform_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(std::mem::size_of::<ObjectUniforms>() as u64),
-                }),
+                resource: instance_buffer.as_entire_binding(),
             }],
         });
 
-        // group 3: IBL (bindings 0-3) + shadow map/sampler (bindings 4-5)
-        // Merged into one group to respect max_bind_groups = 4 (WebGPU spec limit).
+        // DrawIndexedIndirectArgs = 20 bytes per batch
+        let indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("indirect buffer"),
+            size: MAX_INSTANCES * 20,
+            usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Group 3: IBL (bindings 0-3) + shadow map/sampler (bindings 4-5).
+        // Merged to stay within max_bind_groups = 4 (WebGPU spec limit).
         let cube_tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -184,7 +184,6 @@ impl RenderState {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                // shadow map + comparison sampler (folded into group 3)
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -213,7 +212,12 @@ impl RenderState {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&frame_bg_layout, &object_bg_layout, &material_bg_layout, &ibl_bg_layout],
+            bind_group_layouts: &[
+                &frame_bg_layout,
+                &instance_bg_layout,
+                &material_bg_layout,
+                &ibl_bg_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -256,13 +260,14 @@ impl RenderState {
         Self {
             pipeline,
             frame_bg_layout,
-            object_bg_layout,
+            instance_bg_layout,
             material_bg_layout,
             ibl_bg_layout,
             frame_uniform_buffer,
             frame_bind_group,
-            object_uniform_buffer,
-            object_bind_group,
+            instance_buffer,
+            instance_bind_group,
+            indirect_buffer,
         }
     }
 }
