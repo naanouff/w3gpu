@@ -1,7 +1,9 @@
 pub mod asset_registry;
+pub mod cull_pass;
 pub mod error;
 pub mod frame_uniforms;
 pub mod gpu_context;
+pub mod hiz_pass;
 pub mod ibl;
 pub mod light_uniforms;
 pub mod material_uniforms;
@@ -13,14 +15,20 @@ pub mod systems;
 pub mod vertex_layout;
 
 pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh, GpuTexture, MaterialTextures};
+pub use cull_pass::{CullPass, CullUniforms, MAX_CULL_ENTITIES};
 pub use error::EngineError;
 pub use frame_uniforms::FrameUniforms;
 pub use gpu_context::{GpuContext, DEPTH_FORMAT};
+pub use hiz_pass::HizPass;
 pub use ibl::IblContext;
 pub use light_uniforms::LightUniforms;
 pub use material_uniforms::MaterialUniforms;
 pub use plugin::{App, Plugin};
-pub use render_command::{build_batches, DrawBatch, DrawIndexedIndirectArgs, RenderCommand};
+pub use render_command::{
+    build_batches, build_entity_list, derive_shadow_batches,
+    DrawBatch, DrawEntity, DrawIndexedIndirectArgs, EntityCullData,
+    RenderCommand, ShadowBatch,
+};
 pub use render_state::{RenderState, MAX_INSTANCES};
 pub use shadow_pass::{ShadowPass, SHADOW_SIZE};
 pub use systems::{camera_system, frustum_culling_system, transform_system};

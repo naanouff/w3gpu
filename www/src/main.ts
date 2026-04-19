@@ -7,6 +7,8 @@ const SPACING = 2.4;
 // base_x(+90°) = (qx=√½, qy=0, qz=0, qw=√½)
 const S = Math.SQRT1_2;
 
+let cullEnabled = true;
+
 async function main(): Promise<void> {
   await init();
 
@@ -16,10 +18,8 @@ async function main(): Promise<void> {
   // IBL
   status.textContent = 'Loading environment...';
   try {
-    const hdrResponse = await fetch('/studio_small_03_2k.hdr');
-    if (hdrResponse.ok) {
-      engine.load_hdr(new Uint8Array(await hdrResponse.arrayBuffer()));
-    }
+    const hdrRes = await fetch('/studio_small_03_2k.hdr');
+    if (hdrRes.ok) engine.load_hdr(new Uint8Array(await hdrRes.arrayBuffer()));
   } catch (e) {
     console.warn('HDR load failed, using default IBL:', e);
   }
@@ -34,18 +34,18 @@ async function main(): Promise<void> {
   const meshId = ids[0];
   const matId  = ids[1];
 
-  // Camera — framed for the full 5×5 grid
+  // Camera
   const cam = engine.create_entity();
   engine.add_camera(cam, 60.0, window.innerWidth / window.innerHeight, 0.1, 200.0);
-  // Position: (0, 5, 16) looking at origin → quaternion from look_at
-  // We approximate: tilt slightly down, no lateral spin
-  // pitch = atan2(-5, 16) ≈ -17.4° → half-angle ≈ -8.7°
+  // look_at_rh(eye=(0,5,16), target=(0,0,0)): pitch ≈ atan2(-5,16)
   const pitch = Math.atan2(-5, 16);
-  const cpx   = Math.sin(pitch / 2);
-  const cpw   = Math.cos(pitch / 2);
-  engine.set_transform(cam, 0, 5, 16,  cpx, 0, 0, cpw,  1, 1, 1);
+  engine.set_transform(cam,
+    0, 5, 16,
+    Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2),
+    1, 1, 1,
+  );
 
-  // 5×5 helmet grid — all same (meshId, matId) → 1 draw call via batching
+  // 5×5 helmet grid — all same mesh → 1 draw call via batching
   const entities = new Array<number>();
   const phases   = new Array<number>();
   for (let row = 0; row < GRID; row++) {
@@ -53,25 +53,45 @@ async function main(): Promise<void> {
       const x     = (col - Math.floor(GRID / 2)) * SPACING;
       const z     = (row - Math.floor(GRID / 2)) * SPACING;
       const phase = (row * GRID + col) * (Math.PI * 2 / (GRID * GRID));
-      const entity = engine.create_entity();
-      engine.set_mesh_renderer(entity, meshId, matId);
-      engine.set_transform(entity, x, 0, z,  S, 0, 0, S,  1, 1, 1);
-      entities.push(entity);
+      const e     = engine.create_entity();
+      engine.set_mesh_renderer(e, meshId, matId);
+      engine.set_transform(e, x, 0, z,  S, 0, 0, S,  1, 1, 1);
+      entities.push(e);
       phases.push(phase);
     }
   }
 
-  // Ground plane — different material → separate batch (2nd draw call)
+  // Occluder wall — red metallic slab that blocks rear helmet rows
+  // Position Z=-1.2, between camera and rear rows (Z=-2.4, -4.8)
+  const wallMesh = engine.upload_cube_mesh();
+  const wallMat  = engine.upload_material(0.8, 0.05, 0.05, 1.0, 0.9, 0.2, 0, 0, 0);
+  const wall     = engine.create_entity();
+  engine.set_mesh_renderer(wall, wallMesh, wallMat);
+  engine.set_transform(wall, 0, 0.8, -1.2,  0, 0, 0, 1,  7, 3, 0.25);
+
+  // Ground plane
   const floorMesh = engine.upload_cube_mesh();
   const floorMat  = engine.upload_material(0.35, 0.35, 0.35, 1.0, 0.0, 0.9, 0, 0, 0);
-  const floor = engine.create_entity();
+  const floor     = engine.create_entity();
   engine.set_mesh_renderer(floor, floorMesh, floorMat);
   engine.set_transform(floor, 0, -1.2, 0,  0, 0, 0, 1,  14, 0.05, 14);
 
-  const instanceCount = entities.length;
-  const batchCount    = 2; // helmets + floor
-  status.textContent =
-    `w3gpu v${W3gpuEngine.version()} — ${instanceCount} instances → ${batchCount} batches → ${batchCount} draw calls [indirect]`;
+  const updateStatus = (): void => {
+    const s = cullEnabled ? 'ON' : 'OFF';
+    status.textContent =
+      `w3gpu v${W3gpuEngine.version()} — GPU Hi-Z: ${s}  [SPACE to toggle]`;
+  };
+  updateStatus();
+
+  // Space bar toggles GPU Hi-Z culling
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      cullEnabled = !cullEnabled;
+      engine.set_cull_enabled(cullEnabled);
+      updateStatus();
+      e.preventDefault();
+    }
+  });
 
   let prev      = performance.now();
   let totalTime = 0;
@@ -82,7 +102,7 @@ async function main(): Promise<void> {
     prev = now;
     totalTime += dt;
 
-    // Per-entity staggered Y-spin: y_spin(angle+phase) * base_x(+90°)
+    // Per-entity staggered Y-spin
     for (let i = 0; i < entities.length; i++) {
       const angle = totalTime * 0.4 + phases[i];
       const ha  = angle / 2;
@@ -90,7 +110,7 @@ async function main(): Promise<void> {
       const qy  =  S * Math.sin(ha);
       const qz  = -S * Math.sin(ha);
       const qw  =  S * Math.cos(ha);
-      const x   = (( i % GRID) - Math.floor(GRID / 2)) * SPACING;
+      const x   = ((i % GRID) - Math.floor(GRID / 2)) * SPACING;
       const z   = (Math.floor(i / GRID) - Math.floor(GRID / 2)) * SPACING;
       engine.set_transform(entities[i], x, 0, z,  qx, qy, qz, qw,  1, 1, 1);
     }

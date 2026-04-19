@@ -1,9 +1,10 @@
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec3, Vec4};
 use pollster::FutureExt;
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 use w3gpu_assets::{load_from_bytes, load_hdr_from_bytes, primitives};
@@ -12,9 +13,11 @@ use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    build_batches, AssetRegistry, DrawIndexedIndirectArgs, FrameUniforms,
-    GpuContext, IblContext, LightUniforms, MaterialTextures, RenderCommand, RenderState,
-    ShadowPass, camera_system, frustum_culling_system, transform_system,
+    build_entity_list, derive_shadow_batches,
+    AssetRegistry, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs,
+    FrameUniforms, GpuContext, HizPass, IblContext, LightUniforms,
+    MaterialTextures, RenderState, ShadowPass,
+    camera_system, frustum_culling_system, transform_system,
 };
 
 fn main() {
@@ -33,7 +36,7 @@ struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
-            .create_window(Window::default_attributes().with_title("w3gpu — native client"))
+            .create_window(Window::default_attributes().with_title("w3gpu"))
             .unwrap();
         self.state = Some(State::new(window).block_on());
     }
@@ -44,12 +47,26 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.context.resize(size.width, size.height);
+                state.hiz_pass.resize(&state.context.device, size.width, size.height);
+                state.cull_pass.rebuild_hiz_bg(
+                    &state.context.device, &state.hiz_pass.hiz_full_view,
+                );
                 for e in state.world.query_entities::<CameraComponent>() {
                     if let Some(cam) = state.world.get_component_mut::<CameraComponent>(e) {
                         cam.aspect = size.width as f32 / size.height as f32;
                     }
                 }
                 state.window.request_redraw();
+            }
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(KeyCode::Space),
+                    state: ElementState::Pressed,
+                    ..
+                },
+                ..
+            } => {
+                state.cull_enabled = !state.cull_enabled;
             }
             WindowEvent::RedrawRequested => {
                 state.tick();
@@ -69,10 +86,12 @@ struct State {
     ibl_context: IblContext,
     shadow_pass: ShadowPass,
     env_bind_group: wgpu::BindGroup,
+    hiz_pass: HizPass,
+    cull_pass: CullPass,
+    cull_enabled: bool,
     world: World,
     scheduler: Scheduler,
     scene_entities: Vec<u32>,
-    /// Per-entity rotation phase offset (radians), same order as scene_entities.
     entity_phases: Vec<f32>,
     total_time: f32,
     last_instant: std::time::Instant,
@@ -102,90 +121,90 @@ impl State {
             &context.device,
             &render_state.material_bg_layout,
         );
+
         let mut world = World::new();
 
         let workspace = {
             let manifest = env!("CARGO_MANIFEST_DIR");
-            std::path::Path::new(manifest)
-                .parent().unwrap()
-                .parent().unwrap()
-                .to_path_buf()
+            std::path::Path::new(manifest).parent().unwrap().parent().unwrap().to_path_buf()
         };
 
         let glb_path = std::env::args().nth(1).unwrap_or_else(|| {
-            workspace.join("www/public/damaged_helmet_source_glb.glb").to_string_lossy().into_owned()
+            workspace.join("www/public/damaged_helmet_source_glb.glb")
+                .to_string_lossy().into_owned()
         });
 
         let scene_pairs: Vec<(u32, u32)> = match std::fs::read(&glb_path) {
             Ok(bytes) => {
                 log::info!("Loading GLB: {glb_path}");
                 match load_from_bytes(&bytes) {
-                    Ok(prims) => prims
-                        .into_iter()
-                        .map(|prim| {
-                            let mesh_id = asset_registry.upload_mesh(&prim.mesh, &context.device, &context.queue);
-                            let textures = MaterialTextures {
-                                albedo: prim.albedo_image.map(|img| {
-                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, true, &context.device, &context.queue)
-                                }),
-                                normal: prim.normal_image.map(|img| {
-                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, false, &context.device, &context.queue)
-                                }),
-                                metallic_roughness: prim.metallic_roughness_image.map(|img| {
-                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, false, &context.device, &context.queue)
-                                }),
-                                emissive: prim.emissive_image.map(|img| {
-                                    asset_registry.upload_texture_rgba8(&img.data, img.width, img.height, true, &context.device, &context.queue)
-                                }),
-                            };
-                            let mat_id = asset_registry.upload_material(&prim.material, textures, &context.device, &render_state.material_bg_layout);
-                            (mesh_id, mat_id)
-                        })
-                        .collect(),
+                    Ok(prims) => prims.into_iter().map(|prim| {
+                        let mesh_id = asset_registry.upload_mesh(
+                            &prim.mesh, &context.device, &context.queue,
+                        );
+                        let textures = MaterialTextures {
+                            albedo: prim.albedo_image.map(|img| {
+                                asset_registry.upload_texture_rgba8(
+                                    &img.data, img.width, img.height, true,
+                                    &context.device, &context.queue,
+                                )
+                            }),
+                            normal: prim.normal_image.map(|img| {
+                                asset_registry.upload_texture_rgba8(
+                                    &img.data, img.width, img.height, false,
+                                    &context.device, &context.queue,
+                                )
+                            }),
+                            metallic_roughness: prim.metallic_roughness_image.map(|img| {
+                                asset_registry.upload_texture_rgba8(
+                                    &img.data, img.width, img.height, false,
+                                    &context.device, &context.queue,
+                                )
+                            }),
+                            emissive: prim.emissive_image.map(|img| {
+                                asset_registry.upload_texture_rgba8(
+                                    &img.data, img.width, img.height, true,
+                                    &context.device, &context.queue,
+                                )
+                            }),
+                        };
+                        let mat_id = asset_registry.upload_material(
+                            &prim.material, textures,
+                            &context.device, &render_state.material_bg_layout,
+                        );
+                        (mesh_id, mat_id)
+                    }).collect(),
                     Err(e) => {
-                        log::warn!("Failed to parse GLB ({e}), falling back to cube");
+                        log::warn!("Failed to parse GLB ({e}), using cube");
                         fallback_cube(&mut asset_registry, &context, &render_state)
                     }
                 }
             }
             Err(e) => {
-                log::warn!("Cannot read '{glb_path}' ({e}), falling back to cube");
+                log::warn!("Cannot read '{glb_path}' ({e}), using cube");
                 fallback_cube(&mut asset_registry, &context, &render_state)
             }
         };
 
-        let shadow_pass = ShadowPass::new(
-            &context.device,
-            &render_state.instance_bg_layout,
-        );
+        let shadow_pass = ShadowPass::new(&context.device, &render_state.instance_bg_layout);
 
-        // IBL: load HDR if present, otherwise use default
         let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
         let ibl_context = match std::fs::read(&hdr_path) {
-            Ok(bytes) => {
-                log::info!("Loading HDR: {}", hdr_path.display());
-                match load_hdr_from_bytes(&bytes) {
-                    Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue),
-                    Err(e) => {
-                        log::warn!("Failed to parse HDR ({e}), using default IBL");
-                        IblContext::new_default(&context.device, &context.queue)
-                    }
+            Ok(bytes) => match load_hdr_from_bytes(&bytes) {
+                Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue),
+                Err(e) => {
+                    log::warn!("HDR parse failed ({e}), default IBL");
+                    IblContext::new_default(&context.device, &context.queue)
                 }
-            }
-            Err(_) => {
-                log::info!("No HDR found at {}, using default IBL", hdr_path.display());
-                IblContext::new_default(&context.device, &context.queue)
-            }
+            },
+            Err(_) => IblContext::new_default(&context.device, &context.queue),
         };
 
         let env_bind_group = build_env_bind_group(
-            &context.device,
-            &render_state.ibl_bg_layout,
-            &ibl_context,
-            &shadow_pass,
+            &context.device, &render_state.ibl_bg_layout, &ibl_context, &shadow_pass,
         );
 
-        // Camera — positioned to see the full 5×5 grid
+        // ── camera ────────────────────────────────────────────────────────────
         let camera = world.create_entity();
         world.add_component(camera, CameraComponent::new(
             60.0, size.width as f32 / size.height as f32, 0.1, 200.0,
@@ -193,15 +212,13 @@ impl State {
         let eye    = Vec3::new(0.0, 5.0, 16.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
         let (_, cam_rot, _) = glam::Mat4::look_at_rh(eye, target, Vec3::Y)
-            .inverse()
-            .to_scale_rotation_translation();
+            .inverse().to_scale_rotation_translation();
         let mut cam_t = TransformComponent::from_position(eye);
         cam_t.rotation = cam_rot;
         cam_t.update_local_matrix();
         world.add_component(camera, cam_t);
 
-        // 5×5 helmet grid — all instances share the same (mesh_id, mat_id)
-        // → build_batches() will group them into exactly 1 draw call.
+        // ── 5×5 helmet grid ───────────────────────────────────────────────────
         const GRID: i32 = 5;
         const SPACING: f32 = 2.4;
         let base_pair = scene_pairs[0];
@@ -210,8 +227,8 @@ impl State {
         let base_x = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
         for row in 0..GRID {
             for col in 0..GRID {
-                let x = (col - GRID / 2) as f32 * SPACING;
-                let z = (row - GRID / 2) as f32 * SPACING;
+                let x     = (col - GRID / 2) as f32 * SPACING;
+                let z     = (row - GRID / 2) as f32 * SPACING;
                 let phase = (row * GRID + col) as f32 * (std::f32::consts::TAU / 25.0);
                 let entity = world.create_entity();
                 world.add_component(entity, RenderableComponent::new(base_pair.0, base_pair.1));
@@ -224,11 +241,38 @@ impl State {
             }
         }
 
-        // Ground plane — 1 draw call for the floor (different material → separate batch).
+        // ── occluder wall (Phase 4.2 demo) ────────────────────────────────────
+        // Red metallic slab between Z=-1 and Z=0 — occludes the rear 2 helmet rows
+        // (Z = -2.4 and Z = -4.8) from the camera at (0,5,16).
         {
-            use w3gpu_assets::Material;
-            let floor_mesh = asset_registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
-            let floor_mat  = asset_registry.upload_material(
+            let wall_mesh = asset_registry.upload_mesh(
+                &primitives::cube(), &context.device, &context.queue,
+            );
+            let wall_mat = asset_registry.upload_material(
+                &Material {
+                    albedo:    [0.8, 0.05, 0.05, 1.0],
+                    metallic:  0.9,
+                    roughness: 0.2,
+                    ..Default::default()
+                },
+                MaterialTextures::default(),
+                &context.device,
+                &render_state.material_bg_layout,
+            );
+            let wall = world.create_entity();
+            world.add_component(wall, RenderableComponent::new(wall_mesh, wall_mat));
+            let mut t = TransformComponent::from_position(Vec3::new(0.0, 0.8, -1.2));
+            t.scale = Vec3::new(7.0, 3.0, 0.25);
+            t.update_local_matrix();
+            world.add_component(wall, t);
+        }
+
+        // ── ground plane ──────────────────────────────────────────────────────
+        {
+            let floor_mesh = asset_registry.upload_mesh(
+                &primitives::cube(), &context.device, &context.queue,
+            );
+            let floor_mat = asset_registry.upload_material(
                 &Material { albedo: [0.35, 0.35, 0.35, 1.0], roughness: 0.9, ..Default::default() },
                 MaterialTextures::default(),
                 &context.device,
@@ -248,6 +292,19 @@ impl State {
             .add_system(camera_system)
             .add_system(frustum_culling_system);
 
+        // ── Phase 4.2: Hi-Z + cull pass ───────────────────────────────────────
+        let mut hiz_pass = HizPass::new(
+            &context.device,
+            &render_state.instance_bg_layout,
+            size.width, size.height,
+        );
+        // Ensure valid initial size (winit may report 0×0 before first resize)
+        if size.width == 0 || size.height == 0 {
+            hiz_pass.resize(&context.device, 800, 600);
+        }
+        let mut cull_pass = CullPass::new(&context.device);
+        cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
+
         Self {
             window,
             context,
@@ -256,6 +313,9 @@ impl State {
             ibl_context,
             shadow_pass,
             env_bind_group,
+            hiz_pass,
+            cull_pass,
+            cull_enabled: true,
             world,
             scheduler,
             scene_entities,
@@ -267,11 +327,11 @@ impl State {
 
     fn tick(&mut self) {
         let now = std::time::Instant::now();
-        let dt = now.duration_since(self.last_instant).as_secs_f32();
+        let dt  = now.duration_since(self.last_instant).as_secs_f32();
         self.last_instant = now;
-        self.total_time += dt;
+        self.total_time  += dt;
 
-        // Each entity rotates at its own phase offset → staggered wave across the grid.
+        // Per-entity staggered Y-spin
         let base_x = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
         for (&entity, &phase) in self.scene_entities.iter().zip(&self.entity_phases) {
             if let Some(t) = self.world.get_component_mut::<TransformComponent>(entity) {
@@ -283,39 +343,13 @@ impl State {
 
         self.scheduler.run(&mut self.world, dt, self.total_time);
 
-        // Collect commands just for the title (render() will re-collect them).
-        let cmds = collect_render_commands(&self.world);
-        let instance_count = cmds.len();
-        let (_, batches) = build_batches(cmds);
-        let batch_count = batches.len();
-        let s = |n: usize| if n == 1 { "" } else { "s" };
-        self.window.set_title(&format!(
-            "w3gpu  |  {instance_count} instance{}  →  {batch_count} batch{}  →  {batch_count} draw call{} [indirect]",
-            s(instance_count), s(batch_count), s(batch_count),
-        ));
+        // Collect entities (with world-space AABBs) → sort → build GPU buffers
+        let entities = collect_draw_entities(&self.world, &self.asset_registry);
+        let entity_count = entities.len() as u32;
+        let (matrices, cull_data, sorted) = build_entity_list(entities);
+        let shadow_batches = derive_shadow_batches(&sorted);
 
-        self.render();
-    }
-
-    fn render(&self) {
-        let output = match self.context.surface.get_current_texture() {
-            Ok(t) => t,
-            Err(e) => { log::warn!("surface error: {e}"); return; }
-        };
-        let view = output.texture.create_view(&Default::default());
-
-        let frame_uniforms = build_frame_uniforms(&self.world, self.total_time);
-        self.context.queue.write_buffer(
-            &self.render_state.frame_uniform_buffer, 0,
-            bytemuck::bytes_of(&frame_uniforms),
-        );
-
-        let light_uniforms = build_light_uniforms();
-        self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
-
-        let commands = collect_render_commands(&self.world);
-        let (matrices, batches) = build_batches(commands);
-
+        // Upload instance matrices
         if !matrices.is_empty() {
             self.context.queue.write_buffer(
                 &self.render_state.instance_buffer, 0,
@@ -323,30 +357,79 @@ impl State {
             );
         }
 
-        // Build indirect args for all batches (CPU-side for now; Phase 4.2 moves this to GPU).
-        let indirect_args: Vec<DrawIndexedIndirectArgs> = batches.iter().map(|b| {
-            let index_count = self.asset_registry.get_mesh(b.mesh_id)
-                .map(|m| m.index_count).unwrap_or(0);
-            DrawIndexedIndirectArgs {
-                index_count,
-                instance_count: b.instance_count,
-                first_index:    0,
-                base_vertex:    0,
-                first_instance: b.first_instance,
-            }
-        }).collect();
-
-        if !indirect_args.is_empty() {
+        // Upload entity cull data
+        if !cull_data.is_empty() {
             self.context.queue.write_buffer(
-                &self.render_state.indirect_buffer, 0,
-                bytemuck::cast_slice(&indirect_args),
+                &self.cull_pass.entity_cull_buf, 0,
+                bytemuck::cast_slice(&cull_data),
             );
         }
+
+        // Upload cull uniforms
+        let (view_proj, _) = camera_view_proj(&self.world);
+        let cull_uniforms = CullUniforms {
+            view_proj:    view_proj.to_cols_array_2d(),
+            screen_size:  [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
+            entity_count,
+            mip_levels:   self.hiz_pass.mip_count,
+            cull_enabled: if self.cull_enabled { 1 } else { 0 },
+            _pad:         [0; 3],
+        };
+        self.context.queue.write_buffer(
+            &self.cull_pass.cull_uniform_buf, 0,
+            bytemuck::bytes_of(&cull_uniforms),
+        );
+
+        // Upload camera to HizPass (for z-prepass)
+        self.hiz_pass.update_camera(&self.context.queue, view_proj.to_cols_array_2d());
+
+        let cull_str = if self.cull_enabled { "ON" } else { "OFF" };
+        self.window.set_title(&format!(
+            "w3gpu  |  {} entities  |  GPU Hi-Z: {cull_str}  [SPACE]",
+            entity_count,
+        ));
+
+        self.render(entity_count, &sorted, &shadow_batches);
+    }
+
+    fn render(
+        &self,
+        entity_count: u32,
+        sorted: &[DrawEntity],
+        shadow_batches: &[w3gpu_renderer::ShadowBatch],
+    ) {
+        let output = match self.context.surface.get_current_texture() {
+            Ok(t) => t,
+            Err(e) => { log::warn!("surface error: {e}"); return; }
+        };
+        let view = output.texture.create_view(&Default::default());
+
+        // Frame uniforms (PBR main pass)
+        let frame_uniforms = build_frame_uniforms(&self.world, self.total_time);
+        self.context.queue.write_buffer(
+            &self.render_state.frame_uniform_buffer, 0,
+            bytemuck::bytes_of(&frame_uniforms),
+        );
+
+        // Light uniforms (shadow pass)
+        let light_uniforms = build_light_uniforms();
+        self.shadow_pass.update_light(&self.context.queue, &light_uniforms);
 
         let indirect_stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut enc = self.context.device.create_command_encoder(&Default::default());
 
-        // ── pass 1 : shadow depth ──────────────────────────────────────────────
+        // ── 1. Z-prepass + Hi-Z pyramid build ─────────────────────────────────
+        self.hiz_pass.encode(
+            &mut enc,
+            &self.render_state.instance_bind_group,
+            &self.asset_registry,
+            sorted,
+        );
+
+        // ── 2. GPU occlusion cull → writes entity_indirect_buf ────────────────
+        self.cull_pass.encode(&mut enc, entity_count);
+
+        // ── 3. Shadow depth pass (CPU-batched) ────────────────────────────────
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow pass"),
@@ -365,19 +448,18 @@ impl State {
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
             rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
-            for (idx, batch) in batches.iter().enumerate() {
-                if !batch.cast_shadow { continue; }
+            for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
                 rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
                 rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                rp.draw_indexed_indirect(
-                    &self.render_state.indirect_buffer,
-                    idx as u64 * indirect_stride,
+                rp.draw_indexed(
+                    0..m.index_count, 0,
+                    batch.first_instance..batch.first_instance + batch.instance_count,
                 );
             }
         }
 
-        // ── pass 2 : PBR main ──────────────────────────────────────────────────
+        // ── 4. PBR main pass (GPU-indirect, per entity) ───────────────────────
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main pass"),
@@ -406,16 +488,17 @@ impl State {
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             rp.set_bind_group(3, &self.env_bind_group, &[]);
 
-            for (idx, batch) in batches.iter().enumerate() {
-                let mat = self.asset_registry.get_material(batch.material_id)
+            for (idx, entity) in sorted.iter().enumerate() {
+                let mat = self.asset_registry.get_material(entity.material_id)
                     .or_else(|| self.asset_registry.get_material(0));
-                let Some(mat) = mat else { continue };
-                let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else { continue };
+                let Some(mat)  = mat else { continue };
+                let Some(mesh) = self.asset_registry.get_mesh(entity.mesh_id) else { continue };
                 rp.set_bind_group(2, &mat.bind_group, &[]);
-                rp.set_vertex_buffer(0, m.vertex_buffer.slice(..));
-                rp.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                rp.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                // instance_count is 0 (culled) or 1 (visible) — GPU wrote this
                 rp.draw_indexed_indirect(
-                    &self.render_state.indirect_buffer,
+                    &self.cull_pass.entity_indirect_buf,
                     idx as u64 * indirect_stride,
                 );
             }
@@ -426,7 +509,7 @@ impl State {
     }
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// ── helpers ────────────────────────────────────────────────────────────────────
 
 fn fallback_cube(
     registry: &mut AssetRegistry,
@@ -436,24 +519,29 @@ fn fallback_cube(
     use w3gpu_assets::Material;
     let mesh_id = registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
     let mat_id  = registry.upload_material(
-        &Material::default(),
-        MaterialTextures::default(),
-        &context.device,
-        &render_state.material_bg_layout,
+        &Material::default(), MaterialTextures::default(),
+        &context.device, &render_state.material_bg_layout,
     );
     vec![(mesh_id, mat_id)]
 }
 
 fn build_light_uniforms() -> LightUniforms {
-    let light_dir = glam::Vec3::new(-0.5, -1.0, -0.5).normalize();
+    let light_dir = Vec3::new(-0.5, -1.0, -0.5).normalize();
     let light_pos = -light_dir * 20.0;
-    let light_view = glam::Mat4::look_at_rh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
+    let light_view = glam::Mat4::look_at_rh(light_pos, Vec3::ZERO, Vec3::Y);
     let light_proj = glam::Mat4::orthographic_rh(-14.0, 14.0, -14.0, 14.0, 0.1, 60.0);
     LightUniforms {
         view_proj: (light_proj * light_view).to_cols_array_2d(),
         shadow_bias: 0.001,
         _pad: [0.0; 3],
     }
+}
+
+fn camera_view_proj(world: &World) -> (glam::Mat4, glam::Mat4) {
+    world.query_entities::<CameraComponent>().into_iter().find_map(|e| {
+        let cam = world.get_component::<CameraComponent>(e)?;
+        if cam.is_active { Some((cam.view_matrix, cam.projection_matrix)) } else { None }
+    }).unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY))
 }
 
 fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
@@ -471,7 +559,7 @@ fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
         .unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY, Vec3::ZERO));
 
     let inv_vp = (projection * view).inverse();
-    let light_uniforms = build_light_uniforms();
+    let light   = build_light_uniforms();
 
     FrameUniforms {
         projection: projection.to_cols_array_2d(),
@@ -485,8 +573,8 @@ fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
         ambient_intensity: 0.12,
         total_time,
         _pad2: [0.0; 3],
-        light_view_proj: light_uniforms.view_proj,
-        shadow_bias: light_uniforms.shadow_bias,
+        light_view_proj: light.view_proj,
+        shadow_bias: light.shadow_bias,
         _pad3: [0.0; 3],
     }
 }
@@ -511,19 +599,56 @@ fn build_env_bind_group(
     })
 }
 
-fn collect_render_commands(world: &World) -> Vec<RenderCommand> {
+/// Collect entities from ECS and compute their world-space AABBs.
+fn collect_draw_entities(world: &World, registry: &AssetRegistry) -> Vec<DrawEntity> {
     let entities = world.query_entities::<RenderableComponent>();
-    let mut commands = Vec::with_capacity(entities.len());
+    let mut result = Vec::with_capacity(entities.len());
     for entity in entities {
         if world.has_component::<CulledComponent>(entity) { continue; }
-        let (mesh_id, material_id, cast_shadow) = match world.get_component::<RenderableComponent>(entity) {
-            Some(r) if r.visible => (r.mesh_id, r.material_id, r.cast_shadow),
-            _ => continue,
-        };
+        let Some(r) = world.get_component::<RenderableComponent>(entity) else { continue };
+        if !r.visible { continue; }
         let world_matrix = world.get_component::<TransformComponent>(entity)
             .map(|t| t.world_matrix)
             .unwrap_or(glam::Mat4::IDENTITY);
-        commands.push(RenderCommand { mesh_id, material_id, world_matrix: world_matrix.to_cols_array_2d(), cast_shadow });
+        let Some(mesh) = registry.get_mesh(r.mesh_id) else { continue };
+
+        let (aabb_min, aabb_max) = transform_aabb(
+            &world_matrix,
+            Vec3::from(mesh.aabb_min),
+            Vec3::from(mesh.aabb_max),
+        );
+        result.push(DrawEntity {
+            mesh_id:      r.mesh_id,
+            material_id:  r.material_id,
+            world_matrix: world_matrix.to_cols_array_2d(),
+            cast_shadow:  r.cast_shadow,
+            aabb_min:     aabb_min.to_array(),
+            aabb_max:     aabb_max.to_array(),
+            first_index:  0,
+            index_count:  mesh.index_count,
+            base_vertex:  0,
+        });
     }
-    commands
+    result
+}
+
+/// Transform a local-space AABB by a world matrix → world-space AABB.
+fn transform_aabb(mat: &glam::Mat4, local_min: Vec3, local_max: Vec3) -> (Vec3, Vec3) {
+    let corners = [
+        Vec3::new(local_min.x, local_min.y, local_min.z),
+        Vec3::new(local_max.x, local_min.y, local_min.z),
+        Vec3::new(local_min.x, local_max.y, local_min.z),
+        Vec3::new(local_max.x, local_max.y, local_min.z),
+        Vec3::new(local_min.x, local_min.y, local_max.z),
+        Vec3::new(local_max.x, local_min.y, local_max.z),
+        Vec3::new(local_min.x, local_max.y, local_max.z),
+        Vec3::new(local_max.x, local_max.y, local_max.z),
+    ];
+    let ws: Vec<Vec3> = corners.iter().map(|c| {
+        let h = mat.mul_vec4(Vec4::new(c.x, c.y, c.z, 1.0));
+        Vec3::new(h.x, h.y, h.z)
+    }).collect();
+    let min = ws.iter().copied().fold(Vec3::splat(f32::MAX), Vec3::min);
+    let max = ws.iter().copied().fold(Vec3::splat(f32::MIN), Vec3::max);
+    (min, max)
 }
