@@ -7,12 +7,12 @@
 // instance_count = 0 (culled) or 1 (visible) into DrawIndexedIndirectArgs.
 
 struct CullUniforms {
-    view_proj:    mat4x4<f32>,
-    screen_size:  vec2<f32>,
-    entity_count: u32,
-    mip_levels:   u32,
-    cull_enabled: u32,
-    _pad:         vec3<u32>,
+    view_proj:    mat4x4<f32>,   // offset   0, size 64
+    screen_size:  vec2<f32>,     // offset  64, size  8
+    entity_count: u32,           // offset  72, size  4
+    mip_levels:   u32,           // offset  76, size  4
+    cull_enabled: u32,           // offset  80, size  4
+    // 12 bytes implicit padding → struct size = 96, matches Rust CullUniforms
 }
 
 struct EntityData {
