@@ -12,9 +12,9 @@ use w3gpu_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
 use w3gpu_renderer::{
-    build_batches, AssetRegistry, DrawIndexedIndirectArgs, FrameUniforms, GpuContext,
-    IblContext, LightUniforms, MaterialTextures, RenderCommand, RenderState, ShadowPass,
-    camera_system, frustum_culling_system, transform_system,
+    build_batches, AssetRegistry, DrawIndexedIndirectArgs, FrameUniforms,
+    GpuContext, IblContext, LightUniforms, MaterialTextures, RenderCommand, RenderState,
+    ShadowPass, camera_system, frustum_culling_system, transform_system,
 };
 
 fn main() {
@@ -72,6 +72,8 @@ struct State {
     world: World,
     scheduler: Scheduler,
     scene_entities: Vec<u32>,
+    /// Per-entity rotation phase offset (radians), same order as scene_entities.
+    entity_phases: Vec<f32>,
     total_time: f32,
     last_instant: std::time::Instant,
 }
@@ -183,31 +185,51 @@ impl State {
             &shadow_pass,
         );
 
-        // Camera
+        // Camera — positioned to see the full 5×5 grid
         let camera = world.create_entity();
         world.add_component(camera, CameraComponent::new(
-            60.0, size.width as f32 / size.height as f32, 0.1, 1000.0,
+            60.0, size.width as f32 / size.height as f32, 0.1, 200.0,
         ));
-        let mut cam_t = TransformComponent::from_position(Vec3::new(0.0, 0.0, 3.0));
+        let eye    = Vec3::new(0.0, 5.0, 16.0);
+        let target = Vec3::new(0.0, 0.0, 0.0);
+        let (_, cam_rot, _) = glam::Mat4::look_at_rh(eye, target, Vec3::Y)
+            .inverse()
+            .to_scale_rotation_translation();
+        let mut cam_t = TransformComponent::from_position(eye);
+        cam_t.rotation = cam_rot;
         cam_t.update_local_matrix();
         world.add_component(camera, cam_t);
 
-        let scene_entities: Vec<u32> = scene_pairs
-            .into_iter()
-            .map(|(mesh_id, mat_id)| {
+        // 5×5 helmet grid — all instances share the same (mesh_id, mat_id)
+        // → build_batches() will group them into exactly 1 draw call.
+        const GRID: i32 = 5;
+        const SPACING: f32 = 2.4;
+        let base_pair = scene_pairs[0];
+        let mut scene_entities: Vec<u32> = Vec::new();
+        let mut entity_phases: Vec<f32> = Vec::new();
+        let base_x = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        for row in 0..GRID {
+            for col in 0..GRID {
+                let x = (col - GRID / 2) as f32 * SPACING;
+                let z = (row - GRID / 2) as f32 * SPACING;
+                let phase = (row * GRID + col) as f32 * (std::f32::consts::TAU / 25.0);
                 let entity = world.create_entity();
-                world.add_component(entity, RenderableComponent::new(mesh_id, mat_id));
-                world.add_component(entity, TransformComponent::default());
-                entity
-            })
-            .collect();
+                world.add_component(entity, RenderableComponent::new(base_pair.0, base_pair.1));
+                let mut t = TransformComponent::from_position(Vec3::new(x, 0.0, z));
+                t.rotation = base_x;
+                t.update_local_matrix();
+                world.add_component(entity, t);
+                scene_entities.push(entity);
+                entity_phases.push(phase);
+            }
+        }
 
-        // Ground plane
+        // Ground plane — 1 draw call for the floor (different material → separate batch).
         {
             use w3gpu_assets::Material;
             let floor_mesh = asset_registry.upload_mesh(&primitives::cube(), &context.device, &context.queue);
             let floor_mat  = asset_registry.upload_material(
-                &Material { albedo: [0.45, 0.45, 0.45, 1.0], roughness: 0.8, ..Default::default() },
+                &Material { albedo: [0.35, 0.35, 0.35, 1.0], roughness: 0.9, ..Default::default() },
                 MaterialTextures::default(),
                 &context.device,
                 &render_state.material_bg_layout,
@@ -215,7 +237,7 @@ impl State {
             let floor = world.create_entity();
             world.add_component(floor, RenderableComponent::new(floor_mesh, floor_mat));
             let mut t = TransformComponent::from_position(Vec3::new(0.0, -1.2, 0.0));
-            t.scale = Vec3::new(4.0, 0.05, 4.0);
+            t.scale = Vec3::new(14.0, 0.05, 14.0);
             t.update_local_matrix();
             world.add_component(floor, t);
         }
@@ -237,6 +259,7 @@ impl State {
             world,
             scheduler,
             scene_entities,
+            entity_phases,
             total_time: 0.0,
             last_instant: std::time::Instant::now(),
         }
@@ -248,20 +271,29 @@ impl State {
         self.last_instant = now;
         self.total_time += dt;
 
-        let angle = self.total_time * 0.4;
-        // -90° around X as base, then spin around world Y
+        // Each entity rotates at its own phase offset → staggered wave across the grid.
         let base_x = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
-        let y_spin = Quat::from_rotation_y(angle);
-        let rot = y_spin * base_x;
-
-        for &entity in &self.scene_entities {
+        for (&entity, &phase) in self.scene_entities.iter().zip(&self.entity_phases) {
             if let Some(t) = self.world.get_component_mut::<TransformComponent>(entity) {
-                t.rotation = rot;
+                let angle = self.total_time * 0.4 + phase;
+                t.rotation = Quat::from_rotation_y(angle) * base_x;
                 t.update_local_matrix();
             }
         }
 
         self.scheduler.run(&mut self.world, dt, self.total_time);
+
+        // Collect commands just for the title (render() will re-collect them).
+        let cmds = collect_render_commands(&self.world);
+        let instance_count = cmds.len();
+        let (_, batches) = build_batches(cmds);
+        let batch_count = batches.len();
+        let s = |n: usize| if n == 1 { "" } else { "s" };
+        self.window.set_title(&format!(
+            "w3gpu  |  {instance_count} instance{}  →  {batch_count} batch{}  →  {batch_count} draw call{} [indirect]",
+            s(instance_count), s(batch_count), s(batch_count),
+        ));
+
         self.render();
     }
 
@@ -416,7 +448,7 @@ fn build_light_uniforms() -> LightUniforms {
     let light_dir = glam::Vec3::new(-0.5, -1.0, -0.5).normalize();
     let light_pos = -light_dir * 20.0;
     let light_view = glam::Mat4::look_at_rh(light_pos, glam::Vec3::ZERO, glam::Vec3::Y);
-    let light_proj = glam::Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 50.0);
+    let light_proj = glam::Mat4::orthographic_rh(-14.0, 14.0, -14.0, 14.0, 0.1, 60.0);
     LightUniforms {
         view_proj: (light_proj * light_view).to_cols_array_2d(),
         shadow_bias: 0.001,
