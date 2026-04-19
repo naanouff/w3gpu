@@ -8,7 +8,7 @@ use crate::{
 pub const PBR_WGSL: &str = include_str!("shaders/pbr.wgsl");
 
 /// Maximum number of instances (world matrices) per frame.
-pub const MAX_INSTANCES: u64 = 1024;
+pub const MAX_INSTANCES: u64 = 4096;
 
 /// All GPU resources needed for the PBR render pass.
 pub struct RenderState {

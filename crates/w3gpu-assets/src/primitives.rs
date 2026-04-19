@@ -56,6 +56,48 @@ pub fn cube() -> Mesh {
     Mesh::new(vertices, indices)
 }
 
+/// UV sphere — radius `r`, `stacks` latitude bands, `sectors` longitude segments.
+/// Tangents and bitangents are analytically correct for PBR normal mapping.
+pub fn uv_sphere(radius: f32, stacks: u32, sectors: u32) -> Mesh {
+    let stacks  = stacks.max(2);
+    let sectors = sectors.max(3);
+    let mut vertices = Vec::with_capacity(((stacks + 1) * (sectors + 1)) as usize);
+    let mut indices  = Vec::with_capacity((stacks * sectors * 6) as usize);
+
+    for i in 0..=stacks {
+        let phi     = std::f32::consts::PI * i as f32 / stacks as f32;
+        let cos_phi = phi.cos();
+        let sin_phi = phi.sin();
+        let y       = radius * cos_phi;
+        let ring_r  = radius * sin_phi;
+
+        for j in 0..=sectors {
+            let theta     = std::f32::consts::TAU * j as f32 / sectors as f32;
+            let cos_theta = theta.cos();
+            let sin_theta = theta.sin();
+            let x = ring_r * cos_theta;
+            let z = ring_r * sin_theta;
+            let normal  = [sin_phi * cos_theta, cos_phi, sin_phi * sin_theta];
+            let uv      = [j as f32 / sectors as f32, i as f32 / stacks as f32];
+            let mut v   = Vertex::new([x, y, z], normal, uv);
+            v.tangent   = [-sin_theta, 0.0, cos_theta];
+            v.bitangent = [cos_phi * cos_theta, -sin_phi, cos_phi * sin_theta];
+            vertices.push(v);
+        }
+    }
+
+    let sw = sectors + 1;
+    for i in 0..stacks {
+        for j in 0..sectors {
+            let k0 = i * sw + j;
+            let k1 = (i + 1) * sw + j;
+            indices.extend_from_slice(&[k0, k1, k0 + 1, k0 + 1, k1, k1 + 1]);
+        }
+    }
+
+    Mesh::new(vertices, indices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

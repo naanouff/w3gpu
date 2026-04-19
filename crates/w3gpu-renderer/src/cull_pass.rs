@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::render_command::{DrawIndexedIndirectArgs, EntityCullData};
 
-pub const MAX_CULL_ENTITIES: u64 = 1024;
+pub const MAX_CULL_ENTITIES: u64 = 4096;
 
 /// Per-frame data for the occlusion-cull compute shader (96 bytes).
 #[repr(C)]
@@ -104,11 +104,13 @@ impl CullPass {
             mapped_at_creation: false,
         });
 
-        // STORAGE for GPU writes + INDIRECT for draw_indexed_indirect
+        // STORAGE for GPU writes + INDIRECT for draw_indexed_indirect + COPY_SRC for readback
         let entity_indirect_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("entity indirect buf"),
             size: MAX_CULL_ENTITIES * size_of::<DrawIndexedIndirectArgs>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
+            usage: wgpu::BufferUsages::STORAGE
+                 | wgpu::BufferUsages::INDIRECT
+                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
