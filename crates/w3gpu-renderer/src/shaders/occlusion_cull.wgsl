@@ -66,17 +66,21 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
         vec3<f32>(e.aabb_max.x, e.aabb_max.y, e.aabb_max.z),
     );
 
-    var ndc_min  = vec3<f32>( 1e9,  1e9,  1e9);
-    var ndc_max  = vec3<f32>(-1e9, -1e9, -1e9);
-    var all_behind = true;
+    var ndc_min    = vec3<f32>( 1e9,  1e9,  1e9);
+    var ndc_max    = vec3<f32>(-1e9, -1e9, -1e9);
+    var all_behind  = true;
+    var any_behind  = false;
 
     for (var i = 0; i < 8; i++) {
         let clip = cull.view_proj * vec4<f32>(corners[i], 1.0);
-        if clip.w > 0.0 { all_behind = false; }
-        let w   = max(clip.w, 0.0001);
-        let ndc = clip.xyz / w;
-        ndc_min = min(ndc_min, ndc);
-        ndc_max = max(ndc_max, ndc);
+        if clip.w > 0.0 {
+            all_behind = false;
+            let ndc = clip.xyz / clip.w;
+            ndc_min = min(ndc_min, ndc);
+            ndc_max = max(ndc_max, ndc);
+        } else {
+            any_behind = true;
+        }
     }
 
     if all_behind {
@@ -84,9 +88,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    // Coarse XY frustum cull
-    if ndc_max.x < -1.0 || ndc_min.x > 1.0 ||
-       ndc_max.y < -1.0 || ndc_min.y > 1.0 {
+    // Coarse XY frustum cull (skip when any corner is behind — conservative).
+    if !any_behind && (ndc_max.x < -1.0 || ndc_min.x > 1.0 ||
+                       ndc_max.y < -1.0 || ndc_min.y > 1.0) {
         draw_args[eid].instance_count = 0u;
         return;
     }
@@ -101,8 +105,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
     let uv_lo = min(uv_a, uv_b);
     let uv_hi = max(uv_a, uv_b);
 
-    // Nearest depth of this AABB (minimum NDC z = closest to camera)
-    let depth_near = clamp(ndc_min.z, 0.0, 1.0);
+    // If any corner is behind the near plane the object straddles it → never cull.
+    // Otherwise use the minimum NDC z of the visible corners (closest to camera).
+    let depth_near = select(clamp(ndc_min.z, 0.0, 1.0), 0.0, any_behind);
 
     // Pick mip level so the 2×2 texel footprint covers the projected footprint
     let size_px = (uv_hi - uv_lo) * cull.screen_size;
