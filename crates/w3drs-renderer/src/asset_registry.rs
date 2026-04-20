@@ -33,22 +33,26 @@ pub struct MaterialTextures {
     pub normal: Option<u32>,
     pub metallic_roughness: Option<u32>,
     pub emissive: Option<u32>,
+    /// `KHR_materials_anisotropy` map (linear); defaults to +X / strength 1 texel when `None`.
+    pub anisotropy: Option<u32>,
 }
 
 pub struct AssetRegistry {
-    meshes:    HashMap<u32, GpuMesh>,
+    meshes: HashMap<u32, GpuMesh>,
     materials: HashMap<u32, GpuMaterial>,
-    textures:  HashMap<u32, GpuTexture>,
-    next_mesh_id:     u32,
+    textures: HashMap<u32, GpuTexture>,
+    next_mesh_id: u32,
     next_material_id: u32,
-    next_texture_id:  u32,
+    next_texture_id: u32,
     // Shared sampler for all material textures
     pub default_sampler: wgpu::Sampler,
     // 1×1 fallback texture views
-    pub white_view:   wgpu::TextureView, // albedo fallback
+    pub white_view: wgpu::TextureView,       // albedo fallback
     pub flat_normal_view: wgpu::TextureView, // normal fallback [128,128,255,255]
-    pub default_mr_view:  wgpu::TextureView, // metallic-roughness fallback [0,128,0,255]
-    pub black_view:   wgpu::TextureView, // emissive fallback
+    pub default_mr_view: wgpu::TextureView,  // metallic-roughness fallback [0,128,0,255]
+    pub black_view: wgpu::TextureView,       // emissive fallback
+    /// Default anisotropy texel per Khronos spec: direction (1,0), strength 1 → RGB linear (1,0.5,1).
+    pub default_aniso_view: wgpu::TextureView,
 }
 
 impl AssetRegistry {
@@ -63,10 +67,11 @@ impl AssetRegistry {
             ..Default::default()
         });
 
-        let white_view       = upload_1x1(device, queue, [255, 255, 255, 255], false);
+        let white_view = upload_1x1(device, queue, [255, 255, 255, 255], false);
         let flat_normal_view = upload_1x1(device, queue, [128, 128, 255, 255], false);
-        let default_mr_view  = upload_1x1(device, queue, [0, 128, 0, 255], false);
-        let black_view       = upload_1x1(device, queue, [0, 0, 0, 255], false);
+        let default_mr_view = upload_1x1(device, queue, [0, 128, 0, 255], false);
+        let black_view = upload_1x1(device, queue, [0, 0, 0, 255], false);
+        let default_aniso_view = upload_1x1(device, queue, [255, 128, 255, 255], false);
 
         Self {
             meshes: HashMap::new(),
@@ -80,15 +85,11 @@ impl AssetRegistry {
             flat_normal_view,
             default_mr_view,
             black_view,
+            default_aniso_view,
         }
     }
 
-    pub fn upload_mesh(
-        &mut self,
-        mesh: &Mesh,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) -> u32 {
+    pub fn upload_mesh(&mut self, mesh: &Mesh, device: &wgpu::Device, _queue: &wgpu::Queue) -> u32 {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex buffer"),
             contents: cast_slice::<Vertex, u8>(&mesh.vertices),
@@ -102,14 +103,17 @@ impl AssetRegistry {
 
         let id = self.next_mesh_id;
         self.next_mesh_id += 1;
-        self.meshes.insert(id, GpuMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count: mesh.indices.len() as u32,
-            bounding_sphere: mesh.bounding_sphere,
-            aabb_min: mesh.aabb.min.to_array(),
-            aabb_max: mesh.aabb.max.to_array(),
-        });
+        self.meshes.insert(
+            id,
+            GpuMesh {
+                vertex_buffer,
+                index_buffer,
+                index_count: mesh.indices.len() as u32,
+                bounding_sphere: mesh.bounding_sphere,
+                aabb_min: mesh.aabb.min.to_array(),
+                aabb_max: mesh.aabb.max.to_array(),
+            },
+        );
         id
     }
 
@@ -146,8 +150,12 @@ impl AssetRegistry {
 
         let albedo_view = self.tex_view(textures.albedo, &self.white_view as *const _);
         let normal_view = self.tex_view(textures.normal, &self.flat_normal_view as *const _);
-        let mr_view     = self.tex_view(textures.metallic_roughness, &self.default_mr_view as *const _);
-        let emit_view   = self.tex_view(textures.emissive, &self.black_view as *const _);
+        let mr_view = self.tex_view(
+            textures.metallic_roughness,
+            &self.default_mr_view as *const _,
+        );
+        let emit_view = self.tex_view(textures.emissive, &self.black_view as *const _);
+        let aniso_view = self.tex_view(textures.anisotropy, &self.default_aniso_view as *const _);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("material bind group"),
@@ -175,6 +183,10 @@ impl AssetRegistry {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
+                    resource: wgpu::BindingResource::TextureView(aniso_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
                     resource: wgpu::BindingResource::Sampler(&self.default_sampler),
                 },
             ],
@@ -237,7 +249,11 @@ fn upload_rgba8(
     };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("texture"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -258,7 +274,11 @@ fn upload_rgba8(
             bytes_per_row: Some(4 * width),
             rows_per_image: Some(height),
         },
-        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }

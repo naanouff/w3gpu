@@ -1,6 +1,10 @@
 use thiserror::Error;
 
-use crate::{material::{AlphaMode, Material}, mesh::Mesh, vertex::Vertex};
+use crate::{
+    material::{AlphaMode, Material, ShadingModel},
+    mesh::Mesh,
+    vertex::Vertex,
+};
 
 #[derive(Debug, Error)]
 pub enum GltfError {
@@ -29,6 +33,8 @@ pub struct GltfPrimitive {
     pub metallic_roughness_image: Option<RgbaImage>,
     /// Emissive color (sRGB)
     pub emissive_image: Option<RgbaImage>,
+    /// `KHR_materials_anisotropy` texture (linear RGB); default mapping when absent uses factor-only path.
+    pub anisotropy_image: Option<RgbaImage>,
 }
 
 /// Load all mesh primitives from a GLB/glTF byte slice.
@@ -103,18 +109,41 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
             let mat = primitive.material();
             let pbr = mat.pbr_metallic_roughness();
 
-            let albedo_image             = image_for_idx(pbr.base_color_texture().map(|t| t.texture().source().index()), &images);
-            let normal_image             = image_for_idx(mat.normal_texture().map(|t| t.texture().source().index()), &images);
-            let metallic_roughness_image = image_for_idx(pbr.metallic_roughness_texture().map(|t| t.texture().source().index()), &images);
-            let emissive_image           = image_for_idx(mat.emissive_texture().map(|t| t.texture().source().index()), &images);
+            let albedo_image = image_for_idx(
+                pbr.base_color_texture()
+                    .map(|t| t.texture().source().index()),
+                &images,
+            );
+            let normal_image = image_for_idx(
+                mat.normal_texture().map(|t| t.texture().source().index()),
+                &images,
+            );
+            let metallic_roughness_image = image_for_idx(
+                pbr.metallic_roughness_texture()
+                    .map(|t| t.texture().source().index()),
+                &images,
+            );
+            let emissive_image = image_for_idx(
+                mat.emissive_texture().map(|t| t.texture().source().index()),
+                &images,
+            );
+            let (anisotropy_strength, anisotropy_rotation, aniso_tex_idx, aniso_tex_coord) =
+                parse_anisotropy(&mat);
+            let anisotropy_image = image_for_idx(aniso_tex_idx, &images);
 
             result.push(GltfPrimitive {
                 mesh: Mesh::new(vertices, indices),
-                material: convert_material(&mat),
+                material: convert_material(
+                    &mat,
+                    anisotropy_strength,
+                    anisotropy_rotation,
+                    aniso_tex_coord,
+                ),
                 albedo_image,
                 normal_image,
                 metallic_roughness_image,
                 emissive_image,
+                anisotropy_image,
             });
         }
     }
@@ -126,50 +155,73 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
 
 fn image_for_idx(idx: Option<usize>, images: &[gltf::image::Data]) -> Option<RgbaImage> {
     let img = images.get(idx?)?;
-    Some(RgbaImage { data: to_rgba8(img), width: img.width, height: img.height })
+    Some(RgbaImage {
+        data: to_rgba8(img),
+        width: img.width,
+        height: img.height,
+    })
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
     use gltf::image::Format;
     match img.format {
         Format::R8G8B8A8 => img.pixels.clone(),
-        Format::R8G8B8   => img.pixels.chunks(3)
+        Format::R8G8B8 => img
+            .pixels
+            .chunks(3)
             .flat_map(|c| [c[0], c[1], c[2], 255])
             .collect(),
-        Format::R8G8     => img.pixels.chunks(2)
+        Format::R8G8 => img
+            .pixels
+            .chunks(2)
             .flat_map(|c| [c[0], c[1], 0, 255])
             .collect(),
-        Format::R8       => img.pixels.iter()
-            .flat_map(|&v| [v, v, v, 255])
-            .collect(),
-        Format::R16G16B16A16 => img.pixels.chunks(8)
+        Format::R8 => img.pixels.iter().flat_map(|&v| [v, v, v, 255]).collect(),
+        Format::R16G16B16A16 => img
+            .pixels
+            .chunks(8)
             .flat_map(|c| [c[1], c[3], c[5], c[7]])
             .collect(),
-        Format::R16G16B16    => img.pixels.chunks(6)
+        Format::R16G16B16 => img
+            .pixels
+            .chunks(6)
             .flat_map(|c| [c[1], c[3], c[5], 255])
             .collect(),
-        Format::R16G16       => img.pixels.chunks(4)
+        Format::R16G16 => img
+            .pixels
+            .chunks(4)
             .flat_map(|c| [c[1], c[3], 0, 255])
             .collect(),
-        Format::R16          => img.pixels.chunks(2)
+        Format::R16 => img
+            .pixels
+            .chunks(2)
             .flat_map(|c| [c[1], c[1], c[1], 255])
             .collect(),
         // HDR float: clamp and convert
-        Format::R32G32B32FLOAT => img.pixels.chunks(12)
+        Format::R32G32B32FLOAT => img
+            .pixels
+            .chunks(12)
             .flat_map(|c| {
-                let r = f32::from_le_bytes([c[0],c[1],c[2],c[3]]).clamp(0.0,1.0);
-                let g = f32::from_le_bytes([c[4],c[5],c[6],c[7]]).clamp(0.0,1.0);
-                let b = f32::from_le_bytes([c[8],c[9],c[10],c[11]]).clamp(0.0,1.0);
-                [(r*255.0) as u8, (g*255.0) as u8, (b*255.0) as u8, 255]
+                let r = f32::from_le_bytes([c[0], c[1], c[2], c[3]]).clamp(0.0, 1.0);
+                let g = f32::from_le_bytes([c[4], c[5], c[6], c[7]]).clamp(0.0, 1.0);
+                let b = f32::from_le_bytes([c[8], c[9], c[10], c[11]]).clamp(0.0, 1.0);
+                [(r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, 255]
             })
             .collect(),
-        Format::R32G32B32A32FLOAT => img.pixels.chunks(16)
+        Format::R32G32B32A32FLOAT => img
+            .pixels
+            .chunks(16)
             .flat_map(|c| {
-                let r = f32::from_le_bytes([c[0],c[1],c[2],c[3]]).clamp(0.0,1.0);
-                let g = f32::from_le_bytes([c[4],c[5],c[6],c[7]]).clamp(0.0,1.0);
-                let b = f32::from_le_bytes([c[8],c[9],c[10],c[11]]).clamp(0.0,1.0);
-                let a = f32::from_le_bytes([c[12],c[13],c[14],c[15]]).clamp(0.0,1.0);
-                [(r*255.0) as u8, (g*255.0) as u8, (b*255.0) as u8, (a*255.0) as u8]
+                let r = f32::from_le_bytes([c[0], c[1], c[2], c[3]]).clamp(0.0, 1.0);
+                let g = f32::from_le_bytes([c[4], c[5], c[6], c[7]]).clamp(0.0, 1.0);
+                let b = f32::from_le_bytes([c[8], c[9], c[10], c[11]]).clamp(0.0, 1.0);
+                let a = f32::from_le_bytes([c[12], c[13], c[14], c[15]]).clamp(0.0, 1.0);
+                [
+                    (r * 255.0) as u8,
+                    (g * 255.0) as u8,
+                    (b * 255.0) as u8,
+                    (a * 255.0) as u8,
+                ]
             })
             .collect(),
     }
@@ -177,27 +229,39 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
 
 fn cross_scaled(n: [f32; 3], t: [f32; 3], handedness: f32) -> [f32; 3] {
     let b = [
-        n[1]*t[2] - n[2]*t[1],
-        n[2]*t[0] - n[0]*t[2],
-        n[0]*t[1] - n[1]*t[0],
+        n[1] * t[2] - n[2] * t[1],
+        n[2] * t[0] - n[0] * t[2],
+        n[0] * t[1] - n[1] * t[0],
     ];
-    [b[0]*handedness, b[1]*handedness, b[2]*handedness]
+    [b[0] * handedness, b[1] * handedness, b[2] * handedness]
 }
 
 fn orthonormal_tangent_frame(n: [f32; 3]) -> ([f32; 3], [f32; 3]) {
-    let up = if n[1].abs() < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+    let up = if n[1].abs() < 0.9 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
     let t = normalize(cross_vecs(up, n));
     let b = cross_vecs(n, t);
     (t, b)
 }
 
 fn cross_vecs(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 fn normalize(v: [f32; 3]) -> [f32; 3] {
-    let len = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
-    if len < 1e-6 { [1.0, 0.0, 0.0] } else { [v[0]/len, v[1]/len, v[2]/len] }
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if len < 1e-6 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [v[0] / len, v[1] / len, v[2] / len]
+    }
 }
 
 #[cfg(test)]
@@ -263,14 +327,14 @@ mod tests {
     fn tangent_frame_orthonormal_for_z_normal() {
         let (t, b) = orthonormal_tangent_frame([0.0, 0.0, 1.0]);
         // t and b should be unit length
-        let tl = (t[0]*t[0]+t[1]*t[1]+t[2]*t[2]).sqrt();
-        let bl = (b[0]*b[0]+b[1]*b[1]+b[2]*b[2]).sqrt();
+        let tl = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+        let bl = (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]).sqrt();
         assert!((tl - 1.0).abs() < 1e-5);
         assert!((bl - 1.0).abs() < 1e-5);
         // t·n = 0, b·n = 0
         let n = [0.0f32, 0.0, 1.0];
-        let tdotn = t[0]*n[0]+t[1]*n[1]+t[2]*n[2];
-        let bdotn = b[0]*n[0]+b[1]*n[1]+b[2]*n[2];
+        let tdotn = t[0] * n[0] + t[1] * n[1] + t[2] * n[2];
+        let bdotn = b[0] * n[0] + b[1] * n[1] + b[2] * n[2];
         assert!(tdotn.abs() < 1e-5);
         assert!(bdotn.abs() < 1e-5);
     }
@@ -278,17 +342,22 @@ mod tests {
     #[test]
     fn tangent_frame_orthonormal_for_y_normal() {
         let (t, _b) = orthonormal_tangent_frame([0.0, 1.0, 0.0]);
-        let tl = (t[0]*t[0]+t[1]*t[1]+t[2]*t[2]).sqrt();
+        let tl = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
         assert!((tl - 1.0).abs() < 1e-5);
         let n = [0.0f32, 1.0, 0.0];
-        let tdotn = t[0]*n[0]+t[1]*n[1]+t[2]*n[2];
+        let tdotn = t[0] * n[0] + t[1] * n[1] + t[2] * n[2];
         assert!(tdotn.abs() < 1e-5);
     }
 
     // ── to_rgba8 ─────────────────────────────────────────────────────────────
 
     fn make_img(format: gltf::image::Format, pixels: Vec<u8>) -> gltf::image::Data {
-        gltf::image::Data { format, width: 1, height: 1, pixels }
+        gltf::image::Data {
+            format,
+            width: 1,
+            height: 1,
+            pixels,
+        }
     }
 
     #[test]
@@ -356,17 +425,54 @@ mod tests {
     }
 }
 
-fn convert_material(mat: &gltf::Material<'_>) -> Material {
+/// Returns `(strength_factor, rotation_radians, texture_source_index, tex_coord_set)`.
+fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) {
+    let Some(v) = mat.extension_value("KHR_materials_anisotropy") else {
+        return (0.0, 0.0, None, 0);
+    };
+    let strength = v
+        .get("anisotropyStrength")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    let rotation = v
+        .get("anisotropyRotation")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    let (tex_idx, tex_coord) = v
+        .get("anisotropyTexture")
+        .and_then(|t| t.as_object())
+        .map(|o| {
+            let idx = o
+                .get("index")
+                .and_then(serde_json::Value::as_u64)
+                .map(|u| u as usize);
+            let tc = o
+                .get("texCoord")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u32;
+            (idx, tc.min(1))
+        })
+        .unwrap_or((None, 0));
+    (strength, rotation, tex_idx, tex_coord)
+}
+
+fn convert_material(
+    mat: &gltf::Material<'_>,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    anisotropy_tex_coord: u32,
+) -> Material {
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
     let emissive = mat.emissive_factor();
     let alpha_mode = match mat.alpha_mode() {
         gltf::material::AlphaMode::Opaque => AlphaMode::Opaque,
-        gltf::material::AlphaMode::Mask   => AlphaMode::Mask,
-        gltf::material::AlphaMode::Blend  => AlphaMode::Blend,
+        gltf::material::AlphaMode::Mask => AlphaMode::Mask,
+        gltf::material::AlphaMode::Blend => AlphaMode::Blend,
     };
     Material {
         name: mat.name().unwrap_or("").to_string(),
+        shading_model: ShadingModel::Pbr,
         albedo: base,
         metallic: pbr.metallic_factor(),
         roughness: pbr.roughness_factor(),
@@ -374,6 +480,8 @@ fn convert_material(mat: &gltf::Material<'_>) -> Material {
         alpha_mode,
         alpha_cutoff: mat.alpha_cutoff().unwrap_or(0.5),
         double_sided: mat.double_sided(),
-        ..Default::default()
+        anisotropy_strength,
+        anisotropy_rotation,
+        anisotropy_tex_coord,
     }
 }

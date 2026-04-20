@@ -16,6 +16,12 @@ pub struct Material {
     pub alpha_mode: AlphaMode,
     pub alpha_cutoff: f32,
     pub double_sided: bool,
+    /// `KHR_materials_anisotropy` — combined strength (factor × texture blue when present).
+    pub anisotropy_strength: f32,
+    /// Rotation in radians (CCW in tangent–bitangent plane from tangent).
+    pub anisotropy_rotation: f32,
+    /// glTF `anisotropyTexture.texCoord` set (0 or 1).
+    pub anisotropy_tex_coord: u32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -38,6 +44,9 @@ impl Default for Material {
             alpha_mode: AlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
+            anisotropy_strength: 0.0,
+            anisotropy_rotation: 0.0,
+            anisotropy_tex_coord: 0,
         }
     }
 }
@@ -55,6 +64,9 @@ mod tests {
         assert_eq!(m.emissive, [0.0; 3]);
         assert_eq!(m.alpha_cutoff, 0.5);
         assert!(!m.double_sided);
+        assert_eq!(m.anisotropy_strength, 0.0);
+        assert_eq!(m.anisotropy_rotation, 0.0);
+        assert_eq!(m.anisotropy_tex_coord, 0);
     }
 
     #[test]

@@ -1,9 +1,6 @@
 use crate::{
-    frame_uniforms::FrameUniforms,
-    gpu_context::DEPTH_FORMAT,
-    hdr_target::HDR_FORMAT,
-    material_uniforms::MaterialUniforms,
-    vertex_layout::VERTEX_BUFFER_LAYOUT,
+    frame_uniforms::FrameUniforms, gpu_context::DEPTH_FORMAT, hdr_target::HDR_FORMAT,
+    material_uniforms::MaterialUniforms, vertex_layout::VERTEX_BUFFER_LAYOUT,
 };
 
 pub const PBR_WGSL: &str = include_str!("shaders/pbr.wgsl");
@@ -33,22 +30,21 @@ impl RenderState {
     pub fn new(device: &wgpu::Device, _surface_format: wgpu::TextureFormat) -> Self {
         // ── bind group layouts ──────────────────────────────────────────────
 
-        let frame_bg_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("frame bg layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<FrameUniforms>() as u64,
-                        ),
-                    },
-                    count: None,
-                }],
-            });
+        let frame_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("frame bg layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<FrameUniforms>() as u64
+                    ),
+                },
+                count: None,
+            }],
+        });
 
         // Group 1: read-only storage buffer — world matrices for all instances.
         // The vertex shader indexes this with @builtin(instance_index).
@@ -67,7 +63,7 @@ impl RenderState {
                 }],
             });
 
-        // Group 2: uniform + 4 textures (albedo, normal, metallic-roughness, emissive) + sampler.
+        // Group 2: uniform + 5 textures (albedo, normal, MR, emissive, anisotropy) + sampler.
         let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -89,9 +85,10 @@ impl RenderState {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                std::mem::size_of::<MaterialUniforms>() as u64,
-                            ),
+                            min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
+                                MaterialUniforms,
+                            >()
+                                as u64),
                         },
                         count: None,
                     },
@@ -99,8 +96,9 @@ impl RenderState {
                     tex_entry(2), // normal
                     tex_entry(3), // metallic-roughness
                     tex_entry(4), // emissive
+                    tex_entry(5), // KHR_materials_anisotropy (linear RGB)
                     wgpu::BindGroupLayoutEntry {
-                        binding: 5,
+                        binding: 6,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,

@@ -28,8 +28,11 @@ struct MaterialUniforms {
     emissive:  vec4<f32>,
     metallic:  f32,
     roughness: f32,
-    _pad0:     f32,
-    _pad1:     f32,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    anisotropy_tex_coord: u32,
+    _pad_u:    u32,
+    _pad_tail: u64,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -39,7 +42,8 @@ struct MaterialUniforms {
 @group(2) @binding(2) var normal_tex:    texture_2d<f32>;
 @group(2) @binding(3) var mr_tex:        texture_2d<f32>; // G=roughness, B=metallic
 @group(2) @binding(4) var emissive_tex:  texture_2d<f32>;
-@group(2) @binding(5) var mat_sampler:   sampler;
+@group(2) @binding(5) var aniso_tex:     texture_2d<f32>;
+@group(2) @binding(6) var mat_sampler:   sampler;
 
 @group(3) @binding(0) var irradiance_map:  texture_cube<f32>;
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
@@ -66,7 +70,8 @@ struct VertexOutput {
     @location(2)       world_tangent:   vec3<f32>,
     @location(3)       world_bitangent: vec3<f32>,
     @location(4)       uv0:             vec2<f32>,
-    @location(5)       color:           vec4<f32>,
+    @location(5)       uv1:             vec2<f32>,
+    @location(6)       color:           vec4<f32>,
 }
 
 @vertex
@@ -85,6 +90,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.world_tangent   = normalize(normal_mat * in.tangent);
     out.world_bitangent = normalize(normal_mat * in.bitangent);
     out.uv0             = in.uv0;
+    out.uv1             = in.uv1;
     out.color           = in.color;
     return out;
 }
@@ -111,6 +117,26 @@ fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f
     let nv = max(dot(n, v), 0.0);
     let nl = max(dot(n, l), 0.0);
     return geometry_schlick_ggx(nv, roughness) * geometry_schlick_ggx(nl, roughness);
+}
+
+// KHR_materials_anisotropy — non-normative reference from Khronos sample GLSL (Burley GGX).
+fn d_ggx_aniso(ndot_h: f32, tdot_h: f32, bdot_h: f32, at: f32, ab: f32) -> f32 {
+    let a2 = at * ab;
+    let f = vec3<f32>(ab * tdot_h, at * bdot_h, a2 * ndot_h);
+    let w2 = a2 / dot(f, f);
+    return a2 * w2 * w2 / PI;
+}
+
+fn v_ggx_aniso(
+    ndot_l: f32, ndot_v: f32,
+    bdot_v: f32, tdot_v: f32,
+    tdot_l: f32, bdot_l: f32,
+    at: f32, ab: f32,
+) -> f32 {
+    let ggxv = ndot_l * length(vec3<f32>(at * tdot_v, ab * bdot_v, ndot_v));
+    let ggxl = ndot_v * length(vec3<f32>(at * tdot_l, ab * bdot_l, ndot_l));
+    let denomv = ggxv + ggxl;
+    return clamp(0.5 / denomv, 0.0, 1.0);
 }
 
 fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
@@ -174,13 +200,47 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let h  = normalize(v + l);
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
 
-    let d = distribution_ggx(n, h, roughness);
-    let g = geometry_smith(n, v, l, roughness);
+    let nl = max(dot(n, l), 0.0);
+    let nv = max(dot(n, v), 0.0);
+    let nh = max(dot(n, h), 0.0);
+    let denom = 4.0 * nv * nl + 0.0001;
     let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
 
-    let nl    = max(dot(n, l), 0.0);
-    let denom = 4.0 * max(dot(n, v), 0.0) * nl + 0.0001;
-    let specular_direct = d * g * f / denom;
+    // KHR_materials_anisotropy (direct specular only; IBL stays isotropic).
+    let uv_aniso = select(in.uv0, in.uv1, material.anisotropy_tex_coord != 0u);
+    let aniso_sample = textureSample(aniso_tex, mat_sampler, uv_aniso).rgb;
+    let cos_r = cos(material.anisotropy_rotation);
+    let sin_r = sin(material.anisotropy_rotation);
+    var dir2 = aniso_sample.rg * 2.0 - vec2<f32>(1.0);
+    let len_d = length(dir2);
+    dir2 = select(vec2<f32>(1.0, 0.0), dir2 / len_d, len_d > 1e-4);
+    let rot_m = mat2x2<f32>(cos_r, sin_r, -sin_r, cos_r);
+    dir2 = rot_m * dir2;
+    let aniso_mag = clamp(material.anisotropy_strength * aniso_sample.b, 0.0, 1.0);
+
+    let tan_w = normalize(in.world_tangent);
+    let bit_w = normalize(in.world_bitangent);
+    let n_geom = normalize(in.world_normal);
+    let t_dir = normalize(tan_w * dir2.x + bit_w * dir2.y);
+    let b_dir = normalize(cross(n_geom, t_dir));
+
+    let TdotV = dot(t_dir, v);
+    let BdotV = dot(b_dir, v);
+    let TdotL = dot(t_dir, l);
+    let BdotL = dot(b_dir, l);
+    let TdotH = dot(t_dir, h);
+    let BdotH = dot(b_dir, h);
+
+    let d_iso = distribution_ggx(n, h, roughness);
+    let g_iso = geometry_smith(n, v, l, roughness);
+    let at = mix(roughness, 1.0, aniso_mag * aniso_mag);
+    let ab = roughness;
+    let d_an = d_ggx_aniso(nh, TdotH, BdotH, at, ab);
+    let v_an = v_ggx_aniso(nl, nv, BdotV, TdotV, TdotL, BdotL, at, ab);
+    let use_aniso = aniso_mag > 0.002;
+    let d_eff = select(d_iso, d_an, use_aniso);
+    let g_eff = select(g_iso, v_an, use_aniso);
+    let specular_direct = d_eff * g_eff * f / denom;
     let kd_direct       = (vec3<f32>(1.0) - f) * (1.0 - metallic);
     let diffuse_direct  = kd_direct * albedo / PI;
     let shadow_factor   = pcf_shadow(in.world_pos);
