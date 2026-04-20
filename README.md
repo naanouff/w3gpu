@@ -4,29 +4,30 @@ A 3D engine written in Rust, compiled to WebAssembly and running on WebGPU in th
 
 ## Features
 
-- **ECS** — Custom entity-component system with sparse storage and iterative transform hierarchy
+- **ECS** — Archetype SoA storage, parallel transform via Rayon (100k entities ~430 µs), iterative hierarchy BFS
 - **WebGPU** — Native WebGPU backend via `wgpu`, no WebGL fallback
 - **WASM** — Full browser target via `wasm-pack`, callable from TypeScript
 - **Cross-platform** — Also runs natively on Windows (DX12), macOS (Metal), Linux (Vulkan)
-- **PBR rendering** — Cook-Torrance GGX/Smith BRDF, directional light, per-material albedo/metallic/roughness/emissive
+- **PBR rendering** — Cook-Torrance GGX/Smith BRDF, IBL (irradiance + prefiltered env + BRDF LUT), directional light + PCF shadow maps
+- **GPU-driven pipeline** — Draw Indirect, Hi-Z occlusion culling (compute), frustum culling
+- **Post-processing** — Bloom (Karis prefilter + separable gaussian), ACES tone mapping, FXAA
 - **glTF loader** — Load `.glb` files at runtime (browser via `fetch`, native via filesystem)
-- **Depth buffer** — Correct occlusion on all targets
-- **Render graph** *(in progress)* — Declarative pass-based pipeline, shadow maps, IBL
 
 ## Workspace structure
 
 ```
 crates/
   w3gpu-math/       # Math types: Vec3, Mat4, Quat, AABB, BoundingSphere, Frustum
-  w3gpu-ecs/        # World, Scheduler, components (Transform, Camera, Lights...)
-  w3gpu-assets/     # Mesh, Material, Vertex, glTF loader, primitive generators
-  w3gpu-renderer/   # wgpu context, PBR pipeline, WGSL shaders, asset registry
+  w3gpu-ecs/        # World, Scheduler, archetype SoA storage, Rayon parallel iter
+  w3gpu-assets/     # Mesh, Material, Vertex, glTF loader, HDR loader, primitives
+  w3gpu-renderer/   # wgpu context, PBR + IBL + shadows + post-processing, Hi-Z cull
   w3gpu-wasm/       # wasm-bindgen glue — public JS/TS API
 examples/
-  native-triangle/  # Desktop client (winit) — loads www/public/*.glb by default
+  native-triangle/  # Desktop client (winit) — 3-scene Hi-Z validation demo
 www/                # Vite project consuming the WASM package
-  public/           # Static assets tracked via Git LFS (*.glb, *.gltf, *.bin)
+  public/           # Static assets tracked via Git LFS (*.glb, *.gltf, *.bin, *.hdr)
 xtask/              # cargo xtask runner
+docs/               # Architecture, shaders, API reference, implementation journal
 ```
 
 ## Getting started
@@ -126,11 +127,16 @@ git commit -m "assets: add my-model.glb"
 ## Roadmap
 
 - [x] Phase 0 — Workspace scaffold, triangle on screen (native + WASM)
-- [x] Phase 1 — ECS-driven cube with perspective camera and frustum culling
-- [x] Phase 2 — PBR lighting, depth buffer, material system, glTF loader, texture sampling (albedo · normal · metallic-roughness · emissive)
-- [~] Phase 3 — IBL (irradiance + prefiltered env + BRDF LUT, CPU precompute from equirectangular HDR) ✓ · Render graph, shadow maps, post-processing (bloom, tone mapping, FXAA) pending
-- [ ] Phase 4 — GPU instancing, LOD, occlusion culling (HZB)
-- [ ] Phase 5 — Native ray tracing (ray queries via wgpu, full RT pipeline via Vulkan/DXR)
+- [x] Phase 1 — ECS, PBR, glTF loader, texture sampling (albedo · normal · MR · emissive)
+- [x] Phase 2 — IBL (CPU precompute: irradiance 32×32, prefiltered 128×128×5mips, BRDF LUT 256×256)
+- [x] Phase 3a — Shadow maps (PCF 3×3), plugin system
+- [x] Phase 3b — ECS archetype SoA + Rayon parallel transform (100k entities < 2ms)
+- [x] Phase 4 — GPU-driven pipeline: Draw Indirect, Hi-Z pyramid, occlusion culling compute
+- [x] Phase 5 — Post-processing: bloom, ACES tone mapping, FXAA
+- [ ] Phase 6 — Editor (Design / Debug / Ship modes)
+- [ ] Phase 7 — SaaS bridge + Cloud compute
+
+See [docs/journal.md](docs/journal.md) for implementation details and decisions.
 
 ## License
 
