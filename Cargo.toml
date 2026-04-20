@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/w3gpu-math",
-    "crates/w3gpu-ecs",
-    "crates/w3gpu-renderer",
-    "crates/w3gpu-assets",
-    "crates/w3gpu-wasm",
+    "crates/w3drs-math",
+    "crates/w3drs-ecs",
+    "crates/w3drs-renderer",
+    "crates/w3drs-assets",
+    "crates/w3drs-wasm",
     "examples/native-triangle",
     "xtask",
 ]

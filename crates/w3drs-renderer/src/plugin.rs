@@ -1,4 +1,4 @@
-use w3gpu_ecs::{Scheduler, World};
+use w3drs_ecs::{Scheduler, World};
 
 /// Trait pour enregistrer des fonctionnalités dans l'`App` au moment de l'init.
 /// Chaque plugin reçoit un accès mutable à l'`App` pour ajouter des systèmes,
@@ -9,7 +9,7 @@ pub trait Plugin: 'static {
 }
 
 /// Point d'entrée unifié du moteur — contient le monde ECS + le scheduler.
-/// Le renderer GPU reste dans `W3gpuEngine` (crate w3gpu-wasm / native-triangle)
+/// Le renderer GPU reste dans `W3drsEngine` (crate w3drs-wasm / native-triangle)
 /// car il dépend de wgpu, mais les systèmes ECS s'enregistrent via `App`.
 pub struct App {
     pub world: World,

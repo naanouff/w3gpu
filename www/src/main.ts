@@ -1,4 +1,4 @@
-import init, { W3gpuEngine } from '../pkg/w3gpu_wasm.js';
+import init, { W3drsEngine } from '../pkg/w3drs_wasm.js';
 
 const status = document.getElementById('status')!;
 
@@ -13,7 +13,7 @@ async function main(): Promise<void> {
   await init();
 
   status.textContent = 'Creating engine...';
-  const engine = await W3gpuEngine.create('w3gpu-canvas');
+  const engine = await W3drsEngine.create('w3drs-canvas');
 
   // IBL
   status.textContent = 'Loading environment...';
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const updateStatus = (): void => {
     const s = cullEnabled ? 'ON' : 'OFF';
     status.textContent =
-      `w3gpu v${W3gpuEngine.version()} — GPU Hi-Z: ${s}  [SPACE to toggle]`;
+      `w3drs v${W3drsEngine.version()} — GPU Hi-Z: ${s}  [SPACE to toggle]`;
   };
   updateStatus();
 

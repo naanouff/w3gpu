@@ -9,7 +9,7 @@
 use std::mem::size_of;
 
 use bytemuck;
-use w3gpu_renderer::{CullPass, CullUniforms, DrawIndexedIndirectArgs, EntityCullData};
+use w3drs_renderer::{CullPass, CullUniforms, DrawIndexedIndirectArgs, EntityCullData};
 
 // ── GPU context ────────────────────────────────────────────────────────────────
 

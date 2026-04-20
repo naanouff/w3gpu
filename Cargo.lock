@@ -1256,9 +1256,9 @@ dependencies = [
  "glam",
  "log",
  "pollster",
- "w3gpu-assets",
- "w3gpu-ecs",
- "w3gpu-renderer",
+ "w3drs-assets",
+ "w3drs-ecs",
+ "w3drs-renderer",
  "wgpu",
  "winit",
 ]
@@ -2340,7 +2340,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "w3gpu-assets"
+name = "w3drs-assets"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -2351,22 +2351,22 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "w3gpu-math",
+ "w3drs-math",
 ]
 
 [[package]]
-name = "w3gpu-ecs"
+name = "w3drs-ecs"
 version = "0.1.0"
 dependencies = [
  "criterion",
  "glam",
  "log",
  "rayon",
- "w3gpu-math",
+ "w3drs-math",
 ]
 
 [[package]]
-name = "w3gpu-math"
+name = "w3drs-math"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -2374,7 +2374,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "w3gpu-renderer"
+name = "w3drs-renderer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -2383,9 +2383,9 @@ dependencies = [
  "log",
  "pollster",
  "thiserror 2.0.18",
- "w3gpu-assets",
- "w3gpu-ecs",
- "w3gpu-math",
+ "w3drs-assets",
+ "w3drs-ecs",
+ "w3drs-math",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2393,7 +2393,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "w3gpu-wasm"
+name = "w3drs-wasm"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -2402,10 +2402,10 @@ dependencies = [
  "glam",
  "js-sys",
  "log",
- "w3gpu-assets",
- "w3gpu-ecs",
- "w3gpu-math",
- "w3gpu-renderer",
+ "w3drs-assets",
+ "w3drs-ecs",
+ "w3drs-math",
+ "w3drs-renderer",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

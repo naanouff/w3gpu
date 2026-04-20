@@ -1,4 +1,4 @@
-# w3gpu — Documentation
+# w3drs — Documentation
 
 > Point d'entrée de la bibliothèque documentaire du projet.
 

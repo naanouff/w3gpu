@@ -1,7 +1,9 @@
+#![cfg(target_arch = "wasm32")]
+
 use wasm_bindgen::prelude::*;
 
 mod engine;
-pub use engine::W3gpuEngine;
+pub use engine::W3drsEngine;
 
 #[wasm_bindgen(start)]
 pub fn init_panic_hook() {

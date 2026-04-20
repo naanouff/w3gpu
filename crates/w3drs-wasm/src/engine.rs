@@ -1,11 +1,11 @@
 use glam::{Mat4, Quat, Vec3, Vec4};
 use wasm_bindgen::prelude::*;
-use w3gpu_assets::{load_from_bytes, load_hdr_from_bytes, primitives, Material};
-use w3gpu_ecs::{
+use w3drs_assets::{load_from_bytes, load_hdr_from_bytes, primitives, Material};
+use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
-use w3gpu_renderer::{
+use w3drs_renderer::{
     build_entity_list, derive_shadow_batches,
     AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
     DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass,
@@ -15,7 +15,7 @@ use w3gpu_renderer::{
 };
 
 #[wasm_bindgen]
-pub struct W3gpuEngine {
+pub struct W3drsEngine {
     world:          World,
     scheduler:      Scheduler,
     context:        GpuContext,
@@ -33,8 +33,8 @@ pub struct W3gpuEngine {
 }
 
 #[wasm_bindgen]
-impl W3gpuEngine {
-    pub async fn create(canvas_id: &str) -> Result<W3gpuEngine, JsValue> {
+impl W3drsEngine {
+    pub async fn create(canvas_id: &str) -> Result<W3drsEngine, JsValue> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::BROWSER_WEBGPU,
             ..Default::default()
@@ -91,7 +91,7 @@ impl W3gpuEngine {
             .add_system(camera_system)
             .add_system(frustum_culling_system);
 
-        Ok(W3gpuEngine {
+        Ok(W3drsEngine {
             world: World::new(),
             scheduler,
             context,
@@ -289,12 +289,12 @@ impl W3gpuEngine {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-impl W3gpuEngine {
+impl W3drsEngine {
     fn render(
         &self,
         entity_count: u32,
         sorted: &[DrawEntity],
-        shadow_batches: &[w3gpu_renderer::ShadowBatch],
+        shadow_batches: &[w3drs_renderer::ShadowBatch],
     ) {
         let output = match self.context.surface.get_current_texture() {
             Ok(t) => t,

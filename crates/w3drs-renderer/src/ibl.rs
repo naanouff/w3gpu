@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use w3gpu_assets::HdrImage;
+use w3drs_assets::HdrImage;
 
 const IRRADIANCE_SIZE: u32 = 32;
 const IRRADIANCE_SAMPLES: u32 = 512;

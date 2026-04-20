@@ -1,4 +1,4 @@
-use w3gpu_math::{Aabb, BoundingSphere, Vec3};
+use w3drs_math::{Aabb, BoundingSphere, Vec3};
 
 use crate::vertex::Vertex;
 

@@ -1,8 +1,8 @@
-use w3gpu_ecs::{
+use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Entity, World,
 };
-use w3gpu_math::{BoundingSphere, Frustum, Vec3};
+use w3drs_math::{BoundingSphere, Frustum, Vec3};
 
 pub fn frustum_culling_system(world: &mut World, _dt: f32, _t: f32) {
     let vp = world

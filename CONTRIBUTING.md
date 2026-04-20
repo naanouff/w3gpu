@@ -1,4 +1,4 @@
-# w3gpu — Development Guidelines
+# w3drs — Development Guidelines
 
 ## Core Principles
 
@@ -14,13 +14,13 @@
 ## Workspace Structure
 
 ```
-w3gpu/
+w3drs/
 ├── crates/
-│   ├── w3gpu-math/          # glam wrappers, AABB, BoundingSphere, Frustum
-│   ├── w3gpu-ecs/           # World, Scheduler, components — no GPU dependency
-│   ├── w3gpu-renderer/      # wgpu pipeline, systems, asset registry
-│   ├── w3gpu-assets/        # Mesh, Material, Vertex, glTF loader
-│   └── w3gpu-wasm/          # wasm-bindgen glue, public JS API
+│   ├── w3drs-math/          # glam wrappers, AABB, BoundingSphere, Frustum
+│   ├── w3drs-ecs/           # World, Scheduler, components — no GPU dependency
+│   ├── w3drs-renderer/      # wgpu pipeline, systems, asset registry
+│   ├── w3drs-assets/        # Mesh, Material, Vertex, glTF loader
+│   └── w3drs-wasm/          # wasm-bindgen glue, public JS API
 ├── examples/
 │   └── native-triangle/     # Desktop smoke test (winit)
 ├── xtask/                   # cargo xtask runner (www / client)
@@ -31,7 +31,7 @@ w3gpu/
 
 | Element | Convention | Example |
 |---------|-----------|---------|
-| **Crates** | `w3gpu-<domain>` kebab-case | `w3gpu-renderer`, `w3gpu-ecs` |
+| **Crates** | `w3drs-<domain>` kebab-case | `w3drs-renderer`, `w3drs-ecs` |
 | **Structs / traits** | `PascalCase` | `RenderState`, `AnyStorage` |
 | **Components** | `PascalCase` + `Component` suffix | `TransformComponent` |
 | **Systems (functions)** | `snake_case` + `_system` suffix | `frustum_culling_system` |
@@ -145,7 +145,7 @@ let buf = device.create_buffer_init(...); // allocates GPU memory every frame
 
 - The public `#[wasm_bindgen]` API only accepts primitives (`f32`, `u32`, `&[u8]`)
 - No Rust struct types exposed directly — use opaque handles (`u32`)
-- All mutations go through methods on `W3gpuEngine`
+- All mutations go through methods on `W3drsEngine`
 - Allocations crossing the WASM boundary use `Vec<u32>` (flat arrays)
 
 ---
@@ -189,7 +189,7 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 - [ ] `cargo check -p <crate>` passes
 - [ ] `cargo clippy -- -D warnings` clean
 - [ ] `cargo fmt --check` passes
-- [ ] `cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets` passes
+- [ ] `cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets` passes
 
 **Code Quality**
 - [ ] No `unwrap()` / `expect()` in library code without documented invariant
@@ -216,7 +216,7 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 Every engine API change that affects the public surface (`RenderState`, `GpuContext`, `AssetRegistry`, bind group layout, shader interface) **must be reflected in all examples in the same PR**:
 
 - `examples/native-triangle/` — native desktop smoke test; uses `RenderState` and the full render loop directly
-- `www/src/main.ts` — WASM/browser demo; uses the `W3gpuEngine` public JS API
+- `www/src/main.ts` — WASM/browser demo; uses the `W3drsEngine` public JS API
 
 **Checklist for API-breaking changes:**
 
@@ -241,8 +241,8 @@ cargo xtask setup-hooks
 
 The hook source lives in `.githooks/pre-commit` (tracked in the repo). The hook runs:
 
-1. `cargo check --workspace --exclude w3gpu-wasm` — all native crates including examples
-2. `cargo check -p w3gpu-wasm --target wasm32-unknown-unknown` — WASM API
+1. `cargo check --workspace --exclude w3drs-wasm` — all native crates including examples
+2. `cargo check -p w3drs-wasm --target wasm32-unknown-unknown` — WASM API
 
 You can run the same checks manually at any time:
 
@@ -267,7 +267,7 @@ Run additionally before submitting a PR:
 ```bash
 cargo fmt
 cargo clippy -- -D warnings
-cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets
+cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets
 ```
 
 ### Branch Model
@@ -308,7 +308,7 @@ cargo xtask www
 cargo xtask client
 
 # Run unit tests (no GPU needed)
-cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets
+cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets
 
 # Lint
 cargo clippy -- -D warnings

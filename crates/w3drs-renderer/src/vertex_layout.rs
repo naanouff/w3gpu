@@ -1,4 +1,4 @@
-use w3gpu_assets::Vertex;
+use w3drs_assets::Vertex;
 
 pub const VERTEX_BUFFER_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,

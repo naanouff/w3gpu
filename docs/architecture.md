@@ -4,11 +4,11 @@
 
 ```
 crates/
-  w3gpu-math/       Glam wrappers, AABB, BoundingSphere, Frustum
-  w3gpu-ecs/        World, Scheduler, composants (Transform, Camera, Lights…)
-  w3gpu-assets/     Mesh, Material, Vertex, glTF loader, HDR loader, primitives
-  w3gpu-renderer/   wgpu context, PBR pipeline, IBL, WGSL shaders, AssetRegistry
-  w3gpu-wasm/       wasm-bindgen glue — API JS/TS publique
+  w3drs-math/       Glam wrappers, AABB, BoundingSphere, Frustum
+  w3drs-ecs/        World, Scheduler, composants (Transform, Camera, Lights…)
+  w3drs-assets/     Mesh, Material, Vertex, glTF loader, HDR loader, primitives
+  w3drs-renderer/   wgpu context, PBR pipeline, IBL, WGSL shaders, AssetRegistry
+  w3drs-wasm/       wasm-bindgen glue — API JS/TS publique
 examples/
   native-triangle/  Client desktop (winit + pollster)
 www/                Vite + TypeScript, consomme le package WASM
@@ -21,15 +21,15 @@ docs/               Bibliothèque documentaire (ce dossier)
 ## Crate dependency graph
 
 ```
-w3gpu-math
-    └── w3gpu-ecs
-    └── w3gpu-assets
-            └── w3gpu-renderer
-                    └── w3gpu-wasm
+w3drs-math
+    └── w3drs-ecs
+    └── w3drs-assets
+            └── w3drs-renderer
+                    └── w3drs-wasm
                     └── native-triangle (example)
 ```
 
-`w3gpu-ecs` ne dépend pas de `w3gpu-renderer` — les systèmes ECS sont testables sans GPU.
+`w3drs-ecs` ne dépend pas de `w3drs-renderer` — les systèmes ECS sont testables sans GPU.
 
 ---
 
@@ -38,7 +38,7 @@ w3gpu-math
 ### Stockage
 
 ```rust
-// w3gpu-ecs/src/world.rs
+// w3drs-ecs/src/world.rs
 struct ComponentStorage<T> = HashMap<Entity, T>
 World { stores: HashMap<TypeId, Box<dyn AnyStorage>> }
 ```
@@ -87,7 +87,7 @@ Cible : 100k entities, `transform_system` < 2ms. Compatible Rayon.
 ### Contexte GPU
 
 ```rust
-// w3gpu-renderer/src/gpu_context.rs
+// w3drs-renderer/src/gpu_context.rs
 struct GpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -176,7 +176,7 @@ Cible : 100k draw calls < 8ms.
 
 | Target | Backend wgpu | Features Cargo |
 |---|---|---|
-| `wasm32-unknown-unknown` | `webgpu` | `w3gpu-wasm` |
+| `wasm32-unknown-unknown` | `webgpu` | `w3drs-wasm` |
 | Windows native | `dx12` | `native-triangle` |
 | macOS native | `metal` | `native-triangle` |
 | Linux native | `vulkan-portability` | `native-triangle` |

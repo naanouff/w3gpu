@@ -3,7 +3,7 @@
 ## Phase 0 — Scaffold
 
 **Réalisé :**
-- Workspace Cargo multi-crates (`w3gpu-math`, `w3gpu-ecs`, `w3gpu-assets`, `w3gpu-renderer`, `w3gpu-wasm`)
+- Workspace Cargo multi-crates (`w3drs-math`, `w3drs-ecs`, `w3drs-assets`, `w3drs-renderer`, `w3drs-wasm`)
 - `.cargo/config.toml` avec `target-feature=+simd128` pour WASM
 - `cargo xtask` runner avec commandes `www`, `client`, `check`, `setup-hooks`
 - Pre-commit hook (`cargo check` native + wasm32)
@@ -22,7 +22,7 @@
 **Réalisé :**
 - `GpuContext` : init wgpu Instance/Adapter/Device/Queue/Surface
 - Pipeline hardcodé WGSL, rendu d'un triangle coloré
-- `W3gpuEngine::tick(dt)` → render pass → submit
+- `W3drsEngine::tick(dt)` → render pass → submit
 - `requestAnimationFrame` TypeScript
 - Client natif `native-triangle` avec winit
 
@@ -74,11 +74,11 @@
 
 **Réalisé :**
 
-### HDR Loader (`w3gpu-assets/src/hdr_loader.rs`)
+### HDR Loader (`w3drs-assets/src/hdr_loader.rs`)
 - `load_hdr_from_bytes(bytes) → HdrImage { pixels: Vec<[f32;3]>, width, height }`
 - Utilise `image::load_from_memory_with_format` avec `ImageFormat::Hdr`
 
-### Précomputation CPU (`w3gpu-renderer/src/ibl.rs`)
+### Précomputation CPU (`w3drs-renderer/src/ibl.rs`)
 - **Irradiance** 32×32×6 faces : intégration cosine-weighted (512 samples Hammersley)
 - **Prefiltered env** 128×128×6×5mips : GGX importance sampling (256 samples / pixel)
 - **BRDF LUT** 256×256 : split-sum IBL avec géométrie `k = roughness²/2` (256 samples)
@@ -231,7 +231,7 @@ pub fn for_each_without_mut<T, Excl, F>(&mut self, f: F)
 - **Passe 1 (parallèle)** : `for_each_without_mut::<TransformComponent, HierarchyComponent>` → `world_matrix = local_matrix` sur toutes les entités sans hiérarchie. Rayon parallélise sur les cœurs disponibles.
 - **Passe 2 (BFS séquentiel)** : uniquement pour les entités avec `HierarchyComponent`. No-op pour les scènes plates.
 
-### Résultats benchmark — `cargo bench -p w3gpu-ecs` (release, Rayon)
+### Résultats benchmark — `cargo bench -p w3drs-ecs` (release, Rayon)
 
 Machine : Windows 11, AMD/Intel desktop (2025-04-20)
 
@@ -243,12 +243,12 @@ Machine : Windows 11, AMD/Intel desktop (2025-04-20)
 
 Commande de reproduction :
 ```bash
-cargo bench -p w3gpu-ecs
+cargo bench -p w3drs-ecs
 ```
 Résultats HTML dans `target/criterion/`.
 
 ### Dépendances ajoutées
-- `rayon = "1"` — `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` dans `w3gpu-ecs/Cargo.toml`
+- `rayon = "1"` — `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` dans `w3drs-ecs/Cargo.toml`
 - `criterion = "0.5"` — `[dev-dependencies]`, bench `benches/transform.rs`
 
 ### Tests

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use bytemuck::cast_slice;
-use w3gpu_assets::{Material, Mesh, Vertex};
-use w3gpu_math::BoundingSphere;
+use w3drs_assets::{Material, Mesh, Vertex};
+use w3drs_math::BoundingSphere;
 use wgpu::util::DeviceExt;
 
 use crate::material_uniforms::MaterialUniforms;

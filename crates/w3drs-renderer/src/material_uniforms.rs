@@ -16,8 +16,8 @@ pub struct MaterialUniforms {
     pub _pad:      [f32; 2],
 }
 
-impl From<&w3gpu_assets::Material> for MaterialUniforms {
-    fn from(m: &w3gpu_assets::Material) -> Self {
+impl From<&w3drs_assets::Material> for MaterialUniforms {
+    fn from(m: &w3drs_assets::Material) -> Self {
         Self {
             albedo:    m.albedo,
             emissive:  [m.emissive[0], m.emissive[1], m.emissive[2], 0.0],

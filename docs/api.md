@@ -1,15 +1,15 @@
 # API publique
 
-## TypeScript / WASM (`W3gpuEngine`)
+## TypeScript / WASM (`W3drsEngine`)
 
 ```typescript
-import init, { W3gpuEngine } from './pkg/w3gpu_wasm.js';
+import init, { W3drsEngine } from './pkg/w3drs_wasm.js';
 
 await init();
-const engine = await W3gpuEngine.create('canvas-id');
+const engine = await W3drsEngine.create('canvas-id');
 
 // Version
-W3gpuEngine.version(): string
+W3drsEngine.version(): string
 
 // Entités
 engine.create_entity(): number
@@ -42,7 +42,7 @@ engine.resize(width: number, height: number): void
 
 ```typescript
 await init();
-const engine = await W3gpuEngine.create('my-canvas');
+const engine = await W3drsEngine.create('my-canvas');
 
 // IBL optionnel
 const hdr = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());
@@ -84,7 +84,7 @@ requestAnimationFrame(frame);
 
 ## Rust interne — crates publics
 
-### `w3gpu-assets`
+### `w3drs-assets`
 
 ```rust
 // Chargement glTF
@@ -109,7 +109,7 @@ primitives::cube() -> Mesh
 primitives::sphere(subdivisions: u32) -> Mesh   // à venir
 ```
 
-### `w3gpu-renderer`
+### `w3drs-renderer`
 
 ```rust
 // Contexte GPU
@@ -140,7 +140,7 @@ ShadowPass::new(device, shadow_bg_layout, object_bg_layout) -> ShadowPass
 // Champs publics : depth_pipeline, shadow_view, main_bind_group, light_uniform_buffer
 ```
 
-### `w3gpu-ecs`
+### `w3drs-ecs`
 
 ```rust
 // Monde

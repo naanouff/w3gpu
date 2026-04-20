@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use glam::{Quat, Vec3};
-use w3gpu_ecs::{
+use w3drs_ecs::{
     components::{HierarchyComponent, TransformComponent},
     World,
 };

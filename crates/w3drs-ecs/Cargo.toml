@@ -1,10 +1,10 @@
 [package]
-name = "w3gpu-ecs"
+name = "w3drs-ecs"
 edition.workspace = true
 version.workspace = true
 
 [dependencies]
-w3gpu-math = { path = "../w3gpu-math" }
+w3drs-math = { path = "../w3drs-math" }
 glam.workspace = true
 log.workspace = true
 

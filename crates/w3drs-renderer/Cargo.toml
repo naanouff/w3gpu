@@ -1,12 +1,12 @@
 [package]
-name = "w3gpu-renderer"
+name = "w3drs-renderer"
 edition.workspace = true
 version.workspace = true
 
 [dependencies]
-w3gpu-math = { path = "../w3gpu-math" }
-w3gpu-ecs = { path = "../w3gpu-ecs" }
-w3gpu-assets = { path = "../w3gpu-assets" }
+w3drs-math = { path = "../w3drs-math" }
+w3drs-ecs = { path = "../w3drs-ecs" }
+w3drs-assets = { path = "../w3drs-assets" }
 glam.workspace = true
 bytemuck.workspace = true
 log.workspace = true

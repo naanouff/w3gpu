@@ -1,4 +1,4 @@
-# w3gpu
+# w3drs
 
 A 3D engine written in Rust, compiled to WebAssembly and running on WebGPU in the browser.
 
@@ -17,11 +17,11 @@ A 3D engine written in Rust, compiled to WebAssembly and running on WebGPU in th
 
 ```
 crates/
-  w3gpu-math/       # Math types: Vec3, Mat4, Quat, AABB, BoundingSphere, Frustum
-  w3gpu-ecs/        # World, Scheduler, archetype SoA storage, Rayon parallel iter
-  w3gpu-assets/     # Mesh, Material, Vertex, glTF loader, HDR loader, primitives
-  w3gpu-renderer/   # wgpu context, PBR + IBL + shadows + post-processing, Hi-Z cull
-  w3gpu-wasm/       # wasm-bindgen glue — public JS/TS API
+  w3drs-math/       # Math types: Vec3, Mat4, Quat, AABB, BoundingSphere, Frustum
+  w3drs-ecs/        # World, Scheduler, archetype SoA storage, Rayon parallel iter
+  w3drs-assets/     # Mesh, Material, Vertex, glTF loader, HDR loader, primitives
+  w3drs-renderer/   # wgpu context, PBR + IBL + shadows + post-processing, Hi-Z cull
+  w3drs-wasm/       # wasm-bindgen glue — public JS/TS API
 examples/
   native-triangle/  # Desktop client (winit) — 3-scene Hi-Z validation demo
 www/                # Vite project consuming the WASM package
@@ -76,7 +76,7 @@ The hook runs `cargo check` on native and `wasm32-unknown-unknown` targets befor
 cargo xtask check
 
 # Unit tests (no GPU required)
-cargo test -p w3gpu-math -p w3gpu-ecs -p w3gpu-assets
+cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets
 
 # Lint
 cargo clippy -- -D warnings
@@ -87,10 +87,10 @@ Open `http://localhost:5173` in a browser that supports WebGPU (Chrome 113+, Edg
 ## TypeScript API
 
 ```typescript
-import init, { W3gpuEngine } from './pkg/w3gpu_wasm.js';
+import init, { W3drsEngine } from './pkg/w3drs_wasm.js';
 
 await init();
-const engine = await W3gpuEngine.create('my-canvas');
+const engine = await W3drsEngine.create('my-canvas');
 
 // Load an equirectangular HDR for image-based lighting (optional, call before load_gltf)
 const hdr = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());

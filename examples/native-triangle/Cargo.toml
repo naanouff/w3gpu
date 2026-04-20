@@ -8,9 +8,9 @@ name = "native-triangle"
 path = "src/main.rs"
 
 [dependencies]
-w3gpu-renderer = { path = "../../crates/w3gpu-renderer" }
-w3gpu-assets = { path = "../../crates/w3gpu-assets" }
-w3gpu-ecs = { path = "../../crates/w3gpu-ecs" }
+w3drs-renderer = { path = "../../crates/w3drs-renderer" }
+w3drs-assets = { path = "../../crates/w3drs-assets" }
+w3drs-ecs = { path = "../../crates/w3drs-ecs" }
 wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
 glam.workspace = true
 bytemuck.workspace = true

@@ -1,5 +1,5 @@
 use glam::Mat4;
-use w3gpu_ecs::{
+use w3drs_ecs::{
     components::{CameraComponent, TransformComponent},
     Entity, World,
 };

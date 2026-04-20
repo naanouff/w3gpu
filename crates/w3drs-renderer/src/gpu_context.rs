@@ -32,7 +32,7 @@ impl GpuContext {
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                label: Some("w3gpu device"),
+                label: Some("w3drs device"),
                 required_features: wgpu::Features::empty(),
                 // Use WebGPU-tier limits (not WebGL2 downlevel) — storage buffers
                 // in vertex shaders are required for instanced draw indirect (Phase 4).

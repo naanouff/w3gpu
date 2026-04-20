@@ -8,12 +8,12 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
-use w3gpu_assets::{load_hdr_from_bytes, primitives, Material};
-use w3gpu_ecs::{
+use w3drs_assets::{load_hdr_from_bytes, primitives, Material};
+use w3drs_ecs::{
     Scheduler, World,
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
 };
-use w3gpu_renderer::{
+use w3drs_renderer::{
     build_entity_list, derive_shadow_batches,
     AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
     DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass,
@@ -84,7 +84,7 @@ struct App { state: Option<State> }
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
-            .create_window(Window::default_attributes().with_title("w3gpu"))
+            .create_window(Window::default_attributes().with_title("w3drs"))
             .unwrap();
         self.state = Some(State::new(window).block_on());
     }
@@ -589,7 +589,7 @@ impl State {
 
         let cull_str = if self.cull_enabled { "ON" } else { "OFF" };
         self.window.set_title(&format!(
-            "w3gpu | Scene: {} | Total: {} | Frustum: {} | Hi-Z drawn: {} | Cull: {} \
+            "w3drs | Scene: {} | Total: {} | Frustum: {} | Hi-Z drawn: {} | Cull: {} \
              | [1/2/3] switch  [SPACE] toggle  [LMB drag] orbit  [scroll] zoom",
             self.current_scene.name(),
             self.potential_count,
@@ -605,7 +605,7 @@ impl State {
         &self,
         entity_count: u32,
         sorted:        &[DrawEntity],
-        shadow_batches: &[w3gpu_renderer::ShadowBatch],
+        shadow_batches: &[w3drs_renderer::ShadowBatch],
     ) {
         let output = match self.context.surface.get_current_texture() {
             Ok(t)  => t,

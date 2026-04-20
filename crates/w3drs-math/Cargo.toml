@@ -1,5 +1,5 @@
 [package]
-name = "w3gpu-math"
+name = "w3drs-math"
 edition.workspace = true
 version.workspace = true
 

@@ -1,8 +1,8 @@
-# w3gpu
+# w3drs
 
 > **Next-gen GPU-driven 3D engine for Web & Native — built in Rust**
 
-w3gpu est un moteur 3D nouvelle génération conçu pour offrir des performances proches du natif dans le navigateur grâce à WebGPU, tout en conservant une architecture unifiée entre **local, web et cloud**.
+w3drs est un moteur 3D nouvelle génération conçu pour offrir des performances proches du natif dans le navigateur grâce à WebGPU, tout en conservant une architecture unifiée entre **local, web et cloud**.
 
 ---
 
@@ -23,7 +23,7 @@ w3gpu est un moteur 3D nouvelle génération conçu pour offrir des performances
 
 > Deliver **Unreal Engine–level rendering** inside the browser.
 
-w3gpu vise à créer une nouvelle catégorie :
+w3drs vise à créer une nouvelle catégorie :
 
 > **Engine-as-a-Service Isomorphe**
 
@@ -50,12 +50,12 @@ graph LR
 
 | Module               | Description        |
 | -------------------- | ------------------ |
-| `w3gpu-core`         | ECS + math         |
-| `w3gpu-renderer`     | pipeline WebGPU    |
-| `w3gpu-assets`       | format W3DB        |
-| `w3gpu-editor-ui`    | interface          |
-| `w3gpu-wasm`         | runtime web        |
-| `w3gpu-cloud-bridge` | communication SaaS |
+| `w3drs-core`         | ECS + math         |
+| `w3drs-renderer`     | pipeline WebGPU    |
+| `w3drs-assets`       | format W3DB        |
+| `w3drs-editor-ui`    | interface          |
+| `w3drs-wasm`         | runtime web        |
+| `w3drs-cloud-bridge` | communication SaaS |
 
 ---
 
@@ -132,7 +132,7 @@ Même logique exécutée :
 ## 📦 Workspace Structure
 
 ```bash
-/my-w3gpu-project/
+/my-w3drs-project/
 ├── assets/        # raw assets
 ├── src/           # scenes (.w3s)
 ├── shaders/       # WGSL
@@ -235,8 +235,8 @@ Heavy tasks offloaded:
 ## 🚀 Getting Started (WIP)
 
 ```bash
-git clone https://github.com/your-org/w3gpu
-cd w3gpu
+git clone https://github.com/your-org/w3drs
+cd w3drs
 cargo build
 ```
 
@@ -262,7 +262,7 @@ Focus areas:
 
 ## 🧠 Final Thought
 
-w3gpu n’est pas un moteur de plus.
+w3drs n’est pas un moteur de plus.
 
 > C’est une tentative de redéfinir la 3D temps réel pour le web.
 

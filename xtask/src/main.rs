@@ -30,7 +30,7 @@ fn main() {
 }
 
 fn run_www(root: &Path) {
-    let wasm_crate = root.join("crates/w3gpu-wasm");
+    let wasm_crate = root.join("crates/w3drs-wasm");
     let out_dir = root.join("www/pkg");
     let www_dir = root.join("www");
 
@@ -72,7 +72,7 @@ fn run_check(root: &Path) {
     println!("==> cargo check — native targets...");
     run(
         Command::new("cargo")
-            .args(["check", "--workspace", "--exclude", "w3gpu-wasm"])
+            .args(["check", "--workspace", "--exclude", "w3drs-wasm"])
             .current_dir(root),
         "cargo check native",
     );
@@ -80,7 +80,7 @@ fn run_check(root: &Path) {
     println!("==> cargo check — wasm32 target...");
     run(
         Command::new("cargo")
-            .args(["check", "-p", "w3gpu-wasm", "--target", "wasm32-unknown-unknown"])
+            .args(["check", "-p", "w3drs-wasm", "--target", "wasm32-unknown-unknown"])
             .current_dir(root),
         "cargo check wasm32",
     );
