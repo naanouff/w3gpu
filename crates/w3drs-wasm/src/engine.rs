@@ -262,6 +262,26 @@ impl W3drsEngine {
                         &self.context.queue,
                     )
                 }),
+                clearcoat: prim.clearcoat_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                clearcoat_roughness: prim.clearcoat_roughness_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
             };
             let mat_id = self.asset_registry.upload_material(
                 &prim.material,

@@ -63,7 +63,7 @@ impl RenderState {
                 }],
             });
 
-        // Group 2: uniform + 5 textures (albedo, normal, MR, emissive, anisotropy) + sampler.
+        // Group 2: uniform + 7 textures (albedo, normal, MR, emissive, anisotropy, clearcoat×2) + sampler.
         let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -97,8 +97,10 @@ impl RenderState {
                     tex_entry(3), // metallic-roughness
                     tex_entry(4), // emissive
                     tex_entry(5), // KHR_materials_anisotropy (linear RGB)
+                    tex_entry(6), // clearcoatTexture (R)
+                    tex_entry(7), // clearcoatRoughnessTexture (G)
                     wgpu::BindGroupLayoutEntry {
-                        binding: 6,
+                        binding: 8,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,

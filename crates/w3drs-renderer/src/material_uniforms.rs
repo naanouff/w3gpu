@@ -1,4 +1,4 @@
-/// Per-material GPU uniform — 64 bytes, std140-compatible.
+/// Per-material GPU uniform — **80** bytes, std140-compatible (multiple of 16).
 ///
 /// WGSL layout:
 ///   albedo:    vec4<f32>   offset  0
@@ -8,6 +8,8 @@
 ///   anisotropy_strength / rotation — 40, 44
 ///   anisotropy_tex_coord (u32) / ior (f32) — 48, 52
 ///   clearcoat_factor / clearcoat_roughness — 56, 60
+///   clearcoat_tex_coord / clearcoat_rough_tex_coord (u32) — 64, 68
+///   padding (u32×2) — 72, 76
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialUniforms {
@@ -21,6 +23,9 @@ pub struct MaterialUniforms {
     pub ior: f32,
     pub clearcoat_factor: f32,
     pub clearcoat_roughness: f32,
+    pub clearcoat_tex_coord: u32,
+    pub clearcoat_rough_tex_coord: u32,
+    pub _pad: [u32; 2],
 }
 
 impl From<&w3drs_assets::Material> for MaterialUniforms {
@@ -36,6 +41,9 @@ impl From<&w3drs_assets::Material> for MaterialUniforms {
             ior: m.ior,
             clearcoat_factor: m.clearcoat_factor,
             clearcoat_roughness: m.clearcoat_roughness,
+            clearcoat_tex_coord: m.clearcoat_tex_coord,
+            clearcoat_rough_tex_coord: m.clearcoat_rough_tex_coord,
+            _pad: [0, 0],
         }
     }
 }
@@ -45,7 +53,7 @@ mod tests {
     use super::MaterialUniforms;
 
     #[test]
-    fn material_uniforms_size_64() {
-        assert_eq!(std::mem::size_of::<MaterialUniforms>(), 64);
+    fn material_uniforms_size_80() {
+        assert_eq!(std::mem::size_of::<MaterialUniforms>(), 80);
     }
 }

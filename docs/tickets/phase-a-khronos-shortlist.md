@@ -26,7 +26,7 @@ Empreinte calculée sur le binaire tel que vendu dans ce dépôt (réimport depu
 | Extension / thème | Statut |
 |-------------------|--------|
 | `KHR_materials_ior` | **Lecture + F0 PBR** dans le moteur (`Material::ior`, shader) ; modèle de fixture optionnel pour QA ciblée |
-| `KHR_materials_clearcoat` | **Facteurs + lobe additif** (direct) ; textures extension **à venir** |
+| `KHR_materials_clearcoat` | Facteurs + textures R/G + **IBL coat** ; normal clearcoat **à venir** |
 | `KHR_materials_transmission` | idem (priorité produit) |
 
 Voir le ticket [phase-A-pbr-materiaux-gltf.md](phase-A-pbr-materiaux-gltf.md) pour l’ordre d’implémentation.

@@ -19,7 +19,7 @@ Jusqu’à ce pin, la checklist ci-dessous reste la **référence contractuelle 
 - [ ] Les extensions `KHR_materials_*` retenues pour la livraison sont **lus** depuis le glTF et **reflétées** dans le matériau GPU (pas de silence total → défaut arbitraire non documenté).
 - [x] **`KHR_materials_anisotropy`** : facteurs + texture optionnelle lus dans `w3drs-assets` ; passe PBR directe anisotrope dans `pbr.wgsl` (IBL speculaire reste isotrope pour l’instant).
 - [x] **`KHR_materials_ior`** : lu via `gltf::Material::ior()` ; F0 diélectrique `((n-1)/(n+1))²` dans `pbr.wgsl` (défaut **1.5** sans extension, aligné Khronos).
-- [x] **`KHR_materials_clearcoat`** : facteurs lus depuis l’extension JSON ; lobe spéculaire **additif** (lumière directe) avec rugosité minimale ; **pas** de textures clearcoat dans cette itération.
+- [x] **`KHR_materials_clearcoat`** : facteurs + textures (`clearcoatTexture` R, `clearcoatRoughnessTexture` G, `texCoord` 0/1) lus dans `w3drs-assets` ; lobes additifs **direct + IBL** dans `pbr.wgsl` (F0 coat IOR 1.5) ; **pas** de `clearcoatNormalTexture` dans cette itération.
 - [ ] Le pipeline matériaux reste **versionné / data-driven** là où le ticket l’exige (tables RON/JSON, pas seulement des constantes Rust dans les tests).
 - [ ] **Stratégie shader** documentée pour le périmètre : branche **A1** (WGSL direct) et/ou **A2** (shader graph) — voir ticket Phase A.
 - [ ] **WASM + natif** : même jeu de paramètres matériau testé, ou **matrice** dans la PR expliquant toute divergence volontaire.

@@ -35,6 +35,10 @@ pub struct MaterialTextures {
     pub emissive: Option<u32>,
     /// `KHR_materials_anisotropy` map (linear); defaults to +X / strength 1 texel when `None`.
     pub anisotropy: Option<u32>,
+    /// `KHR_materials_clearcoat` intensity (R); defaults to white (×1) when `None`.
+    pub clearcoat: Option<u32>,
+    /// `KHR_materials_clearcoat` roughness (G); defaults to G=1 when `None`.
+    pub clearcoat_roughness: Option<u32>,
 }
 
 pub struct AssetRegistry {
@@ -53,6 +57,8 @@ pub struct AssetRegistry {
     pub black_view: wgpu::TextureView,       // emissive fallback
     /// Default anisotropy texel per Khronos spec: direction (1,0), strength 1 → RGB linear (1,0.5,1).
     pub default_aniso_view: wgpu::TextureView,
+    /// Clearcoat roughness multiplier when no texture: G = 1.0 (`Rgba8Unorm` (0,255,0,255)).
+    pub default_clearcoat_rough_view: wgpu::TextureView,
 }
 
 impl AssetRegistry {
@@ -72,6 +78,7 @@ impl AssetRegistry {
         let default_mr_view = upload_1x1(device, queue, [0, 128, 0, 255], false);
         let black_view = upload_1x1(device, queue, [0, 0, 0, 255], false);
         let default_aniso_view = upload_1x1(device, queue, [255, 128, 255, 255], false);
+        let default_clearcoat_rough_view = upload_1x1(device, queue, [0, 255, 0, 255], false);
 
         Self {
             meshes: HashMap::new(),
@@ -86,6 +93,7 @@ impl AssetRegistry {
             default_mr_view,
             black_view,
             default_aniso_view,
+            default_clearcoat_rough_view,
         }
     }
 
@@ -156,6 +164,11 @@ impl AssetRegistry {
         );
         let emit_view = self.tex_view(textures.emissive, &self.black_view as *const _);
         let aniso_view = self.tex_view(textures.anisotropy, &self.default_aniso_view as *const _);
+        let clearcoat_view = self.tex_view(textures.clearcoat, &self.white_view as *const _);
+        let clearcoat_rough_view = self.tex_view(
+            textures.clearcoat_roughness,
+            &self.default_clearcoat_rough_view as *const _,
+        );
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("material bind group"),
@@ -187,6 +200,14 @@ impl AssetRegistry {
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
+                    resource: wgpu::BindingResource::TextureView(clearcoat_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(clearcoat_rough_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
                     resource: wgpu::BindingResource::Sampler(&self.default_sampler),
                 },
             ],

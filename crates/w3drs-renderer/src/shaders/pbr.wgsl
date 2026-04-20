@@ -34,6 +34,9 @@ struct MaterialUniforms {
     ior:       f32,
     clearcoat_factor:     f32,
     clearcoat_roughness:  f32,
+    clearcoat_tex_coord:       u32,
+    clearcoat_rough_tex_coord: u32,
+    _pad:      vec2<u32>,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -43,8 +46,10 @@ struct MaterialUniforms {
 @group(2) @binding(2) var normal_tex:    texture_2d<f32>;
 @group(2) @binding(3) var mr_tex:        texture_2d<f32>; // G=roughness, B=metallic
 @group(2) @binding(4) var emissive_tex:  texture_2d<f32>;
-@group(2) @binding(5) var aniso_tex:     texture_2d<f32>;
-@group(2) @binding(6) var mat_sampler:   sampler;
+@group(2) @binding(5) var aniso_tex:            texture_2d<f32>;
+@group(2) @binding(6) var clearcoat_tex:        texture_2d<f32>;
+@group(2) @binding(7) var clearcoat_rough_tex:  texture_2d<f32>;
+@group(2) @binding(8) var mat_sampler:          sampler;
 
 @group(3) @binding(0) var irradiance_map:  texture_cube<f32>;
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
@@ -203,6 +208,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     );
     let n = normalize(tbn * n_tangent);
 
+    // KHR_materials_clearcoat — facteurs × textures (R / G) ; texCoord 0 ou 1.
+    let uv_cc = select(in.uv0, in.uv1, material.clearcoat_tex_coord != 0u);
+    let uv_cr = select(in.uv0, in.uv1, material.clearcoat_rough_tex_coord != 0u);
+    let cc_tex_r   = textureSample(clearcoat_tex, mat_sampler, uv_cc).r;
+    let cc_rough_g = textureSample(clearcoat_rough_tex, mat_sampler, uv_cr).g;
+    let cc_f = clamp(material.clearcoat_factor * cc_tex_r, 0.0, 1.0);
+    let cc_rough_eff = max(material.clearcoat_roughness * cc_rough_g, 0.089);
+    let f0_coat = dielectric_f0_from_ior(1.5);
+
     // ── Cook-Torrance BRDF (direct light) ─────────────────────────────────────
     let v  = normalize(frame.camera_position - in.world_pos);
     let l  = normalize(-frame.light_direction);
@@ -251,12 +265,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let g_eff = select(g_iso, v_an, use_aniso);
     let specular_base = d_eff * g_eff * f / denom;
 
-    // KHR_materials_clearcoat — couche additive (facteurs seuls ; F0 coat/air ≈ IOR 1.5).
-    let cc_f = clamp(material.clearcoat_factor, 0.0, 1.0);
-    let cc_r = max(material.clearcoat_roughness, 0.089);
-    let d_cc = distribution_ggx(n, h, cc_r);
-    let g_cc = geometry_smith(n, v, l, cc_r);
-    let f0_coat = dielectric_f0_from_ior(1.5);
+    // KHR_materials_clearcoat — lobe additif (direct).
+    let d_cc = distribution_ggx(n, h, cc_rough_eff);
+    let g_cc = geometry_smith(n, v, l, cc_rough_eff);
     let f_cc = fresnel_schlick(max(dot(h, v), 0.0), f0_coat);
     let spec_coat = d_cc * g_cc * f_cc / denom * cc_f;
     let specular_direct = specular_base + spec_coat;
@@ -279,7 +290,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let brdf_sample  = textureSample(brdf_lut, ibl_sampler, brdf_uv).rg;
     let specular_ibl = prefiltered * (ks_ibl * brdf_sample.x + brdf_sample.y);
 
-    let ambient = diffuse_ibl + specular_ibl;
+    let ks_cc_ibl = fresnel_schlick_roughness(max(dot(n, v), 0.0), f0_coat, cc_rough_eff);
+    let prefiltered_cc = textureSampleLevel(prefiltered_map, ibl_sampler, refl, cc_rough_eff * max_lod).rgb;
+    let brdf_cc_uv = vec2<f32>(clamp(max(dot(n, v), 0.0), 0.001, 1.0), clamp(cc_rough_eff, 0.0, 1.0));
+    let brdf_cc = textureSample(brdf_lut, ibl_sampler, brdf_cc_uv).rg;
+    let spec_ibl_coat = prefiltered_cc * (ks_cc_ibl * brdf_cc.x + brdf_cc.y) * cc_f;
+
+    let ambient = diffuse_ibl + specular_ibl + spec_ibl_coat;
     let color   = ambient + direct + emissive;
 
     // Output linear HDR — tone mapping is done by the post-process pass.

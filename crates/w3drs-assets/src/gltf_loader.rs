@@ -35,6 +35,10 @@ pub struct GltfPrimitive {
     pub emissive_image: Option<RgbaImage>,
     /// `KHR_materials_anisotropy` texture (linear RGB); default mapping when absent uses factor-only path.
     pub anisotropy_image: Option<RgbaImage>,
+    /// `KHR_materials_clearcoat` — intensité (canal **R**).
+    pub clearcoat_image: Option<RgbaImage>,
+    /// `KHR_materials_clearcoat` — rugosité (canal **G**).
+    pub clearcoat_roughness_image: Option<RgbaImage>,
 }
 
 /// Load all mesh primitives from a GLB/glTF byte slice.
@@ -129,8 +133,23 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
             );
             let (anisotropy_strength, anisotropy_rotation, aniso_tex_idx, aniso_tex_coord) =
                 parse_anisotropy(&mat);
-            let anisotropy_image = image_for_idx(aniso_tex_idx, &images);
-            let (clearcoat_factor, clearcoat_roughness) = parse_clearcoat(&mat);
+            let aniso_img_idx =
+                aniso_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+            let anisotropy_image = image_for_idx(aniso_img_idx, &images);
+            let (
+                clearcoat_factor,
+                clearcoat_roughness,
+                cc_tex_idx,
+                cc_tex_coord,
+                cc_rough_tex_idx,
+                cc_rough_tex_coord,
+            ) = parse_clearcoat(&mat);
+            let cc_img_idx =
+                cc_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+            let cr_img_idx =
+                cc_rough_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+            let clearcoat_image = image_for_idx(cc_img_idx, &images);
+            let clearcoat_roughness_image = image_for_idx(cr_img_idx, &images);
 
             result.push(GltfPrimitive {
                 mesh: Mesh::new(vertices, indices),
@@ -141,12 +160,16 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
                     aniso_tex_coord,
                     clearcoat_factor,
                     clearcoat_roughness,
+                    cc_tex_coord,
+                    cc_rough_tex_coord,
                 ),
                 albedo_image,
                 normal_image,
                 metallic_roughness_image,
                 emissive_image,
                 anisotropy_image,
+                clearcoat_image,
+                clearcoat_roughness_image,
             });
         }
     }
@@ -163,6 +186,17 @@ fn image_for_idx(idx: Option<usize>, images: &[gltf::image::Data]) -> Option<Rgb
         width: img.width,
         height: img.height,
     })
+}
+
+/// `KHR_materials_*` JSON `texture.index` points at glTF **`textures[]`**, not `images[]`.
+fn image_index_for_gltf_texture_index(
+    document: &gltf::Document,
+    texture_index: usize,
+) -> Option<usize> {
+    document
+        .textures()
+        .nth(texture_index)
+        .map(|tex| tex.source().index())
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
@@ -426,9 +460,26 @@ mod tests {
         assert_eq!(out[2], (0.75 * 255.0) as u8);
         assert_eq!(out[3], 255u8);
     }
+
+    #[test]
+    fn clearcoat_json_texture_info_parsed() {
+        let o = serde_json::json!({
+            "clearcoatFactor": 0.9,
+            "clearcoatRoughnessFactor": 0.25,
+            "clearcoatTexture": {"index": 2, "texCoord": 1},
+            "clearcoatRoughnessTexture": {"index": 5, "texCoord": 0},
+        });
+        let m = o.as_object().unwrap();
+        let (ci, ctc) = super::extension_texture_index_coord(m, "clearcoatTexture");
+        assert_eq!(ci, Some(2));
+        assert_eq!(ctc, 1);
+        let (ri, rtc) = super::extension_texture_index_coord(m, "clearcoatRoughnessTexture");
+        assert_eq!(ri, Some(5));
+        assert_eq!(rtc, 0);
+    }
 }
 
-/// Returns `(strength_factor, rotation_radians, texture_source_index, tex_coord_set)`.
+/// Returns `(strength_factor, rotation_radians, gltf_texture_index, tex_coord_set)`.
 fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) {
     let Some(v) = mat.extension_value("KHR_materials_anisotropy") else {
         return (0.0, 0.0, None, 0);
@@ -459,20 +510,54 @@ fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) 
     (strength, rotation, tex_idx, tex_coord)
 }
 
-/// `KHR_materials_clearcoat` — facteurs scalaires (textures ignorées pour l’instant).
-fn parse_clearcoat(mat: &gltf::Material<'_>) -> (f32, f32) {
+/// `KHR_materials_clearcoat` — facteurs + indices de texture JSON (`index` dans le tableau `textures` glTF).
+///
+/// Retourne `(factor, roughness, clearcoat_tex_idx, clearcoat_tex_coord, rough_tex_idx, rough_tex_coord)`.
+fn parse_clearcoat(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32, Option<usize>, u32) {
     let Some(v) = mat.extension_value("KHR_materials_clearcoat") else {
-        return (0.0, 0.0);
+        return (0.0, 0.0, None, 0, None, 0);
     };
-    let factor = v
+    let Some(o) = v.as_object() else {
+        return (0.0, 0.0, None, 0, None, 0);
+    };
+    let factor = o
         .get("clearcoatFactor")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0) as f32;
-    let rough = v
+    let rough = o
         .get("clearcoatRoughnessFactor")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0) as f32;
-    (factor.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
+    let (cc_idx, cc_tc) = extension_texture_index_coord(o, "clearcoatTexture");
+    let (rough_idx, rough_tc) = extension_texture_index_coord(o, "clearcoatRoughnessTexture");
+    (
+        factor.clamp(0.0, 1.0),
+        rough.clamp(0.0, 1.0),
+        cc_idx,
+        cc_tc,
+        rough_idx,
+        rough_tc,
+    )
+}
+
+fn extension_texture_index_coord(
+    o: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> (Option<usize>, u32) {
+    o.get(key)
+        .and_then(|t| t.as_object())
+        .map(|tex| {
+            let idx = tex
+                .get("index")
+                .and_then(serde_json::Value::as_u64)
+                .map(|u| u as usize);
+            let tc = tex
+                .get("texCoord")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u32;
+            (idx, tc.min(1))
+        })
+        .unwrap_or((None, 0))
 }
 
 fn convert_material(
@@ -482,6 +567,8 @@ fn convert_material(
     anisotropy_tex_coord: u32,
     clearcoat_factor: f32,
     clearcoat_roughness: f32,
+    clearcoat_tex_coord: u32,
+    clearcoat_rough_tex_coord: u32,
 ) -> Material {
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
@@ -508,5 +595,7 @@ fn convert_material(
         ior,
         clearcoat_factor,
         clearcoat_roughness,
+        clearcoat_tex_coord,
+        clearcoat_rough_tex_coord,
     }
 }

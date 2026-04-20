@@ -29,8 +29,8 @@
     },
     {
       "extension": "KHR_materials_clearcoat",
-      "status": "not_vendored_in_repo",
-      "note": "Idem."
+      "status": "implemented",
+      "note": "Chargeur + shader (facteurs, textures R/G, texCoord, IBL coat). Le GLB gate `damaged_helmet_source_glb.glb` peut être une variante sans extension ; `clearcoatNormalTexture` non implémenté."
     },
     {
       "extension": "KHR_materials_transmission",
