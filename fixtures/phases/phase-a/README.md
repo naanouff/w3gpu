@@ -7,7 +7,7 @@ Checklist PBR : [phase-a-pbr-checklist-w3dts.md](../../docs/tickets/phase-a-pbr-
 ## Prérequis
 
 - **GPU** : WebGPU (Chrome / Edge récents) pour `www/` ; adaptateur Vulkan/Metal/D3D12 pour le client natif selon plateforme.
-- **Git LFS** : `git lfs pull` à la racine du dépôt pour récupérer les `.glb` sous `www/public/`.
+- **Git LFS** : `git lfs pull` à la racine du dépôt pour récupérer les `.glb` sous `www/public/` et sous `fixtures/phases/phase-a/glb/`.
 - **Rust** stable + **wasm-pack** si vous construisez le WASM localement.
 
 ## Repro — client natif
@@ -36,13 +36,13 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 
 ## Tests automatisés
 
-- `cargo test -p w3drs-assets --test phase_a_fixture` — vérifie la présence du manifeste, la **SHA256** du gate GLB (alignée sur `manifest.json`) et le parse via `w3drs_assets::load_from_bytes`.
+- `cargo test -p w3drs-assets --test phase_a_fixture` — vérifie le manifeste, la **SHA256** de **chaque** entrée `models[]` dans `manifest.json`, et le parse via `w3drs_assets::load_from_bytes`.
 
 ## Fichiers de données
 
 | Fichier | Rôle |
 |---------|------|
-| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreinte attendue pour la gate courante. |
+| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + **AnisotropyBarnLamp** sous `glb/`). |
 | [`glb/README.md`](glb/README.md) | Convention pour copier / vendre des binaires sous `glb/` (CI autonome). |
 | [`materials/default.json`](materials/default.json) | Placeholder de paramètres / variantes **data-driven** (étendu au fil des PR). |
 | [`expected.md`](expected.md) | Critères mesurables de la scène v0. |
@@ -54,6 +54,13 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 3. Normales cohérentes (détails du mesh visibles, pas « inversé » global).
 4. Textures PBR apparentes (pas un gris uniforme sur tout l’objet).
 5. Aucune panic au chargement ; pas d’erreurs validation layer **bloquantes** sur cet asset (si layers activées).
+
+## Checklist visuelle rapide (AnisotropyBarnLamp — `KHR_materials_anisotropy`)
+
+1. Abat-jour / métal anisotrope : **direction** de l’anisotropie visible quand la caméra ou la lumière bouge (pas un highlight isotrope uniforme sur tout le métal).
+2. Pas de fallback matériau (magenta) sur les parties censées être métalliques.
+3. Textures et reflets cohérents (pas de mesh entièrement noir sans IBL).
+4. Chargement sans panic ; extensions ignorées éventuellement **documentées** en PR jusqu’à parité shader.
 
 ---
 

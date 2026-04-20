@@ -1,8 +1,9 @@
-//! Régression Phase A : le manifeste sous `fixtures/phases/phase-a/` reste valide et le gate GLB charge.
+//! Régression Phase A : le manifeste sous `fixtures/phases/phase-a/` reste valide et chaque GLB listé charge.
 //!
 //! `cargo test -p w3drs-assets --test phase_a_fixture`
 //!
-//! Si le GLB manque ou fait moins d’1 Mo : `git lfs pull` à la racine du dépôt.
+//! Si **DamagedHelmet** manque ou fait moins de 1 Mo : `git lfs pull` à la racine du dépôt.
+//! **AnisotropyBarnLamp** vit sous `fixtures/phases/phase-a/glb/` (LFS après `git add`).
 
 use std::fs;
 use std::path::PathBuf;
@@ -10,6 +11,9 @@ use std::path::PathBuf;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use w3drs_assets::load_from_bytes;
+
+/// Seuil minimal (octets) pour rejeter un pointeur Git LFS non résolu.
+const MIN_GLB_BYTES: u64 = 100_000;
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -37,46 +41,60 @@ fn phase_a_manifest_on_disk() {
 }
 
 #[test]
-fn phase_a_gate_glb_from_manifest_loads() {
+fn phase_a_all_manifest_models_load() {
     let dir = phase_a_dir();
     let manifest_path = dir.join("manifest.json");
     let raw = fs::read_to_string(&manifest_path).expect("read manifest");
     let v: Value = serde_json::from_str(&raw).expect("parse manifest.json");
-
-    let rel = v["models"][0]["relative_path"]
-        .as_str()
-        .expect("manifest.models[0].relative_path");
-    let glb_path = dir.join(rel);
-    let glb_path = glb_path
-        .canonicalize()
-        .unwrap_or_else(|e| panic!("chemin GLB introuvable {} : {e}", glb_path.display()));
-
-    let bytes = fs::read(&glb_path).unwrap_or_else(|e| {
-        panic!(
-            "lecture GLB échouée {} — `git lfs pull` à la racine du dépôt ? : {e}",
-            glb_path.display()
-        )
-    });
+    let models = v["models"]
+        .as_array()
+        .expect("manifest.models must be a non-empty array");
     assert!(
-        bytes.len() > 1_000_000,
-        "{} ne ressemble pas au GLB complet ({} octets) — Git LFS non tiré ?",
-        glb_path.display(),
-        bytes.len()
+        !models.is_empty(),
+        "manifest.models doit contenir au moins un modèle"
     );
 
-    let expected = v["models"][0]["expected_sha256_hex"]
-        .as_str()
-        .expect("manifest.models[0].expected_sha256_hex");
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    assert_eq!(
-        digest,
-        expected.to_ascii_lowercase(),
-        "empreinte SHA256 du gate ne correspond pas au manifest / shortlist"
-    );
+    for (i, m) in models.iter().enumerate() {
+        let id = m["id"].as_str().unwrap_or("<missing id>");
+        let rel = m["relative_path"]
+            .as_str()
+            .unwrap_or_else(|| panic!("manifest.models[{i}].relative_path ({id})"));
+        let glb_path = dir.join(rel);
+        let glb_path = glb_path.canonicalize().unwrap_or_else(|e| {
+            panic!(
+                "chemin GLB introuvable {} (modèle {id}) : {e}",
+                glb_path.display()
+            )
+        });
 
-    let prims = load_from_bytes(&bytes).expect("load_from_bytes gate");
-    assert!(
-        !prims.is_empty(),
-        "le gate DamagedHelmet doit produire au moins une primitive"
-    );
+        let bytes = fs::read(&glb_path).unwrap_or_else(|e| {
+            panic!(
+                "lecture GLB échouée {} (modèle {id}) — `git lfs pull` si LFS ? : {e}",
+                glb_path.display()
+            )
+        });
+        assert!(
+            bytes.len() as u64 >= MIN_GLB_BYTES,
+            "{} ({id}) : {} octets — fichier trop petit (pointeur LFS ou manquant ?)",
+            glb_path.display(),
+            bytes.len(),
+        );
+
+        let expected = m["expected_sha256_hex"]
+            .as_str()
+            .unwrap_or_else(|| panic!("manifest.models[{i}].expected_sha256_hex ({id})"));
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        assert_eq!(
+            digest,
+            expected.to_ascii_lowercase(),
+            "SHA256 modèle {id} ne correspond pas au manifest"
+        );
+
+        let prims =
+            load_from_bytes(&bytes).unwrap_or_else(|e| panic!("load_from_bytes({id}) : {e}"));
+        assert!(
+            !prims.is_empty(),
+            "modèle {id} doit produire au moins une primitive"
+        );
+    }
 }

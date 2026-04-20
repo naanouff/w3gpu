@@ -14,6 +14,11 @@ Critères **objectifs** pour la validation fonctionnelle (compléter la checklis
 - **≥ 1** primitive du modèle affiche des **variations d’intensité** cohérentes avec des normales et une roughness non triviales (inspection visuelle ou capture de référence en PR).
 - Sous **lumière orbitale** ou IBL active : **highlights** présents sur les parties métalliques (pas un albedo seul plat).
 
+## Rendu (AnisotropyBarnLamp — stress `KHR_materials_anisotropy`)
+
+- Le GLB **parse** et produit des primitives (déjà couvert par le test d’intégration).
+- Lorsque l’extension est **implémentée** dans le pipeline : highlights **anisotropes** visibles sur les parties métalliques orientées (critère visuel + note en PR si écart volontaire / approximation).
+
 ## Suivi
 
 - Étendre ce fichier avec des **seuils chiffrés** (SSIM, delta E, etc.) lorsque des captures *golden* seront intégrées.

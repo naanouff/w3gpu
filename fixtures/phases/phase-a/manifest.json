@@ -10,18 +10,32 @@
       "gltf_version": "2.0",
       "upstream_tree_url": "https://github.com/KhronosGroup/glTF-Sample-Models/tree/1ba47770292486e66ca1e1161857a6e5695c2631/2.0/DamagedHelmet",
       "expected_sha256_hex": "03bcd1f8b037ef2224d8fc79950d058b85fc784c0c0015f8066cde5eb87b417a"
+    },
+    {
+      "id": "anisotropy_barn_lamp",
+      "relative_path": "glb/AnisotropyBarnLamp.glb",
+      "gltf_version": "2.0",
+      "extensions_stressed": ["KHR_materials_anisotropy"],
+      "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/AnisotropyBarnLamp/glTF-Binary/AnisotropyBarnLamp.glb",
+      "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/AnisotropyBarnLamp",
+      "expected_sha256_hex": "0e728826c30bd6f3a18a0911db9f5f9ddc2dafa8e20bf9c3312c9625d1e32a24"
     }
   ],
   "optional_extension_slots": [
     {
-      "extension": "KHR_materials_anisotropy",
+      "extension": "KHR_materials_ior",
       "status": "not_vendored_in_repo",
       "note": "Ajouter un GLB + entrée dans models[] lorsque l'extension est implémentée ; documenter SHA256 dans docs/tickets/phase-a-khronos-shortlist.md."
     },
     {
-      "extension": "KHR_materials_ior",
+      "extension": "KHR_materials_clearcoat",
       "status": "not_vendored_in_repo",
       "note": "Idem."
+    },
+    {
+      "extension": "KHR_materials_transmission",
+      "status": "not_vendored_in_repo",
+      "note": "Idem (priorité produit)."
     }
   ]
 }
