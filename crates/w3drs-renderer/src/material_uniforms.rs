@@ -5,7 +5,8 @@
 ///   emissive:  vec4<f32>   offset 16
 ///   metallic:  f32         offset 32
 ///   roughness: f32         offset 36
-///   anisotropy_strength / rotation / tex_coord / pad  — offsets 40–56
+///   anisotropy_strength / rotation — 40, 44
+///   anisotropy_tex_coord (u32) / ior (f32) — 48, 52
 ///   _pad_tail  u64         offset 56 → total 64
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -17,7 +18,7 @@ pub struct MaterialUniforms {
     pub anisotropy_strength: f32,
     pub anisotropy_rotation: f32,
     pub anisotropy_tex_coord: u32,
-    pub _pad_u: u32,
+    pub ior: f32,
     pub _pad_tail: u64,
 }
 
@@ -31,7 +32,7 @@ impl From<&w3drs_assets::Material> for MaterialUniforms {
             anisotropy_strength: m.anisotropy_strength,
             anisotropy_rotation: m.anisotropy_rotation,
             anisotropy_tex_coord: m.anisotropy_tex_coord,
-            _pad_u: 0,
+            ior: m.ior,
             _pad_tail: 0,
         }
     }

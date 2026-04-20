@@ -31,7 +31,7 @@ struct MaterialUniforms {
     anisotropy_strength: f32,
     anisotropy_rotation: f32,
     anisotropy_tex_coord: u32,
-    _pad_u:    u32,
+    ior:       f32,
     _pad_tail: u64,
 }
 
@@ -143,6 +143,14 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+/// Schlick F0 for a dielectric from index of refraction (`KHR_materials_ior`).
+fn dielectric_f0_from_ior(ior: f32) -> vec3<f32> {
+    let t = clamp(ior, 1.0001, 256.0);
+    let x = (t - 1.0) / (t + 1.0);
+    let f = x * x;
+    return vec3<f32>(f, f, f);
+}
+
 fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
     let inv = vec3<f32>(1.0 - roughness);
     return f0 + (max(inv, f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -198,7 +206,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let v  = normalize(frame.camera_position - in.world_pos);
     let l  = normalize(-frame.light_direction);
     let h  = normalize(v + l);
-    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let f0 = mix(dielectric_f0_from_ior(material.ior), albedo, metallic);
 
     let nl = max(dot(n, l), 0.0);
     let nv = max(dot(n, v), 0.0);

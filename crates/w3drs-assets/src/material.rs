@@ -22,6 +22,8 @@ pub struct Material {
     pub anisotropy_rotation: f32,
     /// glTF `anisotropyTexture.texCoord` set (0 or 1).
     pub anisotropy_tex_coord: u32,
+    /// `KHR_materials_ior` — index of refraction (default **1.5** when extension absent, per Khronos).
+    pub ior: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,6 +49,7 @@ impl Default for Material {
             anisotropy_strength: 0.0,
             anisotropy_rotation: 0.0,
             anisotropy_tex_coord: 0,
+            ior: 1.5,
         }
     }
 }
@@ -67,6 +70,7 @@ mod tests {
         assert_eq!(m.anisotropy_strength, 0.0);
         assert_eq!(m.anisotropy_rotation, 0.0);
         assert_eq!(m.anisotropy_tex_coord, 0);
+        assert!((m.ior - 1.5).abs() < 1e-6);
     }
 
     #[test]
@@ -79,5 +83,13 @@ mod tests {
     fn default_shading_pbr() {
         let m = Material::default();
         assert!(matches!(m.shading_model, ShadingModel::Pbr));
+    }
+
+    #[test]
+    fn default_ior_matches_schlick_f0_04() {
+        let m = Material::default();
+        let x = (m.ior - 1.0) / (m.ior + 1.0);
+        let f0 = x * x;
+        assert!((f0 - 0.04).abs() < 1e-5, "IOR 1.5 → F0 ≈ 0.04, got {f0}");
     }
 }

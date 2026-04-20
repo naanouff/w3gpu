@@ -470,6 +470,7 @@ fn convert_material(
         gltf::material::AlphaMode::Mask => AlphaMode::Mask,
         gltf::material::AlphaMode::Blend => AlphaMode::Blend,
     };
+    let ior = mat.ior().unwrap_or(1.5).clamp(1.0001, 256.0);
     Material {
         name: mat.name().unwrap_or("").to_string(),
         shading_model: ShadingModel::Pbr,
@@ -483,5 +484,6 @@ fn convert_material(
         anisotropy_strength,
         anisotropy_rotation,
         anisotropy_tex_coord,
+        ior,
     }
 }

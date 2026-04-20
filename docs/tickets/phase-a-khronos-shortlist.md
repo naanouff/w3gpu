@@ -25,7 +25,7 @@ Empreinte calculée sur le binaire tel que vendu dans ce dépôt (réimport depu
 
 | Extension / thème | Statut |
 |-------------------|--------|
-| `KHR_materials_ior` | Non versionné — ajouter modèle + SHA256 au manifeste |
+| `KHR_materials_ior` | **Lecture + F0 PBR** dans le moteur (`Material::ior`, shader) ; modèle de fixture optionnel pour QA ciblée |
 | `KHR_materials_clearcoat` | idem |
 | `KHR_materials_transmission` | idem (priorité produit) |
 
