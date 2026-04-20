@@ -34,6 +34,10 @@ cargo xtask www
 
 Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.glb` (même asset que la gate Phase A).
 
+## Tests automatisés
+
+- `cargo test -p w3drs-assets --test phase_a_fixture` — vérifie la présence du manifeste, la **SHA256** du gate GLB (alignée sur `manifest.json`) et le parse via `w3drs_assets::load_from_bytes`.
+
 ## Fichiers de données
 
 | Fichier | Rôle |

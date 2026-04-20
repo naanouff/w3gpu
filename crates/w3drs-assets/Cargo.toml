@@ -13,3 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 gltf = { version = "1.4", default-features = false, features = ["names", "utils", "import"] }
 image = { version = "0.25", default-features = false, features = ["hdr"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+sha2 = { version = "0.10", default-features = false, features = ["std"] }

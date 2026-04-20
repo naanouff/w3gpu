@@ -60,7 +60,9 @@ Cette section est la **spec de contenu** de `fixtures/phases/phase-a/` (dossier 
 ### Critères de scène (DOR / DOD)
 
 - **DOR** : [x] `fixtures/phases/phase-a/` avec reproduction documentée ([README](../../fixtures/phases/phase-a/README.md), [manifest](../../fixtures/phases/phase-a/manifest.json)) ; gate **DamagedHelmet** versionné sous `www/public/` (**Git LFS** + SHA256 dans la [shortlist](phase-a-khronos-shortlist.md)).
-- **DOD** : [ ] au moins un **test** (cargo test / E2E) **référence** ce chemin ; toute validation manuelle = **checklist** copiable dans la PR ; natif et web utilisent les **mêmes** assets lorsque les deux cibles sont dans le périmètre.
+- **DOD** :
+  - [x] Au moins un **test** `cargo test` référence explicitement `fixtures/phases/phase-a/` : [`crates/w3drs-assets/tests/phase_a_fixture.rs`](../../crates/w3drs-assets/tests/phase_a_fixture.rs) (`cargo test -p w3drs-assets --test phase_a_fixture`).
+  - [ ] Toute validation manuelle = **checklist** copiable dans la PR ; natif et web utilisent les **mêmes** assets lorsque les deux cibles sont dans le périmètre.
 
 
 ---

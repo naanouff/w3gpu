@@ -5,6 +5,7 @@ Critères **objectifs** pour la validation fonctionnelle (compléter la checklis
 ## Chargement
 
 - Le fichier dont le SHA256 est listé dans [phase-a-khronos-shortlist.md](../../docs/tickets/phase-a-khronos-shortlist.md) **parse** sans erreur fatale côté `w3drs-assets`.
+- Le test d’intégration [`phase_a_fixture.rs`](../../crates/w3drs-assets/tests/phase_a_fixture.rs) passe (`cargo test -p w3drs-assets --test phase_a_fixture`).
 - `cargo xtask check` reste **vert** sur la branche qui intègre les changements.
 
 ## Rendu (gate DamagedHelmet)
