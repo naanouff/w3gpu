@@ -24,6 +24,10 @@ pub struct Material {
     pub anisotropy_tex_coord: u32,
     /// `KHR_materials_ior` — index of refraction (default **1.5** when extension absent, per Khronos).
     pub ior: f32,
+    /// `KHR_materials_clearcoat` — facteur (0–1) ; textures non lues dans cette itération.
+    pub clearcoat_factor: f32,
+    /// `KHR_materials_clearcoat` — rugosité de la couche (facteur seul).
+    pub clearcoat_roughness: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -50,6 +54,8 @@ impl Default for Material {
             anisotropy_rotation: 0.0,
             anisotropy_tex_coord: 0,
             ior: 1.5,
+            clearcoat_factor: 0.0,
+            clearcoat_roughness: 0.0,
         }
     }
 }
@@ -71,6 +77,8 @@ mod tests {
         assert_eq!(m.anisotropy_rotation, 0.0);
         assert_eq!(m.anisotropy_tex_coord, 0);
         assert!((m.ior - 1.5).abs() < 1e-6);
+        assert_eq!(m.clearcoat_factor, 0.0);
+        assert_eq!(m.clearcoat_roughness, 0.0);
     }
 
     #[test]

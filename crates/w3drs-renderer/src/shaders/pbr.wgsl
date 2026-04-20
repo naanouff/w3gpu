@@ -32,7 +32,8 @@ struct MaterialUniforms {
     anisotropy_rotation: f32,
     anisotropy_tex_coord: u32,
     ior:       f32,
-    _pad_tail: u64,
+    clearcoat_factor:     f32,
+    clearcoat_roughness:  f32,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -248,7 +249,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let use_aniso = aniso_mag > 0.002;
     let d_eff = select(d_iso, d_an, use_aniso);
     let g_eff = select(g_iso, v_an, use_aniso);
-    let specular_direct = d_eff * g_eff * f / denom;
+    let specular_base = d_eff * g_eff * f / denom;
+
+    // KHR_materials_clearcoat — couche additive (facteurs seuls ; F0 coat/air ≈ IOR 1.5).
+    let cc_f = clamp(material.clearcoat_factor, 0.0, 1.0);
+    let cc_r = max(material.clearcoat_roughness, 0.089);
+    let d_cc = distribution_ggx(n, h, cc_r);
+    let g_cc = geometry_smith(n, v, l, cc_r);
+    let f0_coat = dielectric_f0_from_ior(1.5);
+    let f_cc = fresnel_schlick(max(dot(h, v), 0.0), f0_coat);
+    let spec_coat = d_cc * g_cc * f_cc / denom * cc_f;
+    let specular_direct = specular_base + spec_coat;
+
     let kd_direct       = (vec3<f32>(1.0) - f) * (1.0 - metallic);
     let diffuse_direct  = kd_direct * albedo / PI;
     let shadow_factor   = pcf_shadow(in.world_pos);

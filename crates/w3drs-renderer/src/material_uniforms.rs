@@ -7,7 +7,7 @@
 ///   roughness: f32         offset 36
 ///   anisotropy_strength / rotation — 40, 44
 ///   anisotropy_tex_coord (u32) / ior (f32) — 48, 52
-///   _pad_tail  u64         offset 56 → total 64
+///   clearcoat_factor / clearcoat_roughness — 56, 60
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialUniforms {
@@ -19,7 +19,8 @@ pub struct MaterialUniforms {
     pub anisotropy_rotation: f32,
     pub anisotropy_tex_coord: u32,
     pub ior: f32,
-    pub _pad_tail: u64,
+    pub clearcoat_factor: f32,
+    pub clearcoat_roughness: f32,
 }
 
 impl From<&w3drs_assets::Material> for MaterialUniforms {
@@ -33,7 +34,18 @@ impl From<&w3drs_assets::Material> for MaterialUniforms {
             anisotropy_rotation: m.anisotropy_rotation,
             anisotropy_tex_coord: m.anisotropy_tex_coord,
             ior: m.ior,
-            _pad_tail: 0,
+            clearcoat_factor: m.clearcoat_factor,
+            clearcoat_roughness: m.clearcoat_roughness,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MaterialUniforms;
+
+    #[test]
+    fn material_uniforms_size_64() {
+        assert_eq!(std::mem::size_of::<MaterialUniforms>(), 64);
     }
 }

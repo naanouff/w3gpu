@@ -130,6 +130,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
             let (anisotropy_strength, anisotropy_rotation, aniso_tex_idx, aniso_tex_coord) =
                 parse_anisotropy(&mat);
             let anisotropy_image = image_for_idx(aniso_tex_idx, &images);
+            let (clearcoat_factor, clearcoat_roughness) = parse_clearcoat(&mat);
 
             result.push(GltfPrimitive {
                 mesh: Mesh::new(vertices, indices),
@@ -138,6 +139,8 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
                     anisotropy_strength,
                     anisotropy_rotation,
                     aniso_tex_coord,
+                    clearcoat_factor,
+                    clearcoat_roughness,
                 ),
                 albedo_image,
                 normal_image,
@@ -456,11 +459,29 @@ fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) 
     (strength, rotation, tex_idx, tex_coord)
 }
 
+/// `KHR_materials_clearcoat` — facteurs scalaires (textures ignorées pour l’instant).
+fn parse_clearcoat(mat: &gltf::Material<'_>) -> (f32, f32) {
+    let Some(v) = mat.extension_value("KHR_materials_clearcoat") else {
+        return (0.0, 0.0);
+    };
+    let factor = v
+        .get("clearcoatFactor")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    let rough = v
+        .get("clearcoatRoughnessFactor")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    (factor.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
+}
+
 fn convert_material(
     mat: &gltf::Material<'_>,
     anisotropy_strength: f32,
     anisotropy_rotation: f32,
     anisotropy_tex_coord: u32,
+    clearcoat_factor: f32,
+    clearcoat_roughness: f32,
 ) -> Material {
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
@@ -485,5 +506,7 @@ fn convert_material(
         anisotropy_rotation,
         anisotropy_tex_coord,
         ior,
+        clearcoat_factor,
+        clearcoat_roughness,
     }
 }
