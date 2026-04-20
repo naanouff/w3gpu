@@ -1,0 +1,10 @@
+---
+description: w3drs — tout data-driven (pas de définitions métier en dur dans le code)
+alwaysApply: true
+---
+
+# w3drs — data-driven
+
+- **Configuration**, **render graph**, **shader graph**, **scripting**, **physique**, **particle graph**, **terrain**, **thème et layout éditeur**, etc. : source de vérité = **données versionnées** (workspace, fichiers, `.w3db`), pas le code Rust/TS.
+- Le code implémente **chargement, validation, exécution** (interpréteurs, VM, GPU) — **pas** de scènes, pipelines, UI ou règles gameplay **uniquement** en dur dans les sources.
+- Toute exception minimale (sûreté, limite matérielle) doit être **documentée** ; référence normative : fichier **ROADMAP.md** du dépôt w3drs, section *Tout est data-driven*.

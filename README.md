@@ -13,6 +13,10 @@ A 3D engine written in Rust, compiled to WebAssembly and running on WebGPU in th
 - **Post-processing** — Bloom (Karis prefilter + separable gaussian), ACES tone mapping, FXAA
 - **glTF loader** — Load `.glb` files at runtime (browser via `fetch`, native via filesystem)
 
+## Current architecture vs documented target
+
+The **code today** is a focused **Rust + wgpu + WASM** runtime: archetype ECS, PBR with IBL and shadows, a GPU-driven path (indirect draw, Hi-Z), post-processing, and a **glTF** path that is still largely **code-centric** (plus the `native-triangle` demo and the **`www/`** Vite shell). The **documented target** (see [`docs/architecture.md`](docs/architecture.md) and [`docs/tickets/README.md`](docs/tickets/README.md)) adds: **data-first** scene and pipeline description (render/shader/terrain/script/particle graphs, physics serialization), a **`.w3db`** project package with streaming, a **native editor** around a **workspace**, a **multi-target compiler** (native exe, Node/React shell, or static “Unity-style” page), **third-party plugins** as **DLL/dylib/so** on desktop and **separate `.wasm` modules`** on the web, broader **import formats** (OBJ, STEP/AP242, point clouds, Gaussian splats) under clear priority rules, and **CI-grade** testing (coverage, native + browser E2E). Each phase ticket carries an **“Écart architecture (existant → cite)”** subsection so work is explicitly tied to closing those gaps.
+
 ## Workspace structure
 
 ```
@@ -126,6 +130,8 @@ git commit -m "assets: add my-model.glb"
 
 ## Roadmap
 
+### Fondations (livré)
+
 - [x] Phase 0 — Workspace scaffold, triangle on screen (native + WASM)
 - [x] Phase 1 — ECS, PBR, glTF loader, texture sampling (albedo · normal · MR · emissive)
 - [x] Phase 2 — IBL (CPU precompute: irradiance 32×32, prefiltered 128×128×5mips, BRDF LUT 256×256)
@@ -133,10 +139,17 @@ git commit -m "assets: add my-model.glb"
 - [x] Phase 3b — ECS archetype SoA + Rayon parallel transform (100k entities < 2ms)
 - [x] Phase 4 — GPU-driven pipeline: Draw Indirect, Hi-Z pyramid, occlusion culling compute
 - [x] Phase 5 — Post-processing: bloom, ACES tone mapping, FXAA
-- [ ] Phase 6 — Editor (Design / Debug / Ship modes)
-- [ ] Phase 7 — SaaS bridge + Cloud compute
 
-See [docs/journal.md](docs/journal.md) for implementation details and decisions.
+### Cible « prod » — parité fonctionnelle avec le concept **w3dts** (Rust)
+
+L’objectif produit est de porter le **périmètre runtime** défini par le moteur TypeScript **w3dts** vers **w3drs** : rendu avancé, format de scène / streaming, animation, physique, terrain, particules, audio, input, réseau, outillage — avec priorités et critères de done détaillés dans **[docs/ROADMAP.md](docs/ROADMAP.md)** (phases A → L).
+
+Les entrées historiques ci-dessous restent des jalons haut niveau :
+
+- [ ] Phase 6 — Éditeur & expérience développeur (voir phase **K** du ROADMAP aligné w3dts)
+- [ ] Phase 7 — SaaS / cloud compute (voir phase **L** et extensions post-parité)
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full w3dts-aligned plan, and [docs/journal.md](docs/journal.md) for implementation details and decisions.
 
 ## License
 

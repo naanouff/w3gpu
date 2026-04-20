@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>w3gpu editor — Mode-based v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;700&family=Kalam:wght@300;400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #f6f3ec;
+    --ink: #1a1a1a;
+    --ink-2: #3a3a3a;
+    --ink-soft: #6b6b6b;
+    --rule: #2a2a2a;
+    --accent: #ffe14b;
+    --accent-2: #ff6b4a;
+    --panel-fill: rgba(0,0,0,0.025);
+  }
+  html.dark{
+    --paper: #1c1d1f;
+    --ink: #f1ede3;
+    --ink-2: #d7d2c6;
+    --ink-soft: #8a8680;
+    --rule: #d7d2c6;
+    --accent: #ffd84b;
+    --accent-2: #ff6b4a;
+    --panel-fill: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Kalam',system-ui,sans-serif;}
+  body{
+    background-image:
+      radial-gradient(rgba(0,0,0,0.015) 1px, transparent 1px),
+      radial-gradient(rgba(0,0,0,0.01) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+  }
+  html.dark body{
+    background-image:
+      radial-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      radial-gradient(rgba(255,255,255,0.012) 1px, transparent 1px);
+  }
+
+  header.topbar{
+    position:sticky; top:0; z-index:30;
+    backdrop-filter: blur(8px);
+    background: color-mix(in oklab, var(--paper) 88%, transparent);
+    border-bottom: 1px dashed var(--rule);
+    padding: 14px 28px 12px;
+    display:flex; align-items:baseline; gap:24px; flex-wrap:wrap;
+  }
+  .brand{font-family:'Caveat',cursive;font-size:30px;font-weight:700;line-height:1;letter-spacing:-.5px;}
+  .brand .dot{display:inline-block; width:10px; height:10px; border-radius:50%; background: var(--ink); margin-right:6px; transform:translateY(-4px);}
+  .brand em{font-style:normal;background: linear-gradient(transparent 55%, var(--accent) 55%, var(--accent) 90%, transparent 90%);padding: 0 4px;}
+  .subtitle{font-family:'IBM Plex Mono',monospace;font-size:11px;color: var(--ink-soft);letter-spacing:.02em;text-transform:uppercase;}
+  .header-spacer{flex:1}
+  .tweaks-toggle{font-family:'IBM Plex Mono',monospace;font-size:11px;color: var(--ink-soft);padding: 6px 10px;border: 1px dashed var(--rule);border-radius: 6px;cursor:pointer;background: transparent;text-transform: uppercase;letter-spacing:.05em;}
+  .tweaks-toggle:hover{ color: var(--ink); border-style:solid; }
+  .back{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);text-decoration:none;padding:4px 8px;border:1px dashed var(--rule);border-radius:4px;text-transform:uppercase;letter-spacing:.05em;}
+  .back:hover{color:var(--ink);border-style:solid;}
+
+  .intro{max-width: 1280px; margin: 30px auto 10px; padding: 0 32px;}
+  .intro h1{font-family:'Caveat',cursive;font-weight:700;font-size: clamp(42px, 5vw, 64px);line-height:1;margin: 0 0 12px;}
+  .intro h1 .marker{background: linear-gradient(transparent 58%, var(--accent) 58%, var(--accent) 92%, transparent 92%);padding: 0 8px;}
+  .intro .lead{font-family:'Kalam',cursive;font-size: 19px;line-height:1.5;max-width: 820px;color: var(--ink-2);}
+  .intro .meta{margin-top: 14px;display:flex; gap:18px; flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:11px; color:var(--ink-soft);text-transform:uppercase; letter-spacing:.05em;}
+  .intro .meta span b{color:var(--ink); font-weight:500;}
+
+  nav.variants{
+    position: sticky; top: 64px; z-index: 20;
+    max-width: 1280px; margin: 28px auto 0; padding: 10px 32px;
+    display:flex; gap: 8px; flex-wrap:wrap;
+    background: color-mix(in oklab, var(--paper) 92%, transparent);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px dashed var(--rule);
+  }
+  .tab{font-family:'Kalam',cursive;font-size: 17px;padding: 6px 14px;border-radius: 999px;cursor:pointer;border: 1.5px solid var(--rule);background: transparent;color: var(--ink-2);display:inline-flex; gap:8px; align-items:baseline;}
+  .tab .num{font-family:'IBM Plex Mono',monospace;font-size: 10px;color: var(--ink-soft);}
+  .tab:hover{ background: var(--panel-fill); }
+  .tab[aria-selected="true"]{background: var(--ink);color: var(--paper);border-color: var(--ink);}
+  .tab[aria-selected="true"] .num{color: var(--paper); opacity:.7;}
+
+  main.variants-area{max-width: 1280px;margin: 24px auto 96px;padding: 0 32px;}
+  section.variant{display:none;animation: fadein .25s ease;}
+  section.variant.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform: translateY(4px)} to{opacity:1; transform:none} }
+
+  .variant-head{display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;padding-bottom: 16px;border-bottom: 1.5px dashed var(--rule);}
+  .variant-head h2{font-family:'Caveat',cursive; font-weight:700;font-size: 44px; margin:0; line-height:1;}
+  .variant-head .tag{font-family:'IBM Plex Mono',monospace; font-size: 11px;letter-spacing:.08em; text-transform:uppercase;color: var(--ink-soft);padding: 3px 8px; border: 1px dashed var(--rule); border-radius: 4px;}
+  .variant-head .desc{font-family:'Kalam',cursive;font-size: 18px; color: var(--ink-2);max-width: 820px;margin-top: 6px;}
+
+  /* wrapper gives annotations breathing room on both sides */
+  .frame-wrap{
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) 170px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1000px){
+    .frame-wrap{grid-template-columns: 1fr;}
+    .note-col{display:none;}
+  }
+  .note-col{
+    position: relative;
+    min-height: 100%;
+    padding-top: 10px;
+  }
+  .note-col .note{
+    position: relative;
+    display: block;
+    margin-bottom: 28px;
+    padding-left: 10px;
+    border-left: 1.5px solid var(--ink);
+    font-family:'Caveat',cursive;
+    font-size: 16px;
+    line-height: 1.15;
+    color: var(--ink);
+    top: var(--t, 0);
+  }
+  .note-col .note::before{display:none;}
+  .note-col.right .note{border-left:none; border-right: 1.5px solid var(--ink); padding-left:0; padding-right:10px; text-align:right;}
+  body.no-annotations .note-col{visibility:hidden;}
+
+  .sketch-frame{position: relative;border: 2px solid var(--ink);border-radius: 14px;background: var(--paper);aspect-ratio: 16 / 10;overflow: hidden;box-shadow: 6px 6px 0 0 color-mix(in oklab, var(--ink) 12%, transparent);}
+  .sketch-frame.tall{aspect-ratio: 16 / 11;}
+  .sketch-frame::before{content:""; position:absolute; inset:0;background-image: radial-gradient(var(--ink-soft) .7px, transparent .8px);background-size: 18px 18px;opacity: .2;pointer-events:none;}
+
+  .box{position:absolute;border: 1.5px solid var(--ink);border-radius: 6px;background: var(--paper);}
+  .box.dashed{ border-style: dashed; }
+  .box.soft{ background: var(--panel-fill); }
+  .box.hl{ background: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .label{font-family:'IBM Plex Mono',monospace;font-size: 10px;letter-spacing:.05em;text-transform: uppercase;color: var(--ink-soft);}
+  .kalam{ font-family:'Kalam',cursive; color: var(--ink-2); }
+  .caveat{ font-family:'Caveat',cursive; }
+  .chip{display:inline-flex; align-items:center; gap:4px;padding: 2px 6px;border: 1px solid var(--ink); border-radius: 3px;font-family:'IBM Plex Mono',monospace;font-size: 9px;background: var(--paper);}
+  .chip.fill{ background: var(--ink); color: var(--paper); }
+  .chip.dashed{ border-style: dashed; }
+  .chip.hl{ background: color-mix(in oklab, var(--accent) 50%, transparent); }
+
+  .ph-cube{width:100%; height:100%;background-image: linear-gradient(45deg, transparent 49%, var(--ink-soft) 49%, var(--ink-soft) 51%, transparent 51%), linear-gradient(-45deg, transparent 49%, var(--ink-soft) 49%, var(--ink-soft) 51%, transparent 51%);background-size: 28px 28px;opacity:.35;}
+
+  .note{position:absolute;font-family:'Caveat',cursive;font-size: 18px;color: var(--ink);line-height: 1.05;max-width: 220px;z-index: 5;}
+  .note::before{content:""; position:absolute;width: var(--lw, 40px); height: 1px;background: var(--ink);top: var(--ly, 50%); left: var(--lx, -44px);transform: rotate(var(--lr, 0deg));transform-origin: right center;}
+  body.no-annotations .note{display:none;}
+  .note .arrow{font-weight:700}
+
+  .row{display:flex; align-items:center; gap:6px;font-family:'IBM Plex Mono',monospace; font-size: 11px;padding: 4px 6px; border-radius: 4px;color: var(--ink-2);}
+  .row.sel{ background: color-mix(in oklab, var(--accent) 40%, transparent); color: var(--ink);}
+  .row .tri{opacity:.55}
+  .row .dot{display:inline-block; width:6px;height:6px; border-radius:50%; background:var(--ink-soft);}
+  .dense{display:flex; flex-direction:column; gap:2px;}
+
+  .prompt{display:flex; align-items:center; gap:10px;background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px;padding: 10px 16px;font-family:'Kalam',cursive; font-size: 16px;color: var(--ink-2);box-shadow: 3px 3px 0 0 var(--ink);}
+  .prompt .spark{font-family:'IBM Plex Mono',monospace; font-size:10px;border:1px solid var(--ink); padding:2px 5px; border-radius:3px;letter-spacing:.08em;}
+  .prompt .caret{display:inline-block; width:1px; height:18px;background: var(--ink);animation: blink 1s steps(2) infinite;}
+  @keyframes blink{50%{opacity:0}}
+
+  .rationale{display:grid; grid-template-columns: repeat(3, 1fr); gap:18px;margin-top: 22px;}
+  @media (max-width: 900px){ .rationale{grid-template-columns:1fr} }
+  .rcell{padding: 14px 16px;border: 1px dashed var(--rule);border-radius: 10px;}
+  .rcell h4{margin:0 0 6px;font-family:'IBM Plex Mono',monospace;font-size: 10px; text-transform:uppercase; letter-spacing:.1em;color: var(--ink-soft);}
+  .rcell p{margin: 0;font-family:'Kalam',cursive;font-size: 16px;line-height: 1.35;color: var(--ink);}
+
+  /* ============ MODE-BASED EDITOR SHELL ============ */
+  .shell{position:absolute; inset:0; display:grid; grid-template-columns: 72px 1fr;}
+  .railleft{
+    border-right: 1.8px solid var(--ink);
+    background: var(--paper);
+    padding: 14px 8px;
+    display:flex; flex-direction:column; gap:4px; align-items:center;
+  }
+  .rail-brand{
+    font-family:'Caveat',cursive; font-weight:700; font-size: 20px;
+    line-height:1; padding: 4px 0 10px;
+    border-bottom: 1px dashed var(--rule);
+    width: 100%; text-align:center;
+  }
+  .mode{
+    width: 56px; padding: 10px 0; margin-top:4px;
+    border: 1px dashed var(--rule);
+    border-radius: 8px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    cursor: pointer;
+    position: relative;
+  }
+  .mode svg{width:18px; height:18px; stroke: var(--ink); fill:none; stroke-width:1.6;}
+  .mode .mname{
+    font-family:'IBM Plex Mono',monospace; font-size: 9px;
+    color: var(--ink-2);
+    text-transform: uppercase; letter-spacing:.04em;
+  }
+  .mode .key{
+    font-family:'IBM Plex Mono',monospace; font-size: 8px;
+    color: var(--ink-soft);
+    position:absolute; top:4px; right:6px;
+    border: 1px solid var(--rule); border-radius: 2px;
+    padding: 0 3px;
+  }
+  .mode.on{ background: var(--ink); border-color: var(--ink); border-style: solid; }
+  .mode.on svg{stroke: var(--paper);}
+  .mode.on .mname{color: var(--paper);}
+  .mode.on .key{color: var(--paper); border-color: color-mix(in oklab, var(--paper) 40%, transparent);}
+  .rail-spacer{flex:1}
+  .rail-bottom{width:100%; display:flex; flex-direction:column; gap:4px; align-items:center;}
+
+  /* stage */
+  .stage{
+    position: relative;
+    background: var(--paper);
+    overflow: hidden;
+  }
+  .stage-head{
+    height: 48px;
+    border-bottom: 1px dashed var(--rule);
+    display:flex; align-items:center; gap:12px; padding: 0 16px;
+  }
+  .stage-head .mtitle{
+    font-family:'Caveat',cursive; font-weight:700; font-size: 30px; line-height:1;
+  }
+  .stage-head .crumb{
+    font-family:'IBM Plex Mono',monospace; font-size: 11px; color: var(--ink-soft);
+  }
+  .stage-head .spacer{flex:1}
+
+  /* viewport utilities */
+  .viewport{
+    border:1.5px solid var(--ink);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+    position: relative;
+    overflow:hidden;
+  }
+  .gizmo{
+    position:absolute; font-family:'IBM Plex Mono',monospace; font-size:10px;
+    color: var(--ink); padding: 4px 6px;
+    background: var(--paper); border: 1px solid var(--ink); border-radius: 3px;
+  }
+  .panel{
+    border:1.5px solid var(--ink); border-radius: 10px;
+    background: var(--paper);
+    padding: 12px;
+  }
+  .panel.dashed{border-style:dashed}
+  .panel-title{font-family:'Caveat',cursive; font-size:22px; font-weight:700; line-height:1; margin-bottom:2px;}
+
+  /* floating AI button */
+  .ai-fab{
+    position:absolute; bottom: 16px; right: 16px;
+    width: 48px; height: 48px; border-radius: 50%;
+    border: 1.8px solid var(--ink);
+    background: color-mix(in oklab, var(--accent) 70%, var(--paper));
+    box-shadow: 3px 3px 0 var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Caveat',cursive; font-size: 26px; font-weight:700;
+    z-index: 8;
+  }
+  .ai-fab::after{
+    content:"✦";
+  }
+  .ai-panel{
+    position:absolute; bottom: 78px; right: 16px;
+    width: 300px;
+    border:1.8px solid var(--ink); border-radius: 12px;
+    background: var(--paper);
+    box-shadow: 4px 4px 0 var(--ink);
+    padding: 12px;
+    z-index: 7;
+  }
+  .ai-panel h5{
+    margin: 0 0 6px;
+    font-family:'Caveat',cursive; font-weight:700; font-size: 22px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .ai-panel h5 .pulse{ width:8px; height:8px; background:var(--accent-2); border-radius:50%;}
+  .ai-msg{
+    font-family:'Kalam',cursive; font-size:14px;
+    padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--rule);
+    margin-top: 6px;
+  }
+  .ai-msg.you{ background: var(--panel-fill); border-style: dashed; }
+  .ai-msg.ai{ background: color-mix(in oklab, var(--accent) 30%, var(--paper)); }
+  .ai-msg .small{font-family:'IBM Plex Mono',monospace; font-size:9px; color: var(--ink-soft); display:block; margin-bottom:2px;}
+  .ai-chips{display:flex; gap:4px; flex-wrap:wrap; margin-top:6px;}
+
+  /* mode suggestion nudge */
+  .nudge{
+    position:absolute; left: 88px; top: 16px;
+    border: 1.5px dashed var(--accent-2);
+    background: color-mix(in oklab, var(--paper) 92%, transparent);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-family:'Kalam',cursive; font-size: 14px; color: var(--ink);
+    box-shadow: 2px 2px 0 color-mix(in oklab, var(--accent-2) 40%, transparent);
+    max-width: 260px;
+    z-index: 6;
+  }
+  .nudge .tag-lbl{
+    font-family:'IBM Plex Mono',monospace; font-size: 9px;
+    color: var(--accent-2); letter-spacing:.08em; text-transform:uppercase;
+    display:block; margin-bottom:2px;
+  }
+  .nudge .actions{display:flex; gap:4px; margin-top:6px;}
+
+  /* ============ V1: ONBOARDING ============ */
+  .v1 .hero-card{
+    position: absolute; inset: 10% 18% 14% 18%;
+    border: 2px solid var(--ink); border-radius: 14px;
+    background: var(--paper);
+    padding: 28px 32px;
+    box-shadow: 6px 6px 0 var(--ink);
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .v1 .hero-card h3{
+    margin:0; font-family:'Caveat',cursive; font-weight:700;
+    font-size: 48px; line-height:1;
+  }
+  .v1 .hero-card h3 .m{background: linear-gradient(transparent 58%, var(--accent) 58%, var(--accent) 92%, transparent 92%); padding: 0 6px;}
+  .v1 .hero-card .lead{font-family:'Kalam',cursive; font-size:16px; color: var(--ink-2);}
+  .v1 .starter{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-top: 6px;
+  }
+  .v1 .starter .card{
+    border:1.5px solid var(--ink); border-radius: 10px;
+    padding: 12px; min-height: 100px;
+    display:flex; flex-direction:column; gap:6px;
+    background: var(--panel-fill);
+    position: relative;
+  }
+  .v1 .starter .card.hl{background: color-mix(in oklab, var(--accent) 30%, var(--paper));}
+  .v1 .starter .card .t{font-family:'Caveat',cursive; font-weight:700; font-size:22px; line-height:1;}
+  .v1 .starter .card .d{font-family:'Kalam',cursive; font-size:13px; color: var(--ink-2);}
+  .v1 .starter .card .mini{
+    display:flex; gap:3px; margin-top:auto;
+  }
+  .v1 .starter .card .mini .sq{width:14px;height:14px; border:1px solid var(--ink); border-radius:2px;}
+  .v1 .prompt-row{
+    margin-top: 6px;
+    display:flex; gap:10px; align-items:center;
+  }
+  .v1 .rail-preview{
+    position:absolute; left: 18px; top: 50%; transform: translateY(-50%);
+    width: 52px;
+    border:1.5px dashed var(--rule); border-radius: 10px;
+    padding: 8px 4px;
+    display:flex; flex-direction:column; gap:4px; align-items:center;
+    background: color-mix(in oklab, var(--paper) 80%, transparent);
+  }
+  .v1 .rail-preview .pm{
+    width: 40px; padding: 6px 0; border:1px dashed var(--rule); border-radius:4px;
+    font-family:'IBM Plex Mono',monospace; font-size: 8px; text-align:center;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+  .v1 .rail-preview .pm.on{background: var(--ink); color: var(--paper); border-style:solid; border-color: var(--ink);}
+
+  /* ============ V2 BUILD ============ */
+  .v2 .workspace{
+    position: absolute; top: 48px; left: 0; right: 0; bottom: 0;
+    display: grid; grid-template-columns: 220px 1fr 260px;
+    gap: 12px; padding: 12px;
+  }
+  .v2 .outliner, .v2 .inspector{ overflow:hidden; display:flex; flex-direction:column; gap:8px;}
+  .v2 .viewport{height:100%;}
+  .v2 .inspector-section{
+    border-bottom: 1px dashed var(--rule);
+    padding-bottom: 8px;
+  }
+  .v2 .inspector-section:last-child{border-bottom:none}
+  .v2 .primitives{display:grid; grid-template-columns: repeat(3, 1fr); gap: 6px;}
+  .v2 .prim{
+    aspect-ratio:1; border: 1px solid var(--rule); border-radius: 6px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    font-family:'IBM Plex Mono',monospace; font-size: 9px; color: var(--ink-2);
+  }
+  .v2 .prim svg{width: 22px; height: 22px;}
+  .v2 .prop{display:grid; grid-template-columns: 44px 1fr; align-items:center; gap:6px;font-family:'IBM Plex Mono',monospace; font-size:10px;padding: 3px 0;}
+  .v2 .val{border: 1px solid var(--rule); border-radius:4px;padding: 2px 6px; background: var(--paper);font-family:'IBM Plex Mono',monospace; font-size:10px;display:flex; justify-content:space-between; gap:6px;}
+
+  /* ============ V3 PAINT ============ */
+  .v3 .workspace{
+    position:absolute; top:48px; left:0; right:0; bottom:0;
+    display: grid; grid-template-columns: 1fr 260px;
+    gap: 12px; padding: 12px;
+  }
+  .v3 .paint-col{display:flex; flex-direction:column; gap:10px;}
+  .v3 .swatches{display:grid; grid-template-columns: repeat(5, 1fr); gap:6px;}
+  .v3 .sw{
+    aspect-ratio:1; border:1px solid var(--ink); border-radius:6px;
+  }
+  .v3 .sw.sel{outline: 2px dashed var(--ink); outline-offset:2px;}
+  .v3 .brush-ring{
+    position:absolute; width:76px; height:76px;
+    border: 2px dashed var(--accent-2); border-radius:50%;
+    top: 42%; left: 44%;
+  }
+  .v3 .brush-ring::after{
+    content:""; position:absolute; inset: 30%;
+    border: 2px solid var(--accent-2); border-radius:50%;
+    opacity:.6;
+  }
+  .v3 .mats{display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;}
+  .v3 .mat{
+    aspect-ratio: 1.2; border:1px solid var(--ink); border-radius:4px;
+    display:flex; align-items:flex-end; padding:4px;
+    font-family:'IBM Plex Mono',monospace; font-size:9px;
+  }
+
+  /* ============ V4 LOGIC ============ */
+  .v4 .workspace{
+    position:absolute; top:48px; left:0; right:0; bottom:0;
+    display:grid; grid-template-columns: 180px minmax(0,1fr) 200px; gap:10px; padding:10px;
+  }
+  .v4 .graph{
+    border:1.5px solid var(--ink); border-radius:10px;
+    position:relative;
+    background:
+      radial-gradient(var(--ink-soft) .7px, transparent .8px);
+    background-size: 22px 22px;
+    background-color: color-mix(in oklab, var(--paper) 97%, var(--ink));
+    overflow:hidden;
+  }
+  .v4 .node{
+    position:absolute;
+    background: var(--paper);
+    border:1.5px solid var(--ink);
+    border-radius: 8px;
+    width: 28%;
+    min-width: 110px;
+    box-shadow: 3px 3px 0 color-mix(in oklab, var(--ink) 20%, transparent);
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+  }
+  .v4 .node .nh{
+    padding: 5px 8px; background: var(--ink); color: var(--paper);
+    border-radius: 6px 6px 0 0;
+    display:flex; justify-content:space-between;
+    font-size: 10px; letter-spacing:.04em; text-transform:uppercase;
+  }
+  .v4 .node .nb{padding:8px; display:flex; flex-direction:column; gap:4px;}
+  .v4 .node .port{display:flex; justify-content:space-between; gap:10px; align-items:center;}
+  .v4 .node .port .dot{width:8px; height:8px; border-radius:50%; background: var(--paper); border:1.5px solid var(--ink);}
+  .v4 .node .port.out .dot{background: var(--ink);}
+  .v4 .node.hl{background: color-mix(in oklab, var(--accent) 28%, var(--paper));}
+  .v4 svg.wires{position:absolute; inset:0; width:100%; height:100%;}
+  .v4 svg.wires path{fill:none; stroke: var(--ink); stroke-width:1.4;}
+  .v4 .lib-nodes{display:flex; flex-direction:column; gap:4px; font-family:'IBM Plex Mono',monospace; font-size:10px;}
+  .v4 .lib-row{padding:4px 6px; border-radius:4px; border:1px dashed var(--rule); display:flex; justify-content:space-between;}
+  .v4 .lib-row.hl{background: color-mix(in oklab, var(--accent) 25%, transparent); border-style:solid;}
+  .v4 .cat{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em;margin-top:6px;}
+
+  /* ============ V5 PLAY ============ */
+  .v5 .full-view{
+    position: absolute; top: 0; left: 72px; right: 0; bottom: 0;
+    background: #0d0e10;
+    overflow: hidden;
+  }
+  .v5 .full-view::before{
+    content:""; position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 30% 40%, #202428 0%, #0d0e10 60%),
+      linear-gradient(180deg, #131518 0%, #0d0e10 100%);
+  }
+  .v5 .scene-ph{
+    position:absolute; inset: 0;
+    background-image:
+      linear-gradient(45deg, transparent 49%, rgba(255,255,255,0.08) 49%, rgba(255,255,255,0.08) 51%, transparent 51%),
+      linear-gradient(-45deg, transparent 49%, rgba(255,255,255,0.08) 49%, rgba(255,255,255,0.08) 51%, transparent 51%);
+    background-size: 44px 44px;
+  }
+  .v5 .play-hud-top{
+    position:absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    display:flex; align-items:center; gap:8px;
+    background: rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2);
+    border-radius: 999px; padding: 6px 12px; backdrop-filter: blur(8px);
+    color: #f1ede3;
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+    letter-spacing:.08em;
+  }
+  .v5 .play-hud-top .rec{width:8px; height:8px; border-radius:50%; background: var(--accent-2);}
+  .v5 .stats{
+    position:absolute; top: 16px; right: 16px;
+    color: #f1ede3;
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+    text-align: right;
+    line-height: 1.7;
+  }
+  .v5 .stats b{color: #ffe14b; font-weight:500;}
+  .v5 .stop-btn{
+    position:absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display:inline-flex; align-items:center; gap:8px;
+    padding: 8px 18px;
+    background: var(--accent-2);
+    border: 1.8px solid #0d0e10;
+    border-radius: 999px;
+    color: #fff;
+    font-family:'IBM Plex Mono',monospace; font-size: 11px;
+    letter-spacing:.08em; text-transform:uppercase;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.5);
+  }
+  .v5 .esc-hint{
+    position:absolute; bottom: 24px; right: 20px;
+    color: rgba(255,255,255,0.5);
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+  }
+  /* play-mode notes need lighter ink on dark bg */
+  section.v5 .note-col .note{color: var(--ink);}
+
+  /* rail overlay in play = darker skin */
+  .v5 .railleft{background: #131518; border-right-color: #2a2d31;}
+  .v5 .rail-brand{color: #f1ede3; border-bottom-color: #2a2d31;}
+  .v5 .mode{border-color: #2a2d31;}
+  .v5 .mode svg{stroke: #8a8680;}
+  .v5 .mode .mname{color:#8a8680;}
+  .v5 .mode .key{color: #8a8680; border-color:#2a2d31;}
+  .v5 .mode.on{background:#f1ede3; border-color:#f1ede3;}
+  .v5 .mode.on svg{stroke:#131518;}
+  .v5 .mode.on .mname{color:#131518;}
+  .v5 .mode.on .key{color:#131518; border-color: rgba(19,21,24,.3);}
+
+  /* ============ V6: TRANSITION ANIM ============ */
+  .anim-wrap{
+    display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    margin-top: 22px;
+  }
+  .anim-frame{
+    border:2px solid var(--ink); border-radius: 10px;
+    background: var(--paper);
+    aspect-ratio: 1.3;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 4px 4px 0 color-mix(in oklab, var(--ink) 15%, transparent);
+  }
+  .anim-frame::before{content:""; position:absolute; inset:0;background-image: radial-gradient(var(--ink-soft) .7px, transparent .8px);background-size: 14px 14px;opacity: .18;pointer-events:none;}
+  .anim-frame .f-label{
+    position:absolute; top:8px; left:8px; z-index:3;
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+    color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em;
+  }
+  .anim-frame .f-title{
+    position:absolute; bottom:8px; left:8px; z-index:3;
+    font-family:'Caveat',cursive; font-weight:700; font-size: 18px;
+  }
+  .tiny-rail{
+    position:absolute; left:8px; top: 28px; bottom: 28px;
+    width: 32px;
+    border: 1.5px solid var(--ink); border-radius: 6px;
+    background: var(--paper);
+    padding: 6px 3px; display:flex; flex-direction:column; gap:3px;
+  }
+  .tiny-rail .tm{
+    width: 100%; height: 20px;
+    border: 1px dashed var(--rule); border-radius: 3px;
+    font-family:'IBM Plex Mono',monospace; font-size: 6px;
+    display:flex; align-items:center; justify-content:center;
+    color: var(--ink-soft);
+  }
+  .tiny-rail .tm.on{background: var(--ink); color: var(--paper); border-style:solid; border-color: var(--ink);}
+  .mini-content{
+    position: absolute; left: 46px; right: 8px; top: 28px; bottom: 28px;
+    border: 1.5px solid var(--ink); border-radius: 6px;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+    overflow:hidden;
+  }
+  .fold{
+    position:absolute; inset:0;
+    transform-origin: left center;
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .curtain{
+    position:absolute; top:0; bottom:0; background: color-mix(in oklab, var(--accent) 60%, var(--paper));
+    border-left: 2px dashed var(--ink); border-right: 2px dashed var(--ink);
+  }
+  .t-annotation{
+    position:absolute; font-family:'Caveat',cursive; font-size: 14px; color: var(--ink);
+    bottom: 34px; right: 8px; text-align:right;
+    max-width: 120px; line-height: 1.1;
+  }
+
+  /* ============ tweaks panel ============ */
+  .tweaks-panel{position: fixed;right: 24px; bottom: 24px;width: 280px;background: var(--paper);border: 1.5px solid var(--ink);border-radius: 14px;box-shadow: 6px 6px 0 0 var(--ink);z-index: 60;transform: translateY(16px) scale(.98);opacity: 0; pointer-events: none;transition: opacity .18s, transform .18s;font-family:'Kalam',cursive;}
+  .tweaks-panel.open{opacity:1; pointer-events: auto; transform:none;}
+  .tweaks-panel h3{margin:0; padding: 14px 16px 4px;font-family:'Caveat',cursive; font-weight:700; font-size: 28px;letter-spacing:-.5px;}
+  .tweaks-panel .hint{padding: 0 16px 10px;font-family:'IBM Plex Mono',monospace;font-size: 10px; text-transform: uppercase; letter-spacing:.08em;color: var(--ink-soft);}
+  .tweaks-panel section{padding: 10px 16px;border-top: 1px dashed var(--rule);}
+  .tweaks-panel section label{display:flex; justify-content:space-between; align-items:center;font-size: 16px; color: var(--ink);padding: 4px 0;cursor: pointer;}
+  .tweaks-panel .seg{display:flex; gap:4px; margin-top:6px;flex-wrap:wrap;}
+  .tweaks-panel .seg button{flex:1 0 auto; font-family:'IBM Plex Mono',monospace; font-size:10px;padding: 5px 8px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2);border-radius: 4px; cursor:pointer; text-transform:uppercase; letter-spacing:.05em;}
+  .tweaks-panel .seg button.on{ background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .switch{position:relative; width:34px; height:18px; border:1.5px solid var(--ink); border-radius:999px; background:transparent;}
+  .switch::after{content:""; position:absolute; top:1px; left:1px;width:12px; height:12px; border-radius:50%;background: var(--ink); transition: transform .15s;}
+  input[type="checkbox"]{display:none;}
+  input[type="checkbox"]:checked + .switch{background: var(--accent);}
+  input[type="checkbox"]:checked + .switch::after{transform: translateX(16px);}
+
+  footer.foot{max-width:1280px; margin: 0 auto; padding: 12px 32px 60px;font-family:'IBM Plex Mono',monospace; font-size:10px; color: var(--ink-soft);text-transform:uppercase; letter-spacing:.08em;border-top: 1px dashed var(--rule);}
+
+  body.compact .intro{margin-top: 14px;}
+  body.compact .intro .lead{font-size: 16px;}
+  body.compact .variant-head h2{font-size: 34px;}
+  body.compact .rcell p{font-size:14px;}
+  body.compact .rcell{padding: 10px 12px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>w3gpu · <em>editor</em></div>
+  <div class="subtitle">MODE-BASED · R02 · DEEP DIVE</div>
+  <div class="header-spacer"></div>
+  <a class="back" href="index.html">← back to R01</a>
+  <button class="tweaks-toggle" id="tweaksBtn">TWEAKS</button>
+</header>
+
+<div class="intro">
+  <h1>Mode-based, v2 · <span class="marker">one job at a time</span></h1>
+  <p class="lead">
+    We're taking direction 04 from round one and pushing it. Eight modes in a left rail: Build · Paint · Sculpt · Logic · Animate · Light · Play · Ship. The AI lives in a floating ✦ button that opens a chat anywhere, and watches what you do — nudging you toward the right mode when it spots a mismatch. Wireframes only — structure and flow.
+  </p>
+  <div class="meta">
+    <span><b>Screens</b> · 5 + transition study</span>
+    <span><b>AI</b> · floating chat + mode nudge</span>
+    <span><b>Play</b> · only the rail stays</span>
+    <span><b>Fidelity</b> · lo-fi sketch</span>
+  </div>
+</div>
+
+<nav class="variants" role="tablist" id="tabs">
+  <button class="tab" role="tab" data-v="1" aria-selected="true"><span class="num">01</span> Onboarding</button>
+  <button class="tab" role="tab" data-v="2"><span class="num">02</span> Build</button>
+  <button class="tab" role="tab" data-v="3"><span class="num">03</span> Paint</button>
+  <button class="tab" role="tab" data-v="4"><span class="num">04</span> Logic</button>
+  <button class="tab" role="tab" data-v="5"><span class="num">05</span> Play</button>
+  <button class="tab" role="tab" data-v="6"><span class="num">06</span> Mode transition</button>
+</nav>
+
+<main class="variants-area">
+
+<!-- ============== V1 ONBOARDING ============== -->
+<section class="variant active v1" data-v="1">
+  <div class="variant-head">
+    <h2>01 · Onboarding — first launch</h2>
+    <span class="tag">zero-state · starter picker</span>
+  </div>
+  <p class="desc">
+    First time a user opens w3gpu, the rail is visible but dimmed — they can't "pick the wrong mode". A big paper card in the center asks what they want to make. Three starters + a freeform prompt. The rail only lights up once they commit.
+  </p>
+
+  <div class="frame-wrap">
+  <aside class="note-col">
+    <div class="note" style="--t:30%">Rail is dim until the user commits a start. <span class="arrow">→</span></div>
+    <div class="note" style="--t:10%">AI button hidden on first run — it's not the hero yet.</div>
+  </aside>
+  <div class="sketch-frame">
+    <div class="shell">
+      <!-- rail dimmed -->
+      <aside class="railleft" style="opacity:.35">
+        <div class="rail-brand">w3</div>
+        <div class="mode"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span></div>
+        <div class="rail-spacer"></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+      </aside>
+      <!-- stage with hero card -->
+      <div class="stage">
+        <div class="hero-card">
+          <div class="label">first run · welcome</div>
+          <h3>What are we <span class="m">making</span> today?</h3>
+          <p class="lead">Pick a starting point. You can always change direction — w3gpu unlocks the right <b>mode</b> for what you need.</p>
+
+          <div class="starter">
+            <div class="card hl">
+              <div class="t">Empty scene</div>
+              <div class="d">Just a ground plane + one light. Clean slate.</div>
+              <div class="mini"><div class="sq"></div><div class="sq" style="background:var(--accent)"></div></div>
+            </div>
+            <div class="card">
+              <div class="t">Platformer jam</div>
+              <div class="d">Player, platforms, gravity, camera. Ready to play.</div>
+              <div class="mini"><div class="sq"></div><div class="sq"></div><div class="sq"></div><div class="sq"></div></div>
+            </div>
+            <div class="card">
+              <div class="t">3D diorama</div>
+              <div class="d">A small painted world. Sculpt &amp; light focused.</div>
+              <div class="mini"><div class="sq"></div><div class="sq"></div><div class="sq"></div></div>
+            </div>
+          </div>
+
+          <div class="prompt-row">
+            <span class="label" style="white-space:nowrap">✦ or describe it</span>
+            <div class="prompt" style="flex:1">
+              <span class="spark">ASK</span>
+              <span>a racing game on a donut-shaped track<span class="caret"></span></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <aside class="note-col right">
+    <div class="note" style="--t:20%"><span class="arrow">←</span> 3 presets + 1 freeform. No wrong answer.</div>
+    <div class="note" style="--t:40%">Keyboard focus starts on the prompt — typing just works.</div>
+  </aside>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>Beginners face one question, not a blank toolbox. Commitment is gentle — everything can be changed.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Presets must be truly starter-friendly. "Platformer jam" sets high expectations for auto-logic.</p></div>
+    <div class="rcell"><h4>Open</h4><p>After first run, does this screen return? Or is there a "new project" card in the rail?</p></div>
+  </div>
+</section>
+
+<!-- ============== V2 BUILD ============== -->
+<section class="variant v2" data-v="2">
+  <div class="variant-head">
+    <h2>02 · Build mode — hero</h2>
+    <span class="tag">primitives · hierarchy · transform</span>
+  </div>
+  <p class="desc">
+    The workhorse screen. Place, move, parent, group. Outliner on the left, viewport center, inspector right. Everything you <i>don't</i> need for placing objects (materials, logic, timeline) is not shown — those live in their own modes.
+  </p>
+
+  <div class="frame-wrap">
+  <aside class="note-col">
+    <div class="note" style="--t:18%">Rail stays full — always one key away from any mode. <span class="arrow">→</span></div>
+    <div class="note" style="--t:48%">Outliner + primitives share the left column.</div>
+    <div class="note" style="--t:72%">Crumb under mode title is the 1-line hint.</div>
+  </aside>
+  <div class="sketch-frame tall">
+    <div class="shell">
+      <!-- full rail -->
+      <aside class="railleft">
+        <div class="rail-brand">w3</div>
+        <div class="mode on"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span><span class="key">B</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span><span class="key">P</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span><span class="key">S</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span><span class="key">L</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span><span class="key">A</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span><span class="key">I</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span><span class="key">␣</span></div>
+        <div class="rail-spacer"></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+      </aside>
+      <!-- stage -->
+      <div class="stage">
+        <div class="stage-head">
+          <div class="mtitle">Build</div>
+          <div class="crumb">place &amp; arrange objects</div>
+          <div class="spacer"></div>
+          <span class="chip">⌘ Z</span>
+          <span class="chip">⌘ ⇧ Z</span>
+          <span class="chip dashed">⌘K search</span>
+        </div>
+        <div class="workspace">
+          <!-- outliner -->
+          <div class="outliner">
+            <div class="panel" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+              <div class="panel-title">Scene</div>
+              <span class="label">hierarchy · 7 items</span>
+              <div class="dense" style="margin-top:6px; flex:1">
+                <div class="row"><span class="tri">▾</span><span class="dot"></span>Main Scene</div>
+                <div class="row" style="padding-left:16px"><span class="tri">▾</span>Environment</div>
+                <div class="row" style="padding-left:32px">Ground</div>
+                <div class="row" style="padding-left:32px">Sky</div>
+                <div class="row" style="padding-left:16px"><span class="tri">▸</span>Lights (2)</div>
+                <div class="row sel" style="padding-left:16px">◆ Player</div>
+                <div class="row" style="padding-left:16px">Platforms (3)</div>
+                <div class="row" style="padding-left:16px"><span style="opacity:.5">+ add...</span></div>
+              </div>
+            </div>
+            <div class="panel dashed" style="padding:10px">
+              <span class="label">primitives · drag ↗</span>
+              <div class="primitives" style="margin-top:6px">
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/></svg>cube</div>
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8"/></svg>sphere</div>
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="12" cy="6" rx="8" ry="2"/><ellipse cx="12" cy="18" rx="8" ry="2"/><path d="M4 6 V18 M20 6 V18"/></svg>cyl</div>
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 4 L20 20 L4 20 Z"/></svg>cone</div>
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="10" width="18" height="4"/></svg>plane</div>
+                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12 H20 M12 4 V20"/></svg>+</div>
+              </div>
+            </div>
+          </div>
+          <!-- viewport -->
+          <div class="viewport">
+            <div class="ph-cube"></div>
+            <div class="gizmo" style="top:10px; left:10px;">select · move · rot · scl</div>
+            <div class="gizmo" style="top:10px; right:10px;">persp · ortho · top</div>
+            <div class="gizmo" style="bottom:10px; left:10px;">grid 1m · snap ½</div>
+            <div class="gizmo" style="bottom:70px; right:10px;">x+ y+ z+</div>
+            <!-- AI FAB -->
+            <button class="ai-fab"></button>
+            <!-- selection chip near object -->
+            <div class="gizmo" style="top: 45%; left: 42%; background: color-mix(in oklab, var(--accent) 55%, var(--paper));">◆ Player · 1 selected</div>
+          </div>
+          <!-- inspector -->
+          <div class="inspector">
+            <div class="panel" style="flex:1">
+              <div class="panel-title">Player</div>
+              <span class="label">◆ inspector</span>
+
+              <div class="inspector-section" style="margin-top:8px">
+                <span class="label">transform</span>
+                <div class="prop"><span>POS</span><div class="val"><span>0.00 0.50 0.00</span><span style="color:var(--ink-soft)">⇔</span></div></div>
+                <div class="prop"><span>ROT</span><div class="val"><span>0  0  0</span><span style="color:var(--ink-soft)">⇔</span></div></div>
+                <div class="prop"><span>SCL</span><div class="val"><span>1.0 1.0 1.0</span><span style="color:var(--ink-soft)">⇔</span></div></div>
+              </div>
+              <div class="inspector-section">
+                <span class="label">mesh</span>
+                <div class="prop"><span>SRC</span><div class="val"><span>player.glb</span><span style="color:var(--ink-soft)">↪</span></div></div>
+                <div class="prop"><span>CAST</span><div class="val"><span>shadow · on</span><span style="color:var(--ink-soft)">⏺</span></div></div>
+              </div>
+              <div class="inspector-section">
+                <span class="label">what else?</span>
+                <div class="dense" style="margin-top:4px; gap:4px">
+                  <span class="chip dashed">🎨 paint · switch mode</span>
+                  <span class="chip dashed">🔗 add behavior · logic mode</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="note-col right">
+    <div class="note" style="--t:15%"><span class="arrow">←</span> ✦ AI button floats above anything, never in the way.</div>
+    <div class="note" style="--t:45%">Inspector offers links back to other modes — a discovery cue.</div>
+    <div class="note" style="--t:65%">Transform / Mesh only. No materials here — that's Paint.</div>
+  </aside>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>Only placement tools are visible. No paint slider, no keyframe ruler. Simple.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Users expecting "tabs" inside Build (materials etc) will hunt for them. Hence the cross-mode chips.</p></div>
+    <div class="rcell"><h4>Open</h4><p>Should drag-from-outliner → viewport spawn, or should primitives come from a floater?</p></div>
+  </div>
+</section>
+
+<!-- ============== V3 PAINT ============== -->
+<section class="variant v3" data-v="3">
+  <div class="variant-head">
+    <h2>03 · Paint mode</h2>
+    <span class="tag">colors · materials · brush</span>
+  </div>
+  <p class="desc">
+    Paint turns the viewport into a canvas. Everything in the right column is about <i>surfaces</i>: swatches, materials, brush. A floating AI chat is open here to show how it behaves in-mode — suggestions are paint-specific.
+  </p>
+
+  <div class="frame-wrap">
+  <aside class="note-col">
+    <div class="note" style="--t:20%">Brush ring on cursor — viewport gets a new affordance per mode. <span class="arrow">→</span></div>
+    <div class="note" style="--t:45%">Swatches + materials replace the usual inspector column.</div>
+  </aside>
+  <div class="sketch-frame tall">
+    <div class="shell">
+      <aside class="railleft">
+        <div class="rail-brand">w3</div>
+        <div class="mode"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span><span class="key">B</span></div>
+        <div class="mode on"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span><span class="key">P</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span><span class="key">S</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span><span class="key">L</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span><span class="key">A</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span><span class="key">I</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span><span class="key">␣</span></div>
+        <div class="rail-spacer"></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+      </aside>
+
+      <div class="stage">
+        <div class="stage-head">
+          <div class="mtitle">Paint</div>
+          <div class="crumb">drop materials · drag colors · brush</div>
+          <div class="spacer"></div>
+          <span class="chip">undo</span><span class="chip">redo</span>
+          <span class="chip dashed">target: Ground</span>
+        </div>
+        <div class="workspace">
+          <!-- viewport -->
+          <div class="viewport">
+            <div class="ph-cube"></div>
+            <div class="brush-ring"></div>
+            <div class="gizmo" style="top:10px; left:10px;">brush · soft · 0.8m</div>
+            <div class="gizmo" style="top:10px; right:10px;">targets: ground, walls</div>
+            <div class="gizmo" style="bottom:10px; left:10px;">drag swatch → paint</div>
+
+            <!-- AI FAB + panel open -->
+            <button class="ai-fab"></button>
+            <div class="ai-panel">
+              <h5><span class="pulse"></span> Ask w3gpu</h5>
+              <span class="label">mode: paint</span>
+              <div class="ai-msg you"><span class="small">YOU · now</span>make the ground look like moss</div>
+              <div class="ai-msg ai">
+                <span class="small">w3gpu ✦</span>
+                I'll mix 3 greens + a tiled texture on <b>Ground</b>. Apply?
+                <div class="ai-chips">
+                  <span class="chip hl">apply</span>
+                  <span class="chip">tweak</span>
+                  <span class="chip">cancel</span>
+                </div>
+              </div>
+              <div class="prompt" style="margin-top:8px; padding:6px 10px; font-size:13px; box-shadow: 2px 2px 0 var(--ink);">
+                <span class="spark">✦</span>
+                <span>ask anything paint-related...<span class="caret"></span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- paint panels -->
+          <div class="paint-col">
+            <div class="panel">
+              <div class="panel-title">Swatches</div>
+              <span class="label">click to pick · drag to viewport</span>
+              <div class="swatches" style="margin-top:8px">
+                <div class="sw sel" style="background:#8fc76b"></div>
+                <div class="sw" style="background:#e0c27a"></div>
+                <div class="sw" style="background:#6b9cc7"></div>
+                <div class="sw" style="background:#c26b6b"></div>
+                <div class="sw" style="background:#4a4a4a"></div>
+                <div class="sw" style="background:#d8d0bf"></div>
+                <div class="sw" style="background:#3b5b3b"></div>
+                <div class="sw" style="background:#e8b56b"></div>
+                <div class="sw" style="background:#9b7fc7"></div>
+                <div class="sw" style="background: var(--paper); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px">+</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">Materials</div>
+              <span class="label">from library · drag to surface</span>
+              <div class="mats" style="margin-top:8px">
+                <div class="mat" style="background: linear-gradient(135deg, #8fc76b, #5a8f40)">grass</div>
+                <div class="mat" style="background: linear-gradient(135deg, #c9b38a, #8a6b40)">wood</div>
+                <div class="mat" style="background: linear-gradient(135deg, #8a8a8a, #4a4a4a); color:#fff">stone</div>
+                <div class="mat" style="background: linear-gradient(135deg, #d9c7a8, #a38860)">sand</div>
+                <div class="mat" style="background: linear-gradient(135deg, #6ab3d9, #2a6a99); color:#fff">water</div>
+                <div class="mat" style="background: color-mix(in oklab, var(--accent) 30%, var(--paper)); color: var(--ink)">✦ gen</div>
+              </div>
+            </div>
+
+            <div class="panel dashed">
+              <span class="label">brush · also on scroll</span>
+              <div class="dense" style="margin-top:6px; gap:2px">
+                <div class="row">size <span style="margin-left:auto">0.80m</span></div>
+                <div class="row">edge <span style="margin-left:auto">soft</span></div>
+                <div class="row">scatter <span style="margin-left:auto">12%</span></div>
+                <div class="row">mode <span style="margin-left:auto">replace</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="top:16%; right:26%; --lx:-40px; --lw:40px; --lr:-8deg; display:none;">
+      hidden
+    </div>
+    <div class="note" style="top:34%; left:24%; --lw:28px; --lr:10deg; max-width:170px; display:none;">
+      hidden
+    </div>
+    <div class="note" style="bottom:12%; left:68%; --lx:-40px; --lw:40px; --lr:0deg; max-width:200px; display:none;">
+      hidden
+    </div>
+  </div>
+  <aside class="note-col right">
+    <div class="note" style="--t:20%"><span class="arrow">←</span> AI chat opens as a floater — doesn't push any panel.</div>
+    <div class="note" style="--t:45%">Suggestions inside AI are <b>paint-specific</b>, not generic.</div>
+    <div class="note" style="--t:65%">"Target" chip in the top bar says what will get painted.</div>
+  </aside>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>Each mode reshapes the viewport affordance (brush here). Discoverable, no modal-mode fatigue.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Selecting a target feels unusual in 3D editors. Need a clear "what am I painting?" indicator.</p></div>
+    <div class="rcell"><h4>Open</h4><p>Does hovering an object highlight its paintable surfaces, or is it stroke-agnostic?</p></div>
+  </div>
+</section>
+
+<!-- ============== V4 LOGIC ============== -->
+<section class="variant v4" data-v="4">
+  <div class="variant-head">
+    <h2>04 · Logic mode — node graph</h2>
+    <span class="tag">behavior · events · AI-nudged</span>
+  </div>
+  <p class="desc">
+    Logic is the node graph for behaviors (jump, spawn, on-collision…). Node library on the left, graph center, inspector right. <b>Here we show the AI nudge</b> — the user has been placing trigger nodes for 30 seconds with no connections, so w3gpu gently suggests a switch to Logic (if they weren't already) or auto-wires.
+  </p>
+
+  <div class="frame-wrap">
+  <aside class="note-col">
+    <div class="note" style="--t:15%">Dotted wire = AI's proposed connection. <span class="arrow">→</span></div>
+    <div class="note" style="--t:40%">Node library grouped: events / actions / values.</div>
+    <div class="note" style="--t:60%">Each object has its own graph — scope is narrow.</div>
+  </aside>
+  <div class="sketch-frame tall">
+    <div class="shell">
+      <aside class="railleft">
+        <div class="rail-brand">w3</div>
+        <div class="mode"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span><span class="key">B</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span><span class="key">P</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span><span class="key">S</span></div>
+        <div class="mode on"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span><span class="key">L</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span><span class="key">A</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span><span class="key">I</span></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span><span class="key">␣</span></div>
+        <div class="rail-spacer"></div>
+        <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+      </aside>
+      <div class="stage">
+        <div class="stage-head">
+          <div class="mtitle">Logic</div>
+          <div class="crumb">graph for: ◆ Player · behaviors</div>
+          <div class="spacer"></div>
+          <span class="chip">zoom 80%</span>
+          <span class="chip">+ new graph</span>
+          <span class="chip dashed">test in play</span>
+        </div>
+
+        <div class="workspace">
+          <!-- lib -->
+          <div class="panel">
+            <div class="panel-title">Node library</div>
+            <span class="label">drag onto graph</span>
+            <div class="cat">events</div>
+            <div class="lib-nodes">
+              <div class="lib-row hl">▶ On Start</div>
+              <div class="lib-row">↓ On Key Press</div>
+              <div class="lib-row">◎ On Collision</div>
+              <div class="lib-row">⏱ On Timer</div>
+            </div>
+            <div class="cat">actions</div>
+            <div class="lib-nodes">
+              <div class="lib-row">↑ Jump</div>
+              <div class="lib-row">→ Move</div>
+              <div class="lib-row">✨ Spawn</div>
+              <div class="lib-row">🔊 Play Sound</div>
+              <div class="lib-row">💥 Destroy</div>
+            </div>
+            <div class="cat">values</div>
+            <div class="lib-nodes">
+              <div class="lib-row"># Number</div>
+              <div class="lib-row">? If / Else</div>
+              <div class="lib-row">+ Math</div>
+            </div>
+          </div>
+
+          <!-- graph -->
+          <div class="graph">
+            <svg class="wires" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <path d="M 27 18 C 34 18, 36 46, 44 46" vector-effect="non-scaling-stroke"/>
+              <path d="M 72 46 C 82 46, 82 26, 92 26" vector-effect="non-scaling-stroke"/>
+              <path d="M 72 54 C 82 54, 82 72, 92 72" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>
+            </svg>
+
+            <div class="node" style="top: 8%; left: 4%;">
+              <div class="nh">▶ ON KEY <span>space</span></div>
+              <div class="nb">
+                <div class="port out"><span>pressed</span><span class="dot"></span></div>
+                <div class="port out"><span>released</span><span class="dot"></span></div>
+              </div>
+            </div>
+
+            <div class="node hl" style="top: 30%; left: 36%;">
+              <div class="nh">↑ JUMP</div>
+              <div class="nb">
+                <div class="port"><span class="dot"></span><span>trigger</span></div>
+                <div class="port"><span>height</span><span>2.0</span></div>
+                <div class="port out"><span>done</span><span class="dot"></span></div>
+                <div class="port out"><span>peak</span><span class="dot"></span></div>
+              </div>
+            </div>
+
+            <div class="node" style="top: 12%; left: 68%;">
+              <div class="nh">🔊 PLAY SOUND</div>
+              <div class="nb">
+                <div class="port"><span class="dot"></span><span>play</span></div>
+                <div class="port"><span>clip</span><span>boing.wav</span></div>
+              </div>
+            </div>
+
+            <div class="node" style="top: 62%; left: 68%; opacity:.55">
+              <div class="nh">✨ SPAWN</div>
+              <div class="nb">
+                <div class="port"><span class="dot"></span><span>trigger</span></div>
+                <div class="port"><span>prefab</span><span>dust.glb</span></div>
+              </div>
+            </div>
+
+            <!-- AI nudge -->
+            <div class="nudge" style="left: auto; right: 16px; top: 16px;">
+              <span class="tag-lbl">✦ w3gpu suggests</span>
+              <b>"You just made a jumper."</b> Want me to wire <b>Spawn</b> to <b>peak</b> so dust puffs at apex?
+              <div class="actions">
+                <span class="chip hl">yes, wire it</span>
+                <span class="chip">no thanks</span>
+                <span class="chip dashed">explain</span>
+              </div>
+            </div>
+
+            <button class="ai-fab"></button>
+          </div>
+
+          <!-- inspector -->
+          <div class="panel">
+            <div class="panel-title">Jump</div>
+            <span class="label">◆ node settings</span>
+            <div class="inspector-section" style="margin-top:8px; border-bottom:1px dashed var(--rule); padding-bottom:8px">
+              <div class="row">height <span style="margin-left:auto">2.0 m</span></div>
+              <div class="row">duration <span style="margin-left:auto">0.4 s</span></div>
+              <div class="row">easing <span style="margin-left:auto">ease-out</span></div>
+              <div class="row">cooldown <span style="margin-left:auto">0.2 s</span></div>
+            </div>
+            <span class="label" style="margin-top:8px; display:block">preview</span>
+            <div style="height:60px; border:1.5px dashed var(--rule); border-radius:6px; margin-top:4px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft)">
+              ↗ curve preview
+            </div>
+            <div style="margin-top:10px">
+              <span class="label">related</span>
+              <div class="dense" style="margin-top:4px; gap:4px">
+                <span class="chip dashed">◆ Player in Build mode</span>
+                <span class="chip dashed">gravity · scene setting</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="top:28%; right:38%; display:none;">hidden</div>
+    <div class="note" style="top:8%; left:28%; display:none;">hidden</div>
+    <div class="note" style="bottom:20%; right:16%; display:none;">hidden</div>
+  </div>
+  <aside class="note-col right">
+    <div class="note" style="--t:20%"><span class="arrow">←</span> AI nudge pops <b>when</b> the user seems stuck — not always on.</div>
+    <div class="note" style="--t:45%">Inspector cross-links back to Build mode for context.</div>
+  </aside>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>Behaviors are visual, beginner-friendly. AI watches intent and offers wiring — not code.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Node soup at scale. Needs collapsible "behavior capsules" for anything past 10 nodes.</p></div>
+    <div class="rcell"><h4>Open</h4><p>One graph per object, or one global? We're leaning per-object with a scene-level override.</p></div>
+  </div>
+</section>
+
+<!-- ============== V5 PLAY ============== -->
+<section class="variant v5" data-v="5">
+  <div class="variant-head">
+    <h2>05 · Play / Test</h2>
+    <span class="tag">only the rail stays</span>
+  </div>
+  <p class="desc">
+    Play swaps the entire stage for your running scene. Per your request, <b>only the vertical rail remains</b> on the left — so the user can always flip back to Build, Paint, etc. A tiny HUD with stats and a stop button float over the scene.
+  </p>
+
+  <div class="frame-wrap">
+  <aside class="note-col">
+    <div class="note" style="--t:15%">Rail stays — switching modes is one click away. <span class="arrow">→</span></div>
+    <div class="note" style="--t:45%">Skin turns dark — clear "you're in runtime" signal.</div>
+  </aside>
+  <div class="sketch-frame">
+    <!-- darker rail skin applied via .v5 selector -->
+    <aside class="railleft" style="position:absolute; left:0; top:0; bottom:0; width:72px;">
+      <div class="rail-brand">w3</div>
+      <div class="mode"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span><span class="key">B</span></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span><span class="key">P</span></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span><span class="key">S</span></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span><span class="key">L</span></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span><span class="key">A</span></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span><span class="key">I</span></div>
+      <div class="mode on"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span><span class="key">␣</span></div>
+      <div class="rail-spacer"></div>
+      <div class="mode"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+    </aside>
+
+    <div class="full-view">
+      <div class="scene-ph"></div>
+
+      <!-- top pill -->
+      <div class="play-hud-top">
+        <span class="rec"></span>
+        RUNNING · MAIN SCENE · 00:14
+      </div>
+
+      <!-- stats -->
+      <div class="stats">
+        <div>FPS <b>144</b></div>
+        <div>FRAME <b>6.9 ms</b></div>
+        <div>DRAW CALLS <b>18</b></div>
+        <div>TRIS <b>12.3k</b></div>
+        <div style="margin-top:6px; opacity:.6">WEBGPU · M2 · CHROME</div>
+      </div>
+
+      <!-- stop -->
+      <div class="stop-btn">
+        ◼ stop · press space
+      </div>
+
+      <!-- esc hint -->
+      <div class="esc-hint">ESC to release mouse</div>
+    </div>
+
+    <div class="note" style="display:none">hidden</div>
+    <div class="note" style="display:none">hidden</div>
+    <div class="note" style="display:none">hidden</div>
+  </div>
+  <aside class="note-col right">
+    <div class="note" style="--t:20%"><span class="arrow">←</span> Stats in top-right, tiny. Toggle-able later.</div>
+    <div class="note" style="--t:50%">One primary action: stop (or space).</div>
+  </aside>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>Immersive but not trapped — users can context-switch back in one click/key.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Users might click a mode in the rail expecting "live edit". Needs a confirm (pause/stop first?).</p></div>
+    <div class="rcell"><h4>Open</h4><p>Should Play auto-pause on mode-click, or ask? Or should runtime-edits be a first-class feature?</p></div>
+  </div>
+</section>
+
+<!-- ============== V6 TRANSITION ============== -->
+<section class="variant v6" data-v="6">
+  <div class="variant-head">
+    <h2>06 · Mode transition — study</h2>
+    <span class="tag">fold · zoom · continuity</span>
+  </div>
+  <p class="desc">
+    You asked for an animation between modes. Here's a 4-frame "paper-fold" idea: the stage pivots like a page turning, while the rail stays fixed (anchor point). Fast (~180ms), but enough to tell the user "the world you see is different now". Below the study, a live demo you can play.
+  </p>
+
+  <div class="anim-wrap">
+    <div class="anim-frame">
+      <span class="f-label">F1 · 0ms</span>
+      <div class="tiny-rail">
+        <div class="tm on">B</div><div class="tm">P</div><div class="tm">S</div><div class="tm">L</div>
+      </div>
+      <div class="mini-content">
+        <div class="ph-cube"></div>
+      </div>
+      <span class="f-title">Build</span>
+    </div>
+    <div class="anim-frame">
+      <span class="f-label">F2 · 60ms</span>
+      <div class="tiny-rail">
+        <div class="tm">B</div><div class="tm on">P</div><div class="tm">S</div><div class="tm">L</div>
+      </div>
+      <div class="mini-content">
+        <div class="curtain" style="left:0; width:65%; transform: skewX(-14deg); transform-origin: left;"></div>
+      </div>
+      <span class="f-title">fold in</span>
+      <div class="t-annotation">old stage tilts off.</div>
+    </div>
+    <div class="anim-frame">
+      <span class="f-label">F3 · 120ms</span>
+      <div class="tiny-rail">
+        <div class="tm">B</div><div class="tm on">P</div><div class="tm">S</div><div class="tm">L</div>
+      </div>
+      <div class="mini-content">
+        <div class="curtain" style="left: 40%; width: 45%; transform: skewX(8deg); background: color-mix(in oklab, var(--accent) 30%, var(--paper));"></div>
+      </div>
+      <span class="f-title">fold out</span>
+      <div class="t-annotation">new stage<br/>slides in.</div>
+    </div>
+    <div class="anim-frame">
+      <span class="f-label">F4 · 180ms</span>
+      <div class="tiny-rail">
+        <div class="tm">B</div><div class="tm on">P</div><div class="tm">S</div><div class="tm">L</div>
+      </div>
+      <div class="mini-content" style="background: color-mix(in oklab, var(--accent) 18%, var(--paper))">
+        <div style="position:absolute; inset:10%; border:1.5px solid var(--ink); border-radius:4px;"></div>
+      </div>
+      <span class="f-title">Paint</span>
+      <div class="t-annotation">rail label<br/>+ content<br/>now match.</div>
+    </div>
+  </div>
+
+  <!-- live demo -->
+  <div class="sketch-frame" style="margin-top:22px;">
+    <div class="shell" id="demoShell">
+      <aside class="railleft" id="demoRail">
+        <div class="rail-brand">w3</div>
+        <div class="mode on" data-mode="build"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="mname">Build</span><span class="key">B</span></div>
+        <div class="mode" data-mode="paint"><svg viewBox="0 0 24 24"><path d="M4 20 L14 10 L19 15 L14 20 Z"/><circle cx="17" cy="7" r="2"/></svg><span class="mname">Paint</span><span class="key">P</span></div>
+        <div class="mode" data-mode="sculpt"><svg viewBox="0 0 24 24"><path d="M4 18 C8 4, 16 22, 20 8"/></svg><span class="mname">Sculpt</span><span class="key">S</span></div>
+        <div class="mode" data-mode="logic"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6 L16 18"/></svg><span class="mname">Logic</span><span class="key">L</span></div>
+        <div class="mode" data-mode="anim"><svg viewBox="0 0 24 24"><path d="M4 18 H20 M6 18 L6 10 L10 13 L14 6 L18 14"/></svg><span class="mname">Anim</span><span class="key">A</span></div>
+        <div class="mode" data-mode="light"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21"/></svg><span class="mname">Light</span><span class="key">I</span></div>
+        <div class="mode" data-mode="play"><svg viewBox="0 0 24 24"><path d="M8 5 L18 12 L8 19 Z"/></svg><span class="mname">Play</span><span class="key">␣</span></div>
+        <div class="rail-spacer"></div>
+        <div class="mode" data-mode="ship"><svg viewBox="0 0 24 24"><path d="M4 16 L12 8 L20 16 M12 8 V20"/></svg><span class="mname">Ship</span></div>
+      </aside>
+      <div class="stage" id="demoStage">
+        <div class="stage-head">
+          <div class="mtitle" id="demoTitle">Build</div>
+          <div class="crumb" id="demoCrumb">click any mode in the rail → see the fold</div>
+          <div class="spacer"></div>
+          <span class="chip dashed">live demo · animated</span>
+        </div>
+        <div id="demoBody" style="position:absolute; top:48px; left:0; right:0; bottom:0; padding:12px; display:flex; align-items:center; justify-content:center;">
+          <div id="demoCanvas" style="flex:1; height:100%; border:1.5px solid var(--ink); border-radius:8px; background: color-mix(in oklab, var(--paper) 98%, var(--ink)); display:flex; align-items:center; justify-content:center; font-family:'Caveat',cursive; font-size:32px; color:var(--ink-soft); transition: transform .22s cubic-bezier(.7,.1,.3,1), opacity .18s, background .25s;">
+            Build stage
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rationale">
+    <div class="rcell"><h4>Why it works</h4><p>180ms fold is fast enough to not annoy, slow enough to signal "mode changed". Rail = anchor.</p></div>
+    <div class="rcell"><h4>Risk</h4><p>Animation fatigue after 50 mode-swaps. Offer a "reduce motion" toggle (already a web norm).</p></div>
+    <div class="rcell"><h4>Open</h4><p>Should transitions differ per mode-pair? Or one universal transition — simpler and more predictable?</p></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  W3GPU EDITOR · MODE-BASED R02 · WIREFRAMES · LO-FI · 5 SCREENS + TRANSITION STUDY
+</footer>
+
+<!-- tweaks -->
+<div class="tweaks-panel" id="tweaks">
+  <h3>Tweaks</h3>
+  <div class="hint">mess with the exploration</div>
+  <section>
+    <label>Theme
+      <div class="seg" id="segTheme">
+        <button data-t="light" class="on">LIGHT</button>
+        <button data-t="dark">DARK</button>
+      </div>
+    </label>
+  </section>
+  <section>
+    <label>Density
+      <div class="seg" id="segDensity">
+        <button data-d="cozy" class="on">COZY</button>
+        <button data-d="compact">COMPACT</button>
+      </div>
+    </label>
+  </section>
+  <section>
+    <label>Designer annotations
+      <input type="checkbox" id="tgAnn" checked />
+      <span class="switch"></span>
+    </label>
+  </section>
+  <section>
+    <label>Jump to screen
+      <div class="seg" id="segJump">
+        <button data-v="1" class="on">01 onb</button>
+        <button data-v="2">02 build</button>
+        <button data-v="3">03 paint</button>
+        <button data-v="4">04 logic</button>
+        <button data-v="5">05 play</button>
+        <button data-v="6">06 anim</button>
+      </div>
+    </label>
+  </section>
+</div>
+
+<script>
+  // variant switcher
+  const tabs = document.querySelectorAll('#tabs .tab');
+  const sections = document.querySelectorAll('section.variant');
+  function showVariant(n){
+    tabs.forEach(t => t.setAttribute('aria-selected', t.dataset.v === String(n) ? 'true' : 'false'));
+    sections.forEach(s => s.classList.toggle('active', s.dataset.v === String(n)));
+    document.querySelectorAll('#segJump button').forEach(b => b.classList.toggle('on', b.dataset.v === String(n)));
+    localStorage.setItem('w3gpu:r2:variant', n);
+    window.scrollTo({top: document.querySelector('nav.variants').offsetTop - 10, behavior: 'smooth'});
+  }
+  tabs.forEach(t => t.addEventListener('click', () => showVariant(t.dataset.v)));
+
+  // tweaks
+  const panel = document.getElementById('tweaks');
+  document.getElementById('tweaksBtn').addEventListener('click', () => panel.classList.toggle('open'));
+  document.getElementById('segTheme').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#segTheme button').forEach(x => x.classList.toggle('on', x === b));
+    document.documentElement.classList.toggle('dark', b.dataset.t === 'dark');
+    localStorage.setItem('w3gpu:r2:theme', b.dataset.t);
+  });
+  document.getElementById('segDensity').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#segDensity button').forEach(x => x.classList.toggle('on', x === b));
+    document.body.classList.toggle('compact', b.dataset.d === 'compact');
+    localStorage.setItem('w3gpu:r2:density', b.dataset.d);
+  });
+  document.getElementById('tgAnn').addEventListener('change', e => {
+    document.body.classList.toggle('no-annotations', !e.target.checked);
+    localStorage.setItem('w3gpu:r2:ann', e.target.checked ? '1' : '0');
+  });
+  document.getElementById('segJump').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    showVariant(b.dataset.v);
+  });
+
+  // restore
+  (function init(){
+    const v = localStorage.getItem('w3gpu:r2:variant'); if(v) showVariant(v);
+    const t = localStorage.getItem('w3gpu:r2:theme');
+    if(t === 'dark'){
+      document.documentElement.classList.add('dark');
+      document.querySelectorAll('#segTheme button').forEach(x => x.classList.toggle('on', x.dataset.t === 'dark'));
+    }
+    const d = localStorage.getItem('w3gpu:r2:density');
+    if(d === 'compact'){
+      document.body.classList.add('compact');
+      document.querySelectorAll('#segDensity button').forEach(x => x.classList.toggle('on', x.dataset.d === 'compact'));
+    }
+    const a = localStorage.getItem('w3gpu:r2:ann');
+    if(a === '0'){ document.body.classList.add('no-annotations'); document.getElementById('tgAnn').checked = false; }
+  })();
+
+  // keyboard nav
+  window.addEventListener('keydown', e => {
+    if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if(/^[1-6]$/.test(e.key)) showVariant(e.key);
+  });
+
+  // ========= live demo fold animation =========
+  const demoModes = {
+    build:  {title: 'Build',  crumb: 'place & arrange objects', color: 'color-mix(in oklab, var(--paper) 98%, var(--ink))', label: 'Build stage'},
+    paint:  {title: 'Paint',  crumb: 'drop materials · drag colors', color: 'color-mix(in oklab, var(--accent) 20%, var(--paper))', label: 'Paint stage'},
+    sculpt: {title: 'Sculpt', crumb: 'deform terrain & meshes', color: 'color-mix(in oklab, #b5c4a8 35%, var(--paper))', label: 'Sculpt stage'},
+    logic:  {title: 'Logic',  crumb: 'graph of behaviors', color: 'color-mix(in oklab, #a8b8c4 35%, var(--paper))', label: 'Logic graph'},
+    anim:   {title: 'Animate',crumb: 'timeline · keyframes', color: 'color-mix(in oklab, #c4a8b8 35%, var(--paper))', label: 'Animate timeline'},
+    light:  {title: 'Light',  crumb: 'ambience · shadows · sky', color: 'color-mix(in oklab, #e0c27a 35%, var(--paper))', label: 'Light stage'},
+    play:   {title: 'Play',   crumb: 'running scene · space to stop', color: '#1a1a1a', label: '▶ playing'},
+    ship:   {title: 'Ship',   crumb: 'export · share URL', color: 'color-mix(in oklab, var(--accent-2) 18%, var(--paper))', label: 'Ship stage'}
+  };
+  const demoCanvas = document.getElementById('demoCanvas');
+  const demoTitle = document.getElementById('demoTitle');
+  const demoCrumb = document.getElementById('demoCrumb');
+  let busy = false;
+  document.querySelectorAll('#demoRail .mode').forEach(m => {
+    m.addEventListener('click', () => {
+      if(busy) return;
+      const mode = m.dataset.mode; if(!mode) return;
+      document.querySelectorAll('#demoRail .mode').forEach(x => x.classList.toggle('on', x === m));
+      const cfg = demoModes[mode];
+      busy = true;
+      // fold out
+      demoCanvas.style.transform = 'perspective(900px) rotateY(-75deg)';
+      demoCanvas.style.opacity = '0';
+      setTimeout(() => {
+        demoCanvas.textContent = cfg.label;
+        demoCanvas.style.background = cfg.color;
+        demoCanvas.style.color = (mode === 'play') ? '#f1ede3' : 'var(--ink-soft)';
+        demoTitle.textContent = cfg.title;
+        demoCrumb.textContent = cfg.crumb;
+        // fold in from opposite
+        demoCanvas.style.transform = 'perspective(900px) rotateY(75deg)';
+        requestAnimationFrame(() => {
+          demoCanvas.style.transform = 'perspective(900px) rotateY(0deg)';
+          demoCanvas.style.opacity = '1';
+          setTimeout(() => { busy = false; }, 220);
+        });
+      }, 180);
+    });
+  });
+</script>
+
+</body>
+</html>

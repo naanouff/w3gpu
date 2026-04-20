@@ -11,6 +11,59 @@
 
 ---
 
+## Testing policy
+
+### Couverture Rust (`.rs`) et TypeScript (`.ts`)
+
+**Règle projet** : tout code **Rust** et **TypeScript** qui entre dans le dépôt (hors fichiers de config purement déclaratifs, ex. `vite.config.ts` sans logique) doit être **exercé par des tests** de façon que **chaque ligne** de ce code soit atteinte au moins une fois lors de l’exécution de la suite (objectif **couverture ligne / branche** sur le code nouveau ou modifié ; en revue de PR, refuser les chemins non couverts).
+
+- **Rust** : tests unitaires et d’intégration dans les crates (`#[cfg(test)]`, `tests/*.rs`), `cargo llvm-cov` ou `cargo tarpaulin` recommandés pour mesurer la couverture sur les crates applicables.
+- **TypeScript** (`www/`, outillage TS) : tests avec **Vitest** (recommandé, à ajouter au `package.json` si absent) ou framework TS équivalent, avec la même exigence sur les chemins modifiés.
+
+Les **bindings WASM** comptent comme Rust **et** surface TS : les deux côtés doivent avoir des tests (Rust côté `w3drs-wasm`, TS côté `www/`).
+
+### Tests fonctionnels et sous-systèmes
+
+Au-delà des tests unitaires, des **tests fonctionnels** (scénarios multi-composants) valident le comportement des grandes briques, par exemple :
+
+- **ECS** (création d’entités, archetypes, scheduling, hiérarchie).
+- **Multithreading** (ordonnancement, absence de data races détectées par tests stress + `MIRI` sur code `unsafe` si présent).
+- **Occlusion / culling** (invariants documentés dans les tests GPU headless existants, extension aux nouveaux chemins).
+- **Chargement d’assets**, **pipeline de rendu**, **sérialisation `.w3db`** (quand disponible).
+
+Ces scénarios vivent en **tests d’intégration** Rust (`tests/` au niveau workspace ou par crate) et, pour le parcours navigateur, en **E2E** (voir ci-dessous).
+
+#### Client natif (`cargo xtask client` / `examples/native-triangle`)
+
+Les tests fonctionnels **doivent aussi couvrir le chemin client natif** du projet : tout ce qui est exposé ou exercé par l’exemple desktop **`native-triangle`** (point d’entrée du binaire lancé par `cargo xtask client`) doit être validé par des **tests d’intégration Rust** équivalents lorsque la logique est partagée avec le navigateur (même crates `w3drs-renderer`, ECS, assets, etc.). En pratique :
+
+- **Code partagé** : une régression détectée sur **WASM** / **`www/`** doit pouvoir être prévenue par une suite native (et inversement) dès que la fonctionnalité existe des deux côtés.
+- **Surface native-only** (boucle `winit`, `Surface`, backends **Vulkan / Metal / DX12**) : couvrir par des tests d’intégration qui instancient **`wgpu`** en contexte natif (headless ou fenêtré selon l’infra CI), ou par des **binaires de test** / harness dédiés — pas seulement un `cargo check` sur `examples/native-triangle` sans scénario d’exécution.
+- Les PR qui modifient le **client natif** ou le rendu utilisé exclusivement par celui-ci incluent les tests fonctionnels correspondants dans la même livraison.
+
+### Équivalent « Playwright » pour Rust / WebGPU
+
+[Playwright](https://playwright.dev) est pensé pour l’écosystème Node ; en **Rust**, choisir une pile **WebDriver W3C** ou **Chrome DevTools Protocol** :
+
+| Option | Usage typique |
+|--------|----------------|
+| [**thirtyfour**](https://crates.io/crates/thirtyfour) | Client WebDriver async (Chrome / Firefox) — **E2E** proches de Selenium / Playwright : navigation, sélecteurs, assertions UI sur `www/`. |
+| [**chromiumoxide**](https://crates.io/crates/chromiumoxide) | Pilotage navigateur via **CDP** (style Puppeteer) — adapté au headless Chrome pour des flux contrôlés depuis Rust. |
+| [**fantoccini**](https://crates.io/crates/fantoccini) | WebDriver plus ancien ; viable si l’équipe standardise déjà dessus. |
+| **`wasm-pack test` + `wasm-bindgen-test`** | Tests **WASM** dans un navigateur headless — complément pour la logique compilée sans remplacer un E2E « plein navigateur ». |
+
+**Recommandation** : standardiser sur **thirtyfour** (ou **chromiumoxide** si l’équipe préfère CDP sans WebDriver) pour les E2E du dossier **`www/`** ; pour le **client natif**, s’appuyer sur **`cargo test`** (intégration + GPU headless dans les crates) et, le cas échéant, un job CI qui **compile et exécute** les scénarios natifs — complémentaire des E2E navigateur, pas un substitut à la couverture fonctionnelle native.
+
+La décision finale (crate + version + job CI) doit être tranchée dans une PR dédiée « test: e2e harness » et référencée ici une fois mergée.
+
+### Maquette éditeur natif et déclinaison `www`
+
+La **première maquette UX** de l’éditeur natif (modes, chrome UI) est le fichier **`Mode-based v2.html`** du dossier **w3gpu editor** (référence initiale hors dépôt, ex. `…/Downloads/w3gpu editor/Mode-based v2.html`). Les mainteneurs en conservent une **copie versionnée** sous [`docs/design/`](docs/design/README.md) pour que l’équipe et les agents s’y réfèrent au même fichier.
+
+La version **web** (`www/`) implémente une **version allégée** de cette ergonomie (mêmes principes de modes et de flux, surface UI réduite pour le navigateur et le WASM).
+
+---
+
 ## Workspace Structure
 
 ```
@@ -190,6 +243,7 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 - [ ] `cargo clippy -- -D warnings` clean
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets` passes
+- [ ] **Tests** : nouvelles / modifiées lignes **Rust** et **TypeScript** couvertes (voir [Testing policy](#testing-policy)) ; tests **fonctionnels** pertinents pour ECS / threading / rendu si le PR touche ces domaines, **y compris le client natif** (`native-triangle` / `cargo xtask client`) lorsque le changement l’affecte
 
 **Code Quality**
 - [ ] No `unwrap()` / `expect()` in library code without documented invariant
@@ -333,5 +387,8 @@ Update all modified crates' `version` field in `Cargo.toml` with each PR. The wo
 
 - Only `README.md` and `CONTRIBUTING.md` are allowed at the repository root
 - Design notes and work-in-progress documents go in `work-in-progress/`
+- Maquettes et références UX partagées (ex. HTML éditeur) : `docs/design/`
+- Cadencement Roadmap (tickets par phase, DOR/DOD) : `docs/tickets/`
+- Scènes / projets de test par phase : `fixtures/phases/` (voir `fixtures/phases/README.md`)
 - Completed plans may be archived in `work-in-progress/archive/`
 - Keep documentation up to date in the same PR that changes the code

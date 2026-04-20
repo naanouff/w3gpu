@@ -131,6 +131,8 @@ Même logique exécutée :
 
 ## 📦 Workspace Structure
 
+Un **projet** w3drs côté auteur est un **workspace** : le répertoire racine ouvert par l’**éditeur natif** regroupe sources, caches et sorties de bake. Le livrable runtime est le **`.w3db`** (binaire qui encapsule les données du projet prêtes à charger), produit dans `dist/`.
+
 ```bash
 /my-w3drs-project/
 ├── assets/        # raw assets
@@ -152,6 +154,8 @@ Même logique exécutée :
 ---
 
 ## 🧩 Editor Modes
+
+L’éditeur natif assume toujours un **workspace projet** (dossier racine avec la structure ci-dessus) : navigation, build et hot reload s’y rattachent ; le **Ship** produit ou met à jour le **`.w3db`** encapsulant le projet pour le runtime.
 
 * **Design** → scene assembly
 * **Modeling** → mesh editing (GPU)
@@ -198,20 +202,13 @@ Heavy tasks offloaded:
 
 ## 🛣️ Roadmap
 
-### Phase 3 — Foundations
+La **roadmap d’exécution** alignée sur le port du concept **w3dts** vers **w3drs** (phases A–L, critères de done, écarts par domaine) vit dans **[ROADMAP.md](ROADMAP.md)**. Le document ci-dessous reste centré sur la **vision** ; les jalons techniques y sont volontairement courts.
 
-* ECS Archetypes
-* Plugin System
+### Jalons vision (non exhaustif)
 
-### Phase 4 — Creation
-
-* Modeling tools
-* Lighting system
-
-### Phase 5 — Ultra Quality
-
-* DDGI
-* Full GPU-driven pipeline
+* ECS archetypes + plugin system — **en cours d’enrichissement** côté w3drs
+* Outils de création (éditeur, graphes) — liés à la phase **K** du ROADMAP
+* Qualité rendu « ultra » (GI avancée, hybride) — liés aux phases **A**, **B**, **I**
 
 ---
 
