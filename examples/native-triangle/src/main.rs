@@ -554,6 +554,19 @@ impl State {
             self.readback_buf.unmap();
         }
 
+        // Monotonicity invariant: culling can only reduce draw count, never increase it.
+        // A violation here means a logic error in the cull pass or the ECS pipeline.
+        debug_assert!(
+            self.last_hiz_visible <= self.frustum_visible,
+            "Hi-Z culling emitted more draws than frustum: hiz={} frustum={}",
+            self.last_hiz_visible, self.frustum_visible,
+        );
+        debug_assert!(
+            self.frustum_visible <= self.potential_count,
+            "Frustum culling emitted more draws than total: frustum={} total={}",
+            self.frustum_visible, self.potential_count,
+        );
+
         let cull_str = if self.cull_enabled { "ON" } else { "OFF" };
         self.window.set_title(&format!(
             "w3gpu | Scene: {} | Total: {} | Frustum: {} | Hi-Z drawn: {} | Cull: {} \
