@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "phase_id": "phase-a",
+  "description": "Manifeste glTF Phase A — chemins relatifs au dossier fixtures/phases/phase-a/.",
+  "models": [
+    {
+      "id": "damaged_helmet_gate",
+      "relative_path": "../../../www/public/damaged_helmet_source_glb.glb",
+      "khronos_sample_model": "DamagedHelmet",
+      "gltf_version": "2.0",
+      "upstream_tree_url": "https://github.com/KhronosGroup/glTF-Sample-Models/tree/1ba47770292486e66ca1e1161857a6e5695c2631/2.0/DamagedHelmet",
+      "expected_sha256_hex": "03bcd1f8b037ef2224d8fc79950d058b85fc784c0c0015f8066cde5eb87b417a"
+    }
+  ],
+  "optional_extension_slots": [
+    {
+      "extension": "KHR_materials_anisotropy",
+      "status": "not_vendored_in_repo",
+      "note": "Ajouter un GLB + entrée dans models[] lorsque l'extension est implémentée ; documenter SHA256 dans docs/tickets/phase-a-khronos-shortlist.md."
+    },
+    {
+      "extension": "KHR_materials_ior",
+      "status": "not_vendored_in_repo",
+      "note": "Idem."
+    }
+  ]
+}

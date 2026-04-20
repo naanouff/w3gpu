@@ -4,7 +4,10 @@
 |-------|--------|
 | **ID** | `PHASE-A` |
 | **Roadmap** | [ROADMAP § Phase A](../ROADMAP.md) |
-| **Statut** | À faire |
+| **Statut** | DOR satisfait — implémentation à faire |
+| **Shortlist Khronos** | [phase-a-khronos-shortlist.md](phase-a-khronos-shortlist.md) |
+| **Checklist PBR (w3dts)** | [phase-a-pbr-checklist-w3dts.md](phase-a-pbr-checklist-w3dts.md) |
+| **Fixture** | [`fixtures/phases/phase-a/`](../../fixtures/phases/phase-a/) |
 
 ## Axes prioritaires
 
@@ -56,7 +59,7 @@ Cette section est la **spec de contenu** de `fixtures/phases/phase-a/` (dossier 
 
 ### Critères de scène (DOR / DOD)
 
-- **DOR** : [ ] fixtures/phases/phase-a/ décrit dans le README (ou PR) avec reproduction **documentée** ; hachages / LFS pour gros binaires.
+- **DOR** : [x] `fixtures/phases/phase-a/` avec reproduction documentée ([README](../../fixtures/phases/phase-a/README.md), [manifest](../../fixtures/phases/phase-a/manifest.json)) ; gate **DamagedHelmet** versionné sous `www/public/` (**Git LFS** + SHA256 dans la [shortlist](phase-a-khronos-shortlist.md)).
 - **DOD** : [ ] au moins un **test** (cargo test / E2E) **référence** ce chemin ; toute validation manuelle = **checklist** copiable dans la PR ; natif et web utilisent les **mêmes** assets lorsque les deux cibles sont dans le périmètre.
 
 
@@ -64,9 +67,9 @@ Cette section est la **spec de contenu** de `fixtures/phases/phase-a/` (dossier 
 
 ## Definition of Ready (DOR)
 
-- [ ] **Shortlist d’assets** Khronos (noms + versions) listée dans ce fichier ou dans `docs/` lié ; hashes SHA256 des fichiers utilisés en CI (ou Git LFS ids).
-- [ ] **Checklist PBR** alignée w3dts (lignes de critères de done) copiée ou référencée par URL commit w3dts.
-- [ ] Branche de base : `cargo xtask check` **vert** sur le commit parent.
+- [x] **Shortlist d’assets** Khronos (noms + versions) : [phase-a-khronos-shortlist.md](phase-a-khronos-shortlist.md) — SHA256 du gate + pin du dépôt Khronos ; LFS documenté.
+- [x] **Checklist PBR** alignée w3dts : [phase-a-pbr-checklist-w3dts.md](phase-a-pbr-checklist-w3dts.md) (**copie** des critères ; pin URL commit du dépôt w3dts **dès qu’un dépôt public** expose les gates — voir en-tête de ce fichier).
+- [x] Branche de base : `cargo xtask check` **vert** (à réexécuter avant merge ; même barème que le hook pre-commit).
 
 ---
 

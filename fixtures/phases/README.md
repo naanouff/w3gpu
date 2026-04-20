@@ -14,6 +14,10 @@ w3drs/fixtures/phases/phase-<id>/
 
 Les identifiants `<id>` suivent les tickets (`phase-a`, `phase-b`, … `phase-l`).
 
+| Phase | Dossier | État |
+|-------|---------|------|
+| A | [`phase-a/`](phase-a/) | DOR : README + manifeste + chemins documentés |
+
 ## Rôle
 
 - **Validation fonctionnelle** des fonctionnalités livrées sur le ticket.

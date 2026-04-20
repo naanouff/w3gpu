@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "comment": "Placeholder pipeline / variantes data-driven pour la fixture phase-a ; étendre au fil des PR Phase A.",
+  "active_variant": "default",
+  "variants": {
+    "default": {
+      "label": "Baseline PBR — alignement gate DamagedHelmet"
+    }
+  }
+}
