@@ -15,9 +15,10 @@ use w3gpu_ecs::{
 };
 use w3gpu_renderer::{
     build_entity_list, derive_shadow_batches,
-    AssetRegistry, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs,
-    FrameUniforms, GpuContext, HizPass, IblContext, LightUniforms,
-    MaterialTextures, MAX_CULL_ENTITIES, RenderState, ShadowPass,
+    AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
+    DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass,
+    IblContext, LightUniforms, MaterialTextures, MAX_CULL_ENTITIES,
+    PostProcessPass, RenderState, ShadowPass, TonemapParams,
     camera_system, frustum_culling_system, transform_system,
 };
 
@@ -101,6 +102,11 @@ impl ApplicationHandler for App {
                 state.cull_pass.rebuild_hiz_bg(
                     &state.context.device, &state.hiz_pass.hiz_full_view,
                 );
+                state.hdr_target.resize(&state.context.device, size.width, size.height);
+                state.post_process.resize(
+                    &state.context.device, &state.hdr_target.view,
+                    size.width, size.height,
+                );
                 for e in state.world.query_entities::<CameraComponent>() {
                     if let Some(cam) = state.world.get_component_mut::<CameraComponent>(e) {
                         cam.aspect = size.width as f32 / size.height as f32;
@@ -167,6 +173,8 @@ struct State {
     env_bind_group: wgpu::BindGroup,
     hiz_pass:       HizPass,
     cull_pass:      CullPass,
+    hdr_target:     HdrTarget,
+    post_process:   PostProcessPass,
 
     // Camera
     camera_entity: u32,
@@ -306,6 +314,18 @@ impl State {
         let mut cull_pass = CullPass::new(&context.device);
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
+        // ── HDR target + post-process pass ───────────────────────────────────
+        let hdr_target = HdrTarget::new(&context.device, size.width.max(1), size.height.max(1));
+        let post_process = PostProcessPass::new(
+            &context.device,
+            &hdr_target.view,
+            context.surface_format,
+            size.width.max(1),
+            size.height.max(1),
+            BloomParams  { threshold: 1.0, knee: 0.5,  _pad0: 0.0, _pad1: 0.0 },
+            TonemapParams { exposure: 1.0, bloom_strength: 0.04, _pad0: 0.0, _pad1: 0.0 },
+        );
+
         // ── Readback buffer ───────────────────────────────────────────────────
         let readback_buf = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("indirect readback"),
@@ -318,7 +338,7 @@ impl State {
 
         let mut state = Self {
             window, context, render_state, asset_registry, ibl_context,
-            shadow_pass, env_bind_group, hiz_pass, cull_pass,
+            shadow_pass, env_bind_group, hiz_pass, cull_pass, hdr_target, post_process,
             camera_entity, orbit, mouse_pressed: false, last_cursor: None,
             current_scene: SceneId::Wall,
             scene_entities: Vec::new(),
@@ -647,12 +667,12 @@ impl State {
             }
         }
 
-        // 5. PBR main pass (GPU draw_indexed_indirect)
+        // 5. PBR main pass (GPU draw_indexed_indirect) → HDR target
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view, resolve_target: None,
+                    view: &self.hdr_target.view, resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.04, g: 0.04, b: 0.06, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
@@ -684,6 +704,9 @@ impl State {
                 );
             }
         }
+
+        // 6. Post-process: bloom + ACES tonemap + FXAA → swapchain
+        self.post_process.encode(&mut enc, &view);
 
         self.context.queue.submit(std::iter::once(enc.finish()));
         output.present();

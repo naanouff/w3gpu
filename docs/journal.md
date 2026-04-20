@@ -134,8 +134,130 @@
 
 ---
 
+---
+
+## Phase 4 — GPU-driven pipeline + Hi-Z occlusion culling
+
+**Réalisé :**
+
+### Draw Indirect
+- `DrawIndexedIndirectArgs` (20 bytes, bytemuck) mappé sur la spec WebGPU
+- `entity_indirect_buf` : un slot par entité, `instance_count` mis à 0/1 par le GPU
+- `build_entity_list()` + `build_batches()` : tri par mesh+matériau, upload matrices en instance buffer SoA
+- `RenderPass::draw_indexed_indirect()` remplace les draw calls CPU
+
+### Hi-Z pyramid (`HizPass`)
+- Z-prepass via `hiz_depth.wgsl` : rendu de profondeur dans une texture `Depth32Float` full-res
+- Compute `hiz_build.wgsl` : génère la mipchain R32Float (max-z reduction 2×2), 64×64 → 1×1
+- `mip_count = log2(min(w,h)).floor()` (minimum 1)
+- `hiz_full_view` : vue sur le mip 0 (profondeur full-res pour le sampling exact)
+
+### Culling GPU (`CullPass` + `occlusion_cull.wgsl`)
+- Frustum AABB (8 coins en clip space) + test Hi-Z (AABB projeté vs mip sélectionné)
+- **Fix near-plane straddling** (2025-04-20) : `any_behind` conservatif → `depth_near = 0.0`, skip frustum XY cull. Corrigeait l'alternance visible/caché sur les casques dont l'AABB straddlait le near plane.
+- `CullUniforms` : `view_proj`, `screen_size`, `entity_count`, `mip_levels`, `cull_enabled`
+- `entity_indirect_buf` avec `COPY_SRC` pour le readback de métriques
+
+### Tests GPU headless (`cull_integration.rs`)
+- `try_gpu()` → skip gracefully si pas de GPU (CI-friendly)
+- 9 tests couvrant : tout visible, tout derrière, frustum XY, Hi-Z depth, `any_behind` conservatif
+- Textures Hi-Z synthétiques remplies à valeur constante pour déterminisme
+
+### Démo native 3 scènes
+- Orbit camera (drag LMB + scroll)
+- Scène 1 Wall : mur + 1200 sphères + 6 témoins cyan
+- Scène 2 Sieve : 10 piliers + 441 sphères
+- Scène 3 Peekaboo : occulteur animé + 400 sphères
+- Invariant de monotonie `debug_assert!` chaque frame : `hiz ≤ frustum ≤ total`
+- Titre fenêtre : `Total | Frustum | Hi-Z drawn | Cull ON/OFF`
+
+---
+
+## Phase 5 — Post-processing (bloom + ACES + FXAA)
+
+**Réalisé :**
+
+### Pipeline HDR
+- `HdrTarget` : texture `RGBA16Float` intermédiaire, rebuild au resize
+- `pbr.wgsl` : suppression Reinhard — sort désormais en linéaire HDR
+- `RenderState` : format cible pipeline PBR = `Rgba16Float` (plus swapchain)
+
+### Bloom (`bloom.wgsl`)
+- `fs_prefilter` : downsample ×2 avec Karis-weighted 4-tap + soft-knee threshold
+  - `BloomParams { threshold, knee }` en uniform
+  - Karis weight : `c / (1 + luma(c))` — supprime les fireflies
+- `fs_blur_h` / `fs_blur_v` : gaussian 9-tap séparable, σ ≈ 3 texels
+  - Poids : W0=0.0630 W1=0.0929 W2=0.1227 W3=0.1449 W4=0.1532
+- 2 passes H+V ping-pong entre `bloom_a` et `bloom_b` (RGBA16Float half-res)
+
+### Tone mapping + FXAA (`tonemap.wgsl`)
+- ACES Narkowicz : `(x(ax+b))/(x(cx+d)+e)`, a=2.51 b=0.03 c=2.43 d=0.59 e=0.14
+- Bloom additif : `hdr + bloom * bloom_strength`
+- FXAA 3×3 luma neighbourhood, blend conditionnel (contrast > max(0.031, lMax·0.125))
+- `linear_to_srgb()` : conversion piecewise (`c ≤ 0.0031308` → linéaire, sinon pow(1/2.4))
+
+### `PostProcessPass`
+- Chaîne complète en un `encode(encoder, swapchain_view)` : prefilter → H×2 → V×2 → tonemap
+- `resize(device, hdr_view, w, h)` rebuild les bloom textures et tous les bind groups
+- `update_bloom_params()` / `update_tonemap_params()` via `queue.write_buffer`
+
+---
+
+## Phase 3b — ECS Archetypes SoA + Rayon (2025-04-20)
+
+**Contexte :** L'ECS utilisait déjà l'archetype SoA depuis Phase 2 (colonnes `Vec<T>` par type dans chaque archetype). Phase 3b ajoute la parallélisation Rayon et valide l'objectif de performance.
+
+**Réalisé :**
+
+### Nouvelles méthodes sur `World`
+
+```rust
+// Itérateur mutable série sur un type de composant
+pub fn iter_mut<T: 'static>(&mut self) -> impl Iterator<Item = (Entity, &mut T)>
+
+// Applique f en parallèle (Rayon natif / série WASM) sur toutes les T
+pub fn for_each_mut<T, F>(&mut self, f: F)
+
+// Idem mais uniquement dans les archetypes ne contenant PAS Excl
+// → clé pour paralléliser les entités sans hiérarchie
+pub fn for_each_without_mut<T, Excl, F>(&mut self, f: F)
+```
+
+### Optimisation `transform_system`
+
+**Avant :** BFS séquentiel sur toutes les entités, `get_component_mut` par entité (O(1) HashMap).
+
+**Après :**
+- **Passe 1 (parallèle)** : `for_each_without_mut::<TransformComponent, HierarchyComponent>` → `world_matrix = local_matrix` sur toutes les entités sans hiérarchie. Rayon parallélise sur les cœurs disponibles.
+- **Passe 2 (BFS séquentiel)** : uniquement pour les entités avec `HierarchyComponent`. No-op pour les scènes plates.
+
+### Résultats benchmark — `cargo bench -p w3gpu-ecs` (release, Rayon)
+
+Machine : Windows 11, AMD/Intel desktop (2025-04-20)
+
+| Entités | Temps médian | vs objectif |
+|---|---|---|
+| 1 000 | 23 µs | — |
+| 10 000 | 51 µs | — |
+| **100 000** | **~430 µs** | **< 2 ms ✅ (4.6× marge)** |
+
+Commande de reproduction :
+```bash
+cargo bench -p w3gpu-ecs
+```
+Résultats HTML dans `target/criterion/`.
+
+### Dépendances ajoutées
+- `rayon = "1"` — `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` dans `w3gpu-ecs/Cargo.toml`
+- `criterion = "0.5"` — `[dev-dependencies]`, bench `benches/transform.rs`
+
+### Tests
+- 36 tests ECS existants : tous verts
+- `cargo check -p native-triangle` : 0 warning
+
+---
+
 ## À venir
 
-- **Phase 3b** : ECS Archetypes SoA + Rayon (migration HashMap → stockage contigu)
-- **Phase 4** : GPU-driven (Draw Indirect, Hi-Z occlusion culling)
-- **Phase 5** : Post-processing (bloom, ACES tone mapping, FXAA)
+- **Phase 6** : Éditeur multi-mode (Design / Debug / Ship)
+- **Phase 7** : SaaS bridge + Cloud compute

@@ -1,6 +1,7 @@
 use crate::{
     frame_uniforms::FrameUniforms,
     gpu_context::DEPTH_FORMAT,
+    hdr_target::HDR_FORMAT,
     material_uniforms::MaterialUniforms,
     vertex_layout::VERTEX_BUFFER_LAYOUT,
 };
@@ -29,7 +30,7 @@ pub struct RenderState {
 }
 
 impl RenderState {
-    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, _surface_format: wgpu::TextureFormat) -> Self {
         // ── bind group layouts ──────────────────────────────────────────────
 
         let frame_bg_layout =
@@ -235,7 +236,7 @@ impl RenderState {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
+                    format: HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

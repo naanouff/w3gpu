@@ -7,3 +7,13 @@ version.workspace = true
 w3gpu-math = { path = "../w3gpu-math" }
 glam.workspace = true
 log.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "transform"
+harness = false

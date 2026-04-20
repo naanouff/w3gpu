@@ -7,9 +7,10 @@ use w3gpu_ecs::{
 };
 use w3gpu_renderer::{
     build_entity_list, derive_shadow_batches,
-    AssetRegistry, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs,
-    FrameUniforms, GpuContext, HizPass, IblContext, LightUniforms,
-    MaterialTextures, RenderState, ShadowPass,
+    AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
+    DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass,
+    IblContext, LightUniforms, MaterialTextures, PostProcessPass, RenderState,
+    ShadowPass, TonemapParams,
     camera_system, frustum_culling_system, transform_system,
 };
 
@@ -25,6 +26,8 @@ pub struct W3gpuEngine {
     env_bind_group: wgpu::BindGroup,
     hiz_pass:       HizPass,
     cull_pass:      CullPass,
+    hdr_target:     HdrTarget,
+    post_process:   PostProcessPass,
     cull_enabled:   bool,
     total_time:     f32,
 }
@@ -72,6 +75,16 @@ impl W3gpuEngine {
         let mut cull_pass = CullPass::new(&context.device);
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
+        let hdr_target = HdrTarget::new(&context.device, width, height);
+        let post_process = PostProcessPass::new(
+            &context.device,
+            &hdr_target.view,
+            context.surface_format,
+            width, height,
+            BloomParams   { threshold: 1.0, knee: 0.5,  _pad0: 0.0, _pad1: 0.0 },
+            TonemapParams { exposure: 1.0, bloom_strength: 0.04, _pad0: 0.0, _pad1: 0.0 },
+        );
+
         let mut scheduler = Scheduler::new();
         scheduler
             .add_system(transform_system)
@@ -89,6 +102,8 @@ impl W3gpuEngine {
             env_bind_group,
             hiz_pass,
             cull_pass,
+            hdr_target,
+            post_process,
             cull_enabled: true,
             total_time: 0.0,
         })
@@ -263,6 +278,8 @@ impl W3gpuEngine {
         self.context.resize(w, h);
         self.hiz_pass.resize(&self.context.device, w, h);
         self.cull_pass.rebuild_hiz_bg(&self.context.device, &self.hiz_pass.hiz_full_view);
+        self.hdr_target.resize(&self.context.device, w, h);
+        self.post_process.resize(&self.context.device, &self.hdr_target.view, w, h);
     }
 
     pub fn version() -> String {
@@ -338,12 +355,12 @@ impl W3gpuEngine {
             }
         }
 
-        // 4. PBR main pass (GPU-indirect, per entity)
+        // 4. PBR main pass (GPU-indirect, per entity) → HDR target
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.hdr_target.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.05, b: 0.08, a: 1.0 }),
@@ -381,6 +398,9 @@ impl W3gpuEngine {
                 );
             }
         }
+
+        // 5. Post-process: bloom + ACES tonemap + FXAA → swapchain
+        self.post_process.encode(&mut encoder, &view);
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
         output.present();

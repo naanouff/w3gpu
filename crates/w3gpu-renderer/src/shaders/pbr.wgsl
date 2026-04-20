@@ -202,7 +202,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = diffuse_ibl + specular_ibl;
     let color   = ambient + direct + emissive;
 
-    // Reinhard tone mapping
-    let mapped = color / (color + vec3<f32>(1.0));
-    return vec4<f32>(mapped, material.albedo.a * albedo_sample.a);
+    // Output linear HDR — tone mapping is done by the post-process pass.
+    return vec4<f32>(color, material.albedo.a * albedo_sample.a);
 }

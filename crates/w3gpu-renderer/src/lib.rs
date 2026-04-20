@@ -3,11 +3,13 @@ pub mod cull_pass;
 pub mod error;
 pub mod frame_uniforms;
 pub mod gpu_context;
+pub mod hdr_target;
 pub mod hiz_pass;
 pub mod ibl;
 pub mod light_uniforms;
 pub mod material_uniforms;
 pub mod plugin;
+pub mod post_process;
 pub mod render_command;
 pub mod render_state;
 pub mod shadow_pass;
@@ -30,6 +32,8 @@ pub use render_command::{
     RenderCommand, ShadowBatch,
 };
 pub use render_state::{RenderState, MAX_INSTANCES};
+pub use hdr_target::{HdrTarget, HDR_FORMAT};
+pub use post_process::{BloomParams, PostProcessPass, TonemapParams};
 pub use shadow_pass::{ShadowPass, SHADOW_SIZE};
 pub use systems::{camera_system, frustum_culling_system, transform_system};
 pub use vertex_layout::VERTEX_BUFFER_LAYOUT;
