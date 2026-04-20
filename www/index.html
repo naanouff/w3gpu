@@ -3,16 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>w3gpu</title>
+  <title>w3drs</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+    #header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    #header img { width: 32px; height: 32px; }
+    #header span { color: #e0e0e0; font-size: 18px; letter-spacing: 0.05em; }
+    #header span em { color: #feb137; font-style: normal; }
     canvas { display: block; width: 800px; height: 600px; }
-    #status { color: #aaa; font-family: monospace; margin-top: 8px; font-size: 13px; }
+    #status { color: #777; font-size: 12px; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <canvas id="w3gpu-canvas" width="800" height="600"></canvas>
+  <div id="header">
+    <img src="/w3d_logo.svg" alt="w3drs logo" />
+    <span><em>w3</em>drs</span>
+  </div>
+  <canvas id="w3drs-canvas" width="800" height="600"></canvas>
   <div id="status">Initializing...</div>
   <script type="module" src="/src/main.ts"></script>
 </body>
