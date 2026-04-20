@@ -3,7 +3,7 @@
 //! `cargo test -p w3drs-assets --test phase_a_fixture`
 //!
 //! Si **DamagedHelmet** manque ou fait moins de 1 Mo : `git lfs pull` à la racine du dépôt.
-//! **AnisotropyBarnLamp** vit sous `fixtures/phases/phase-a/glb/` (LFS après `git add`).
+//! Les autres entrées `models[]` pointent vers `fixtures/phases/phase-a/glb/` (**Git LFS** après `git add`).
 
 use std::fs;
 use std::path::PathBuf;

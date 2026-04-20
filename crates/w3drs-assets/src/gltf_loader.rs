@@ -42,11 +42,18 @@ pub struct GltfPrimitive {
 }
 
 /// Load all mesh primitives from a GLB/glTF byte slice.
+///
+/// Uses [`gltf::Gltf::from_slice_without_validation`] then charge buffers / images : certains assets
+/// listent `KHR_materials_clearcoat` (ou d’autres extensions) dans `extensionsRequired`, alors que la
+/// crate **gltf** 1.4.x ne les déclare pas dans son tableau interne `ENABLED_EXTENSIONS` — `import_slice`
+/// échouerait à tort. La validation stricte des index / tailles reste en partie implicite à l’usage.
 pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
-    let (document, buffers, images) = gltf::import_slice(bytes)?;
+    let gltf = gltf::Gltf::from_slice_without_validation(bytes)?;
+    let buffers = gltf::import_buffers(&gltf, None, gltf.blob.clone())?;
+    let images = gltf::import_images(&gltf, None, &buffers)?;
     let mut result = Vec::new();
 
-    for mesh in document.meshes() {
+    for mesh in gltf.meshes() {
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
 
@@ -134,7 +141,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
             let (anisotropy_strength, anisotropy_rotation, aniso_tex_idx, aniso_tex_coord) =
                 parse_anisotropy(&mat);
             let aniso_img_idx =
-                aniso_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+                aniso_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
             let anisotropy_image = image_for_idx(aniso_img_idx, &images);
             let (
                 clearcoat_factor,
@@ -145,9 +152,9 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
                 cc_rough_tex_coord,
             ) = parse_clearcoat(&mat);
             let cc_img_idx =
-                cc_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+                cc_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
             let cr_img_idx =
-                cc_rough_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&document, ti));
+                cc_rough_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
             let clearcoat_image = image_for_idx(cc_img_idx, &images);
             let clearcoat_roughness_image = image_for_idx(cr_img_idx, &images);
 

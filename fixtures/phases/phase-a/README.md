@@ -36,13 +36,13 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 
 ## Tests automatisés
 
-- `cargo test -p w3drs-assets --test phase_a_fixture` — vérifie le manifeste, la **SHA256** de **chaque** entrée `models[]` dans `manifest.json`, et le parse via `w3drs_assets::load_from_bytes`.
+- `cargo test -p w3drs-assets --test phase_a_fixture` — vérifie le manifeste, la **SHA256** de **chaque** entrée `models[]` dans `manifest.json`, et le parse via `w3drs_assets::load_from_bytes` (import sans validation stricte `extensionsRequired` de la crate **gltf**, pour accepter notamment `KHR_materials_clearcoat` listé comme requis par certains assets).
 
 ## Fichiers de données
 
 | Fichier | Rôle |
 |---------|------|
-| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + **AnisotropyBarnLamp** sous `glb/`). |
+| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + modèles **bencehari** sous `glb/` : anisotropie, clearcoat ×2, IOR). |
 | [`glb/README.md`](glb/README.md) | Convention pour copier / vendre des binaires sous `glb/` (CI autonome). |
 | [`materials/default.json`](materials/default.json) | Placeholder de paramètres / variantes **data-driven** (étendu au fil des PR). |
 | [`expected.md`](expected.md) | Critères mesurables de la scène v0. |

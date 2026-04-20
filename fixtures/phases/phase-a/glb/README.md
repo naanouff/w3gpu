@@ -3,6 +3,9 @@
 | Fichier | Rôle |
 |---------|------|
 | `AnisotropyBarnLamp.glb` | Stress **`KHR_materials_anisotropy`** — source [bencehari/gltf-sample-assets](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/AnisotropyBarnLamp/glTF-Binary) ; SHA256 dans [phase-a-khronos-shortlist.md](../../../docs/tickets/phase-a-khronos-shortlist.md) et [`manifest.json`](../manifest.json). |
+| `ClearCoatCarPaint.glb` | Stress **`KHR_materials_clearcoat`** — [ClearCoatCarPaint](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearCoatCarPaint/glTF-Binary). |
+| `ClearcoatWicker.glb` | Stress **`KHR_materials_clearcoat`** — [ClearcoatWicker](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearcoatWicker/glTF-Binary). |
+| `IORTestGrid.glb` | Stress **`KHR_materials_ior`** — [IORTestGrid](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/IORTestGrid/glTF-Binary). |
 
 Le **gate** historique **DamagedHelmet** reste sous `www/public/` (voir [`manifest.json`](../manifest.json) `relative_path`). Pour une CI **100 %** sous `phase-a/glb/`, copier aussi le casque ici et mettre à jour le manifeste + shortlist.
 

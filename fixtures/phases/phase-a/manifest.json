@@ -19,18 +19,45 @@
       "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/AnisotropyBarnLamp/glTF-Binary/AnisotropyBarnLamp.glb",
       "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/AnisotropyBarnLamp",
       "expected_sha256_hex": "0e728826c30bd6f3a18a0911db9f5f9ddc2dafa8e20bf9c3312c9625d1e32a24"
+    },
+    {
+      "id": "clearcoat_car_paint",
+      "relative_path": "glb/ClearCoatCarPaint.glb",
+      "gltf_version": "2.0",
+      "extensions_stressed": ["KHR_materials_clearcoat"],
+      "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/ClearCoatCarPaint/glTF-Binary/ClearCoatCarPaint.glb",
+      "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearCoatCarPaint",
+      "expected_sha256_hex": "4d4b32f2ef6d341191f6b6d6834f2b192762c878cd25d44e6b4b14514cd4be93"
+    },
+    {
+      "id": "clearcoat_wicker",
+      "relative_path": "glb/ClearcoatWicker.glb",
+      "gltf_version": "2.0",
+      "extensions_stressed": ["KHR_materials_clearcoat"],
+      "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/ClearcoatWicker/glTF-Binary/ClearcoatWicker.glb",
+      "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearcoatWicker",
+      "expected_sha256_hex": "f162b0cd7f8e6b7cef211eec57762165a78039676b8592ce1f965e2ddb34e843"
+    },
+    {
+      "id": "ior_test_grid",
+      "relative_path": "glb/IORTestGrid.glb",
+      "gltf_version": "2.0",
+      "extensions_stressed": ["KHR_materials_ior"],
+      "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/IORTestGrid/glTF-Binary/IORTestGrid.glb",
+      "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/IORTestGrid",
+      "expected_sha256_hex": "863cf24d0e48892ec830a7c712e4eb8bf5c0fd6cc2ae2f34d213b216f0bd6c12"
     }
   ],
   "optional_extension_slots": [
     {
       "extension": "KHR_materials_ior",
-      "status": "not_vendored_in_repo",
-      "note": "Ajouter un GLB + entrée dans models[] lorsque l'extension est implémentée ; documenter SHA256 dans docs/tickets/phase-a-khronos-shortlist.md."
+      "status": "fixture_in_models",
+      "note": "Grille IOR : entrée `ior_test_grid` dans `models[]` (IORTestGrid.glb) ; SHA256 dans phase-a-khronos-shortlist.md."
     },
     {
       "extension": "KHR_materials_clearcoat",
       "status": "implemented",
-      "note": "Chargeur + shader (facteurs, textures R/G, texCoord, IBL coat). Le GLB gate `damaged_helmet_source_glb.glb` peut être une variante sans extension ; `clearcoatNormalTexture` non implémenté."
+      "note": "Chargeur + shader ; modèles dédiés `clearcoat_car_paint` / `clearcoat_wicker` dans `models[]`. `clearcoatNormalTexture` non implémenté."
     },
     {
       "extension": "KHR_materials_transmission",
