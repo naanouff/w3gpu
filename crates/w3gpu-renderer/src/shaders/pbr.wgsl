@@ -1,5 +1,5 @@
-// group(0) = FrameUniforms   (per-frame, includes shadow light_view_proj)
-// group(1) = ObjectUniforms  (per-object, dynamic offset)
+// group(0) = FrameUniforms              (per-frame, includes shadow light_view_proj)
+// group(1) = instances storage buffer  (array<mat4x4<f32>>, indexed by instance_index)
 // group(2) = MaterialUniforms + textures (per-material)
 // group(3) = IBL (bindings 0-3) + shadow map/sampler (bindings 4-5)
 
@@ -23,10 +23,6 @@ struct FrameUniforms {
     _pad3a: f32, _pad3b: f32, _pad3c: f32,
 }
 
-struct ObjectUniforms {
-    world: mat4x4<f32>,
-}
-
 struct MaterialUniforms {
     albedo:    vec4<f32>,
     emissive:  vec4<f32>,
@@ -36,9 +32,9 @@ struct MaterialUniforms {
     _pad1:     f32,
 }
 
-@group(0) @binding(0) var<uniform> frame:    FrameUniforms;
-@group(1) @binding(0) var<uniform> object:   ObjectUniforms;
-@group(2) @binding(0) var<uniform> material: MaterialUniforms;
+@group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
+@group(1) @binding(0) var<storage, read>  instances: array<mat4x4<f32>>;
+@group(2) @binding(0) var<uniform>        material:  MaterialUniforms;
 @group(2) @binding(1) var albedo_tex:    texture_2d<f32>;
 @group(2) @binding(2) var normal_tex:    texture_2d<f32>;
 @group(2) @binding(3) var mr_tex:        texture_2d<f32>; // G=roughness, B=metallic
@@ -53,6 +49,7 @@ struct MaterialUniforms {
 @group(3) @binding(5) var shadow_sampler:  sampler_comparison;
 
 struct VertexInput {
+    @builtin(instance_index) instance_idx: u32,
     @location(0) position:  vec3<f32>,
     @location(1) uv0:       vec2<f32>,
     @location(2) uv1:       vec2<f32>,
@@ -74,11 +71,12 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    let world_pos = object.world * vec4<f32>(in.position, 1.0);
+    let world     = instances[in.instance_idx];
+    let world_pos = world * vec4<f32>(in.position, 1.0);
     let normal_mat = mat3x3<f32>(
-        object.world[0].xyz,
-        object.world[1].xyz,
-        object.world[2].xyz,
+        world[0].xyz,
+        world[1].xyz,
+        world[2].xyz,
     );
     var out: VertexOutput;
     out.clip_pos        = frame.projection * frame.view * world_pos;
@@ -204,7 +202,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = diffuse_ibl + specular_ibl;
     let color   = ambient + direct + emissive;
 
-    // Reinhard tone mapping
-    let mapped = color / (color + vec3<f32>(1.0));
-    return vec4<f32>(mapped, material.albedo.a * albedo_sample.a);
+    // Output linear HDR — tone mapping is done by the post-process pass.
+    return vec4<f32>(color, material.albedo.a * albedo_sample.a);
 }

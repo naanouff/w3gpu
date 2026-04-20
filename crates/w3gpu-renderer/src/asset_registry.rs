@@ -12,6 +12,9 @@ pub struct GpuMesh {
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
     pub bounding_sphere: BoundingSphere,
+    /// Local-space AABB (used by the GPU occlusion cull pass).
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
 }
 
 pub struct GpuTexture {
@@ -104,6 +107,8 @@ impl AssetRegistry {
             index_buffer,
             index_count: mesh.indices.len() as u32,
             bounding_sphere: mesh.bounding_sphere,
+            aabb_min: mesh.aabb.min.to_array(),
+            aabb_max: mesh.aabb.max.to_array(),
         });
         id
     }

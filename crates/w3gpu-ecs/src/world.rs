@@ -189,6 +189,80 @@ impl World {
             })
     }
 
+    /// Iterate (Entity, &mut T) over all archetypes that have T.
+    pub fn iter_mut<T: 'static>(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
+        let type_id = TypeId::of::<T>();
+        self.archetypes
+            .iter_mut()
+            .filter(move |a| a.has_type(type_id))
+            .flat_map(move |a| {
+                let entities_ptr = a.entities.as_ptr();
+                let len = a.entities.len();
+                let col = a.columns.get_mut(&type_id).unwrap()
+                    .as_any_mut()
+                    .downcast_mut::<TypedVec<T>>()
+                    .unwrap();
+                // SAFETY: entities and col.data are separate allocations.
+                (0..len).map(move |i| {
+                    let e = unsafe { *entities_ptr.add(i) };
+                    let c = unsafe { &mut *(&mut col.data[i] as *mut T) };
+                    (e, c)
+                })
+            })
+    }
+
+    /// Call `f` on every T in archetypes that do NOT contain component `Excl`.
+    /// On native targets, the inner Vec<T> is processed in parallel (Rayon).
+    /// On wasm32, falls back to a serial loop.
+    ///
+    /// Use this for systems that apply an independent per-entity update with no
+    /// cross-entity dependencies (e.g. transform recomputation for flat scenes).
+    pub fn for_each_without_mut<T, Excl, F>(&mut self, f: F)
+    where
+        T:    'static + Send + Sync,
+        Excl: 'static,
+        F:    Fn(&mut T) + Sync + Send,
+    {
+        let t_id    = TypeId::of::<T>();
+        let excl_id = TypeId::of::<Excl>();
+
+        for arch in &mut self.archetypes {
+            if !arch.has_type(t_id) || arch.has_type(excl_id) { continue; }
+            let Some(col) = arch.columns.get_mut(&t_id) else { continue };
+            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else { continue };
+            Self::parallel_for_each(&mut typed.data, &f);
+        }
+    }
+
+    /// Call `f` on every T across all archetypes.
+    /// Parallelised per-archetype on native targets.
+    pub fn for_each_mut<T, F>(&mut self, f: F)
+    where
+        T: 'static + Send + Sync,
+        F: Fn(&mut T) + Sync + Send,
+    {
+        let t_id = TypeId::of::<T>();
+        for arch in &mut self.archetypes {
+            if !arch.has_type(t_id) { continue; }
+            let Some(col) = arch.columns.get_mut(&t_id) else { continue };
+            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else { continue };
+            Self::parallel_for_each(&mut typed.data, &f);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn parallel_for_each<T: Send + Sync, F: Fn(&mut T) + Sync + Send>(
+        data: &mut Vec<T>, f: &F,
+    ) {
+        use rayon::prelude::*;
+        data.par_iter_mut().for_each(f);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn parallel_for_each<T, F: Fn(&mut T)>(data: &mut Vec<T>, f: &F) {
+        data.iter_mut().for_each(f);
+    }
+
     // ── internals ─────────────────────────────────────────────────────────
 
     /// Swap-remove row `row` from archetype `arch_id`, discarding all component
