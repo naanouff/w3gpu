@@ -36,6 +36,29 @@ Empreinte calculée sur le binaire tel que vendu dans ce dépôt (réimport depu
 |--------|------|-------------------|--------|--------|
 | **IORTestGrid** | 2.0 | [`fixtures/phases/phase-a/glb/IORTestGrid.glb`](../../fixtures/phases/phase-a/glb/IORTestGrid.glb) | `863cf24d0e48892ec830a7c712e4eb8bf5c0fd6cc2ae2f34d213b216f0bd6c12` | [raw `main`](https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/IORTestGrid/glTF-Binary/IORTestGrid.glb) · [repo](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/IORTestGrid) |
 
+## Grille métal / rugosité (curated — bencehari)
+
+| Modèle | glTF | Chemin dans w3drs | SHA256 | Source |
+|--------|------|-------------------|--------|--------|
+| **MetalRoughSpheres** | 2.0 | [`fixtures/phases/phase-a/glb/MetalRoughSpheres.glb`](../../fixtures/phases/phase-a/glb/MetalRoughSpheres.glb) | `450c05557b0823a10835e32c05caf77a7b175eba94516555c1c9bb084f563f01` | [raw `main`](https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb) · [repo](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/MetalRoughSpheres) |
+
+Utile pour juger **IBL / reflets** sur une grille de sphères métal–dieléctrique ; si l’environnement ou l’orientation du cubemap semble incorrect, comparer avec une référence Khronos / capture attendue (voir captures PR / ticket).
+
+## Extension `KHR_texture_transform` — grille Khronos (sample officiel)
+
+| Modèle | glTF | Chemin dans w3drs | SHA256 | Source |
+|--------|------|-------------------|--------|--------|
+| **TextureTransformTest** | 2.0 | [`fixtures/phases/phase-a/glb/TextureTransformTest.glb`](../../fixtures/phases/phase-a/glb/TextureTransformTest.glb) | `78cc065157765e0e376d3135505e8933ff62f3f4f5d0da89871c054211252670` | [KhronosGroup/glTF-Sample-Models — `TextureTransformTest`](https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TextureTransformTest) (dossier `glTF/` ; pas de variante **glTF-Binary** amont) |
+
+**Reproduction du `.glb` versionné** (toutes les URIs du dossier `glTF/` résolues, puis empaquetage sans optimisation destructrice) :
+
+1. Télécharger le dossier `2.0/TextureTransformTest/glTF/` depuis le dépôt Khronos (`TextureTransformTest.gltf`, `TextureTransformTest.bin`, `*.png`).
+2. `npx @gltf-transform/cli@4.1.0 copy TextureTransformTest.gltf TextureTransformTest.glb`
+
+L’empreinte ci-dessus est celle du fichier **`TextureTransformTest.glb`** tel que vendu sous `fixtures/phases/phase-a/glb/` (réaligner avec cette commande si besoin).
+
+**Implémentation w3drs** : lecture sur chaque `textureInfo` concernée dans `w3drs-assets` (`offset`, `scale`, `rotation`, `texCoord`) ; application dans `pbr.wgsl` par slot (ordre Khronos : translation × rotation × scale). Régression complémentaire : tests unitaires `w3drs-assets` (ex. `khr_texture_transform_json_parsed`).
+
 ## Extensions sans GLB dédié **dans le dépôt** (hors liste ci-dessus)
 
 | Extension / thème | Statut |
@@ -46,4 +69,4 @@ Voir le ticket [phase-A-pbr-materiaux-gltf.md](phase-A-pbr-materiaux-gltf.md) po
 
 ---
 
-*Dernière mise à jour des empreintes : 2026-04 (DamagedHelmet, AnisotropyBarnLamp, ClearCoatCarPaint, ClearcoatWicker, IORTestGrid).*
+*Dernière mise à jour des empreintes : 2026-04 (DamagedHelmet, AnisotropyBarnLamp, ClearCoatCarPaint, ClearcoatWicker, IORTestGrid, TextureTransformTest, MetalRoughSpheres).*

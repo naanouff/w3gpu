@@ -30,7 +30,7 @@ flowchart LR
   subgraph Outils
     XTASK[xtask]
     WWW[www/ Vite+TS]
-    NATIVE[native-triangle]
+    NATIVE[khronos-pbr-sample]
   end
   subgraph Futur
     ED[Éditeur natif]
@@ -273,7 +273,7 @@ crates/
   w3drs-renderer/   wgpu context, PBR pipeline, IBL, WGSL shaders, AssetRegistry
   w3drs-wasm/       wasm-bindgen glue — API JS/TS publique
 examples/
-  native-triangle/  Client desktop (winit + pollster)
+  khronos-pbr-sample/  Viewer GLB natif — Phase A + IBL (winit + pollster)
 www/                Vite + TypeScript, consomme le package WASM
 xtask/              cargo xtask runner (www, client, check, setup-hooks)
 docs/               Bibliothèque documentaire (ce dossier)
@@ -289,7 +289,7 @@ w3drs-math
     └── w3drs-assets
             └── w3drs-renderer
                     └── w3drs-wasm
-                    └── native-triangle (example)
+                    └── khronos-pbr-sample (example)
 ```
 
 `w3drs-ecs` ne dépend pas de `w3drs-renderer` — les systèmes ECS sont testables sans GPU.
@@ -442,6 +442,6 @@ Cible : 100k draw calls < 8ms.
 | Target | Backend wgpu | Features Cargo |
 |---|---|---|
 | `wasm32-unknown-unknown` | `webgpu` | `w3drs-wasm` |
-| Windows native | `dx12` | `native-triangle` |
-| macOS native | `metal` | `native-triangle` |
-| Linux native | `vulkan-portability` | `native-triangle` |
+| Windows native | `dx12` | `khronos-pbr-sample` |
+| macOS native | `metal` | `khronos-pbr-sample` |
+| Linux native | `vulkan-portability` | `khronos-pbr-sample` |

@@ -1,7 +1,12 @@
+use glam::{Mat3, Mat4, Vec3};
 use thiserror::Error;
 
 use crate::{
-    material::{AlphaMode, Material, ShadingModel},
+    material::{
+        AlphaMode, Material, ShadingModel, TextureUvTransform, TEX_UV_ALBEDO, TEX_UV_ANISOTROPY,
+        TEX_UV_CLEARCOAT, TEX_UV_CLEARCOAT_ROUGHNESS, TEX_UV_EMISSIVE, TEX_UV_METALLIC_ROUGHNESS,
+        TEX_UV_NORMAL,
+    },
     mesh::Mesh,
     vertex::Vertex,
 };
@@ -47,141 +52,216 @@ pub struct GltfPrimitive {
 /// listent `KHR_materials_clearcoat` (ou d’autres extensions) dans `extensionsRequired`, alors que la
 /// crate **gltf** 1.4.x ne les déclare pas dans son tableau interne `ENABLED_EXTENSIONS` — `import_slice`
 /// échouerait à tort. La validation stricte des index / tailles reste en partie implicite à l’usage.
+///
+/// Parcourt la **scène par défaut** (ou la première scène) et fusionne la **matrice monde** de chaque
+/// nœud dans les sommets (positions, normales, tangentes). Sans cela, les modèles dont l’orientation
+/// repose sur une hiérarchie de nœuds (ex. DamagedHelmet) apparaissent « sur le côté ».
 pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
     let gltf = gltf::Gltf::from_slice_without_validation(bytes)?;
     let buffers = gltf::import_buffers(&gltf, None, gltf.blob.clone())?;
     let images = gltf::import_images(&gltf, None, &buffers)?;
     let mut result = Vec::new();
 
-    for mesh in gltf.meshes() {
-        for primitive in mesh.primitives() {
-            let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
-
-            let positions: Vec<[f32; 3]> = reader
-                .read_positions()
-                .ok_or(GltfError::MissingPositions)?
-                .collect();
-
-            let normals: Vec<[f32; 3]> = reader
-                .read_normals()
-                .map(|it| it.collect())
-                .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
-
-            let uv0s: Vec<[f32; 2]> = reader
-                .read_tex_coords(0)
-                .map(|it| it.into_f32().collect())
-                .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
-
-            let uv1s: Vec<[f32; 2]> = reader
-                .read_tex_coords(1)
-                .map(|it| it.into_f32().collect())
-                .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
-
-            let tangents_raw: Vec<[f32; 4]> = reader
-                .read_tangents()
-                .map(|it| it.collect())
-                .unwrap_or_default();
-
-            let colors: Vec<[f32; 4]> = reader
-                .read_colors(0)
-                .map(|it| it.into_rgba_f32().collect())
-                .unwrap_or_else(|| vec![[1.0, 1.0, 1.0, 1.0]; positions.len()]);
-
-            let indices: Vec<u32> = reader
-                .read_indices()
-                .map(|it| it.into_u32().collect())
-                .unwrap_or_else(|| (0..positions.len() as u32).collect());
-
-            let vertices: Vec<Vertex> = positions
-                .iter()
-                .enumerate()
-                .map(|(i, pos)| {
-                    let n = normals[i];
-                    let (tangent, bitangent) = if i < tangents_raw.len() {
-                        let t = tangents_raw[i];
-                        let tan = [t[0], t[1], t[2]];
-                        let bitan = cross_scaled(n, tan, t[3]);
-                        (tan, bitan)
-                    } else {
-                        orthonormal_tangent_frame(n)
-                    };
-                    Vertex {
-                        position: *pos,
-                        uv0: uv0s[i],
-                        uv1: uv1s[i],
-                        normal: n,
-                        tangent,
-                        bitangent,
-                        color: colors[i],
-                    }
-                })
-                .collect();
-
-            let mat = primitive.material();
-            let pbr = mat.pbr_metallic_roughness();
-
-            let albedo_image = image_for_idx(
-                pbr.base_color_texture()
-                    .map(|t| t.texture().source().index()),
-                &images,
-            );
-            let normal_image = image_for_idx(
-                mat.normal_texture().map(|t| t.texture().source().index()),
-                &images,
-            );
-            let metallic_roughness_image = image_for_idx(
-                pbr.metallic_roughness_texture()
-                    .map(|t| t.texture().source().index()),
-                &images,
-            );
-            let emissive_image = image_for_idx(
-                mat.emissive_texture().map(|t| t.texture().source().index()),
-                &images,
-            );
-            let (anisotropy_strength, anisotropy_rotation, aniso_tex_idx, aniso_tex_coord) =
-                parse_anisotropy(&mat);
-            let aniso_img_idx =
-                aniso_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
-            let anisotropy_image = image_for_idx(aniso_img_idx, &images);
-            let (
-                clearcoat_factor,
-                clearcoat_roughness,
-                cc_tex_idx,
-                cc_tex_coord,
-                cc_rough_tex_idx,
-                cc_rough_tex_coord,
-            ) = parse_clearcoat(&mat);
-            let cc_img_idx =
-                cc_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
-            let cr_img_idx =
-                cc_rough_tex_idx.and_then(|ti| image_index_for_gltf_texture_index(&gltf, ti));
-            let clearcoat_image = image_for_idx(cc_img_idx, &images);
-            let clearcoat_roughness_image = image_for_idx(cr_img_idx, &images);
-
-            result.push(GltfPrimitive {
-                mesh: Mesh::new(vertices, indices),
-                material: convert_material(
-                    &mat,
-                    anisotropy_strength,
-                    anisotropy_rotation,
-                    aniso_tex_coord,
-                    clearcoat_factor,
-                    clearcoat_roughness,
-                    cc_tex_coord,
-                    cc_rough_tex_coord,
-                ),
-                albedo_image,
-                normal_image,
-                metallic_roughness_image,
-                emissive_image,
-                anisotropy_image,
-                clearcoat_image,
-                clearcoat_roughness_image,
-            });
+    let scene_opt = gltf.default_scene().or_else(|| gltf.scenes().next());
+    if let Some(scene) = scene_opt {
+        for root in scene.nodes() {
+            visit_scene_node(&gltf, &buffers, &images, root, Mat4::IDENTITY, &mut result)?;
+        }
+    } else {
+        for mesh in gltf.meshes() {
+            for primitive in mesh.primitives() {
+                push_primitive(
+                    &gltf,
+                    &buffers,
+                    &images,
+                    &primitive,
+                    Mat4::IDENTITY,
+                    &mut result,
+                )?;
+            }
         }
     }
 
     Ok(result)
+}
+
+fn mat4_from_gltf_transform(t: gltf::scene::Transform) -> Mat4 {
+    Mat4::from_cols_array_2d(&t.matrix())
+}
+
+/// Applique la matrice monde du nœud : positions (point), normales (inverse-transpose), tangentes
+/// (partie linéaire), puis recalcule la bitangente pour conserver l’orthogonalité et le signe w.
+fn transform_vertices(vertices: &mut [Vertex], world: Mat4) {
+    let linear = Mat3::from_mat4(world);
+    let normal_mat = world.inverse().transpose();
+    for v in vertices.iter_mut() {
+        let p = Vec3::from_array(v.position);
+        v.position = world.transform_point3(p).to_array();
+
+        let n = Vec3::from_array(v.normal);
+        let t = Vec3::from_array(v.tangent);
+        let b = Vec3::from_array(v.bitangent);
+        let handedness = if n.cross(t).dot(b) >= 0.0 { 1.0f32 } else { -1.0f32 };
+
+        let n_w = normal_mat.transform_vector3(n);
+        let n_w = n_w.try_normalize().unwrap_or(Vec3::Y);
+
+        let t_w = linear * t;
+        let t_w = t_w.try_normalize().unwrap_or(Vec3::X);
+        let t_orth = (t_w - n_w * t_w.dot(n_w))
+            .try_normalize()
+            .unwrap_or(t_w);
+        let b_w = n_w.cross(t_orth) * handedness;
+
+        v.normal = n_w.to_array();
+        v.tangent = t_orth.to_array();
+        v.bitangent = b_w.to_array();
+    }
+}
+
+fn visit_scene_node(
+    document: &gltf::Gltf,
+    buffers: &[gltf::buffer::Data],
+    images: &[gltf::image::Data],
+    node: gltf::Node<'_>,
+    parent_world: Mat4,
+    out: &mut Vec<GltfPrimitive>,
+) -> Result<(), GltfError> {
+    let local = mat4_from_gltf_transform(node.transform());
+    let world = parent_world * local;
+
+    if let Some(mesh) = node.mesh() {
+        for primitive in mesh.primitives() {
+            push_primitive(document, buffers, images, &primitive, world, out)?;
+        }
+    }
+
+    for child in node.children() {
+        visit_scene_node(document, buffers, images, child, world, out)?;
+    }
+    Ok(())
+}
+
+fn push_primitive(
+    document: &gltf::Gltf,
+    buffers: &[gltf::buffer::Data],
+    images: &[gltf::image::Data],
+    primitive: &gltf::Primitive<'_>,
+    node_world: Mat4,
+    out: &mut Vec<GltfPrimitive>,
+) -> Result<(), GltfError> {
+    let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
+
+    let positions: Vec<[f32; 3]> = reader
+        .read_positions()
+        .ok_or(GltfError::MissingPositions)?
+        .collect();
+
+    let normals: Vec<[f32; 3]> = reader
+        .read_normals()
+        .map(|it| it.collect())
+        .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
+
+    let uv0s: Vec<[f32; 2]> = reader
+        .read_tex_coords(0)
+        .map(|it| it.into_f32().collect())
+        .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+
+    let uv1s: Vec<[f32; 2]> = reader
+        .read_tex_coords(1)
+        .map(|it| it.into_f32().collect())
+        .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+
+    let tangents_raw: Vec<[f32; 4]> = reader
+        .read_tangents()
+        .map(|it| it.collect())
+        .unwrap_or_default();
+
+    let colors: Vec<[f32; 4]> = reader
+        .read_colors(0)
+        .map(|it| it.into_rgba_f32().collect())
+        .unwrap_or_else(|| vec![[1.0, 1.0, 1.0, 1.0]; positions.len()]);
+
+    let indices: Vec<u32> = reader
+        .read_indices()
+        .map(|it| it.into_u32().collect())
+        .unwrap_or_else(|| (0..positions.len() as u32).collect());
+
+    let mut vertices: Vec<Vertex> = positions
+        .iter()
+        .enumerate()
+        .map(|(i, pos)| {
+            let n = normals[i];
+            let (tangent, bitangent) = if i < tangents_raw.len() {
+                let t = tangents_raw[i];
+                let tan = [t[0], t[1], t[2]];
+                let bitan = cross_scaled(n, tan, t[3]);
+                (tan, bitan)
+            } else {
+                orthonormal_tangent_frame(n)
+            };
+            Vertex {
+                position: *pos,
+                uv0: uv0s[i],
+                uv1: uv1s[i],
+                normal: n,
+                tangent,
+                bitangent,
+                color: colors[i],
+            }
+        })
+        .collect();
+
+    transform_vertices(&mut vertices, node_world);
+
+    let mat = primitive.material();
+    let pbr = mat.pbr_metallic_roughness();
+
+    let albedo_image = image_for_idx(
+        pbr.base_color_texture()
+            .map(|t| t.texture().source().index()),
+        images,
+    );
+    let normal_image = image_for_idx(
+        mat.normal_texture().map(|t| t.texture().source().index()),
+        images,
+    );
+    let metallic_roughness_image = image_for_idx(
+        pbr.metallic_roughness_texture()
+            .map(|t| t.texture().source().index()),
+        images,
+    );
+    let emissive_image = image_for_idx(
+        mat.emissive_texture().map(|t| t.texture().source().index()),
+        images,
+    );
+    let aniso = parse_anisotropy(&mat);
+    let aniso_img_idx = aniso
+        .texture_index
+        .and_then(|ti| image_index_for_gltf_texture_index(document, ti));
+    let anisotropy_image = image_for_idx(aniso_img_idx, images);
+    let clearcoat = parse_clearcoat(&mat);
+    let cc_img_idx = clearcoat
+        .clearcoat_texture_index
+        .and_then(|ti| image_index_for_gltf_texture_index(document, ti));
+    let cr_img_idx = clearcoat
+        .rough_texture_index
+        .and_then(|ti| image_index_for_gltf_texture_index(document, ti));
+    let clearcoat_image = image_for_idx(cc_img_idx, images);
+    let clearcoat_roughness_image = image_for_idx(cr_img_idx, images);
+
+    out.push(GltfPrimitive {
+        mesh: Mesh::new(vertices, indices),
+        material: convert_material(&mat, &aniso, &clearcoat),
+        albedo_image,
+        normal_image,
+        metallic_roughness_image,
+        emissive_image,
+        anisotropy_image,
+        clearcoat_image,
+        clearcoat_roughness_image,
+    });
+    Ok(())
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -484,12 +564,140 @@ mod tests {
         assert_eq!(ri, Some(5));
         assert_eq!(rtc, 0);
     }
+
+    #[test]
+    fn khr_texture_transform_json_parsed() {
+        let tex = serde_json::json!({
+            "index": 0,
+            "texCoord": 1,
+            "extensions": {
+                "KHR_texture_transform": {
+                    "offset": [0.1, 0.2],
+                    "rotation": 0.5,
+                    "scale": [2.0, 3.0]
+                }
+            }
+        });
+        let m = tex.as_object().unwrap();
+        let uv = super::texture_uv_transform_from_json_tex_info(m);
+        assert!((uv.offset[0] - 0.1).abs() < 1e-5);
+        assert!((uv.offset[1] - 0.2).abs() < 1e-5);
+        assert!((uv.scale[0] - 2.0).abs() < 1e-5);
+        assert!((uv.scale[1] - 3.0).abs() < 1e-5);
+        assert!((uv.rotation - 0.5).abs() < 1e-5);
+        assert_eq!(uv.tex_coord, 1);
+    }
 }
 
-/// Returns `(strength_factor, rotation_radians, gltf_texture_index, tex_coord_set)`.
-fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) {
+#[derive(Clone, Debug, Default)]
+struct ParsedAnisotropy {
+    strength:      f32,
+    rotation:      f32,
+    texture_index: Option<usize>,
+    uv:            TextureUvTransform,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ParsedClearcoat {
+    factor:                  f32,
+    roughness:               f32,
+    clearcoat_texture_index: Option<usize>,
+    rough_texture_index:     Option<usize>,
+    clearcoat_uv:            TextureUvTransform,
+    rough_uv:                TextureUvTransform,
+}
+
+fn json_vec2_f32(a: Option<&serde_json::Value>, default: [f32; 2]) -> [f32; 2] {
+    let Some(serde_json::Value::Array(arr)) = a else {
+        return default;
+    };
+    let x = arr
+        .first()
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(default[0] as f64) as f32;
+    let y = arr
+        .get(1)
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(default[1] as f64) as f32;
+    [x, y]
+}
+
+fn texture_uv_merge_khr_json(
+    base_tex_coord: u32,
+    tt: &serde_json::Map<String, serde_json::Value>,
+) -> TextureUvTransform {
+    let offset = json_vec2_f32(tt.get("offset"), [0.0, 0.0]);
+    let scale = json_vec2_f32(tt.get("scale"), [1.0, 1.0]);
+    let rotation = tt
+        .get("rotation")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    let tex_override = tt
+        .get("texCoord")
+        .and_then(serde_json::Value::as_u64)
+        .map(|u| u.min(1) as u32);
+    TextureUvTransform {
+        offset,
+        scale,
+        rotation,
+        tex_coord: tex_override.unwrap_or(base_tex_coord),
+    }
+}
+
+/// Lit `KHR_texture_transform` sur une `textureInfo` JSON (extensions imbriquées).
+fn texture_uv_transform_from_json_tex_info(tex: &serde_json::Map<String, serde_json::Value>) -> TextureUvTransform {
+    let base_tc = tex
+        .get("texCoord")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
+        .min(1) as u32;
+    let Some(ext) = tex.get("extensions").and_then(|e| e.as_object()) else {
+        return TextureUvTransform {
+            tex_coord: base_tc,
+            ..Default::default()
+        };
+    };
+    let Some(tt) = ext.get("KHR_texture_transform").and_then(|t| t.as_object()) else {
+        return TextureUvTransform {
+            tex_coord: base_tc,
+            ..Default::default()
+        };
+    };
+    texture_uv_merge_khr_json(base_tc, tt)
+}
+
+fn uv_transform_from_gltf_info(info: &gltf::texture::Info<'_>) -> TextureUvTransform {
+    let base_tc = info.tex_coord().min(1);
+    if let Some(tt) = info.texture_transform() {
+        let tc = tt.tex_coord().map(|u| u.min(1)).unwrap_or(base_tc);
+        TextureUvTransform {
+            offset: tt.offset(),
+            scale: tt.scale(),
+            rotation: tt.rotation(),
+            tex_coord: tc,
+        }
+    } else {
+        TextureUvTransform {
+            tex_coord: base_tc,
+            ..Default::default()
+        }
+    }
+}
+
+fn uv_transform_from_normal_texture(nt: &gltf::material::NormalTexture<'_>) -> TextureUvTransform {
+    let base_tc = nt.tex_coord().min(1);
+    nt.extension_value("KHR_texture_transform")
+        .and_then(|v| v.as_object())
+        .map(|o| texture_uv_merge_khr_json(base_tc, o))
+        .unwrap_or(TextureUvTransform {
+            tex_coord: base_tc,
+            ..Default::default()
+        })
+}
+
+fn parse_anisotropy(mat: &gltf::Material<'_>) -> ParsedAnisotropy {
     let Some(v) = mat.extension_value("KHR_materials_anisotropy") else {
-        return (0.0, 0.0, None, 0);
+        return ParsedAnisotropy::default();
     };
     let strength = v
         .get("anisotropyStrength")
@@ -499,33 +707,32 @@ fn parse_anisotropy(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32) 
         .get("anisotropyRotation")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0) as f32;
-    let (tex_idx, tex_coord) = v
+    let (texture_index, uv) = v
         .get("anisotropyTexture")
         .and_then(|t| t.as_object())
-        .map(|o| {
-            let idx = o
+        .map(|tex| {
+            let idx = tex
                 .get("index")
                 .and_then(serde_json::Value::as_u64)
                 .map(|u| u as usize);
-            let tc = o
-                .get("texCoord")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0) as u32;
-            (idx, tc.min(1))
+            let uv = texture_uv_transform_from_json_tex_info(tex);
+            (idx, uv)
         })
-        .unwrap_or((None, 0));
-    (strength, rotation, tex_idx, tex_coord)
+        .unwrap_or((None, TextureUvTransform::default()));
+    ParsedAnisotropy {
+        strength,
+        rotation,
+        texture_index,
+        uv,
+    }
 }
 
-/// `KHR_materials_clearcoat` — facteurs + indices de texture JSON (`index` dans le tableau `textures` glTF).
-///
-/// Retourne `(factor, roughness, clearcoat_tex_idx, clearcoat_tex_coord, rough_tex_idx, rough_tex_coord)`.
-fn parse_clearcoat(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32, Option<usize>, u32) {
+fn parse_clearcoat(mat: &gltf::Material<'_>) -> ParsedClearcoat {
     let Some(v) = mat.extension_value("KHR_materials_clearcoat") else {
-        return (0.0, 0.0, None, 0, None, 0);
+        return ParsedClearcoat::default();
     };
     let Some(o) = v.as_object() else {
-        return (0.0, 0.0, None, 0, None, 0);
+        return ParsedClearcoat::default();
     };
     let factor = o
         .get("clearcoatFactor")
@@ -535,18 +742,39 @@ fn parse_clearcoat(mat: &gltf::Material<'_>) -> (f32, f32, Option<usize>, u32, O
         .get("clearcoatRoughnessFactor")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0) as f32;
-    let (cc_idx, cc_tc) = extension_texture_index_coord(o, "clearcoatTexture");
-    let (rough_idx, rough_tc) = extension_texture_index_coord(o, "clearcoatRoughnessTexture");
-    (
-        factor.clamp(0.0, 1.0),
-        rough.clamp(0.0, 1.0),
-        cc_idx,
-        cc_tc,
-        rough_idx,
-        rough_tc,
-    )
+    let (clearcoat_texture_index, clearcoat_uv) = o
+        .get("clearcoatTexture")
+        .and_then(|t| t.as_object())
+        .map(|tex| {
+            let idx = tex
+                .get("index")
+                .and_then(serde_json::Value::as_u64)
+                .map(|u| u as usize);
+            (idx, texture_uv_transform_from_json_tex_info(tex))
+        })
+        .unwrap_or((None, TextureUvTransform::default()));
+    let (rough_texture_index, rough_uv) = o
+        .get("clearcoatRoughnessTexture")
+        .and_then(|t| t.as_object())
+        .map(|tex| {
+            let idx = tex
+                .get("index")
+                .and_then(serde_json::Value::as_u64)
+                .map(|u| u as usize);
+            (idx, texture_uv_transform_from_json_tex_info(tex))
+        })
+        .unwrap_or((None, TextureUvTransform::default()));
+    ParsedClearcoat {
+        factor: factor.clamp(0.0, 1.0),
+        roughness: rough.clamp(0.0, 1.0),
+        clearcoat_texture_index,
+        rough_texture_index,
+        clearcoat_uv,
+        rough_uv,
+    }
 }
 
+#[cfg(test)]
 fn extension_texture_index_coord(
     o: &serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -567,16 +795,7 @@ fn extension_texture_index_coord(
         .unwrap_or((None, 0))
 }
 
-fn convert_material(
-    mat: &gltf::Material<'_>,
-    anisotropy_strength: f32,
-    anisotropy_rotation: f32,
-    anisotropy_tex_coord: u32,
-    clearcoat_factor: f32,
-    clearcoat_roughness: f32,
-    clearcoat_tex_coord: u32,
-    clearcoat_rough_tex_coord: u32,
-) -> Material {
+fn convert_material(mat: &gltf::Material<'_>, aniso: &ParsedAnisotropy, clearcoat: &ParsedClearcoat) -> Material {
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
     let emissive = mat.emissive_factor();
@@ -586,6 +805,28 @@ fn convert_material(
         gltf::material::AlphaMode::Blend => AlphaMode::Blend,
     };
     let ior = mat.ior().unwrap_or(1.5).clamp(1.0001, 256.0);
+
+    let mut texture_transforms = [TextureUvTransform::default(); 7];
+    texture_transforms[TEX_UV_ALBEDO] = pbr
+        .base_color_texture()
+        .map(|t| uv_transform_from_gltf_info(&t))
+        .unwrap_or_default();
+    texture_transforms[TEX_UV_NORMAL] = mat
+        .normal_texture()
+        .map(|t| uv_transform_from_normal_texture(&t))
+        .unwrap_or_default();
+    texture_transforms[TEX_UV_METALLIC_ROUGHNESS] = pbr
+        .metallic_roughness_texture()
+        .map(|t| uv_transform_from_gltf_info(&t))
+        .unwrap_or_default();
+    texture_transforms[TEX_UV_EMISSIVE] = mat
+        .emissive_texture()
+        .map(|t| uv_transform_from_gltf_info(&t))
+        .unwrap_or_default();
+    texture_transforms[TEX_UV_ANISOTROPY] = aniso.uv;
+    texture_transforms[TEX_UV_CLEARCOAT] = clearcoat.clearcoat_uv;
+    texture_transforms[TEX_UV_CLEARCOAT_ROUGHNESS] = clearcoat.rough_uv;
+
     Material {
         name: mat.name().unwrap_or("").to_string(),
         shading_model: ShadingModel::Pbr,
@@ -596,13 +837,11 @@ fn convert_material(
         alpha_mode,
         alpha_cutoff: mat.alpha_cutoff().unwrap_or(0.5),
         double_sided: mat.double_sided(),
-        anisotropy_strength,
-        anisotropy_rotation,
-        anisotropy_tex_coord,
+        anisotropy_strength: aniso.strength,
+        anisotropy_rotation: aniso.rotation,
         ior,
-        clearcoat_factor,
-        clearcoat_roughness,
-        clearcoat_tex_coord,
-        clearcoat_rough_tex_coord,
+        clearcoat_factor: clearcoat.factor,
+        clearcoat_roughness: clearcoat.roughness,
+        texture_transforms,
     }
 }

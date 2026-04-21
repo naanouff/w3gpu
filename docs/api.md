@@ -165,7 +165,7 @@ scheduler.run(world, delta_time, total_time)
 
 ```bash
 cargo xtask www       # wasm-pack build + npm install + vite dev
-cargo xtask client    # cargo build --release + run native-triangle
+cargo xtask client    # cargo build --release + run khronos-pbr-sample
 cargo xtask check     # cargo check native + wasm32
 cargo xtask setup-hooks  # installe .githooks/pre-commit → .git/hooks/
 ```

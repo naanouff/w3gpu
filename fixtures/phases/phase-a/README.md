@@ -18,13 +18,13 @@ Depuis la racine `w3drs/` :
 cargo xtask client
 ```
 
-Le client charge par défaut `www/public/damaged_helmet_source_glb.glb` (voir README racine). Pour pointer explicitement le même binaire que le manifeste Phase A :
+`cargo xtask client` lance **`khronos-pbr-sample`**, qui enchaîne les **sept** GLB du [`manifest.json`](manifest.json) (DamagedHelmet + six entrées sous `glb/`) : **←** / **→** pour changer de modèle en boucle, **clic gauche + glisser** pour l’orbite, molette pour le zoom, IBL via `www/public/studio_small_03_2k.hdr`.
 
 ```bash
-cargo run -p native-triangle --release -- www/public/damaged_helmet_source_glb.glb
+cargo run -p khronos-pbr-sample --release
 ```
 
-*(Sur Windows, le binaire est sous `target\release\native-triangle.exe`.)*
+*(Sur Windows : `target\release\khronos-pbr-sample.exe`.)*
 
 ## Repro — web (`www/`)
 
@@ -42,7 +42,7 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 
 | Fichier | Rôle |
 |---------|------|
-| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + modèles **bencehari** sous `glb/` : anisotropie, clearcoat ×2, IOR). |
+| [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + modèles **bencehari** sous `glb/` : anisotropie, clearcoat ×2, IOR, **MetalRoughSpheres** + **TextureTransformTest** Khronos pour `KHR_texture_transform`). |
 | [`glb/README.md`](glb/README.md) | Convention pour copier / vendre des binaires sous `glb/` (CI autonome). |
 | [`materials/default.json`](materials/default.json) | Placeholder de paramètres / variantes **data-driven** (étendu au fil des PR). |
 | [`expected.md`](expected.md) | Critères mesurables de la scène v0. |
@@ -61,6 +61,12 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 2. Pas de fallback matériau (magenta) sur les parties censées être métalliques.
 3. Textures et reflets cohérents (pas de mesh entièrement noir sans IBL).
 4. Chargement sans panic ; extensions ignorées éventuellement **documentées** en PR jusqu’à parité shader.
+
+## Checklist visuelle rapide (TextureTransformTest — `KHR_texture_transform`)
+
+1. Plusieurs primitives / matériaux : les **motifs UV** (grille, flèches) ne sont pas tous identiques sur chaque quad (les `offset` / `scale` / `rotation` par texture ont un effet visible).
+2. Au moins une zone affiche la texture **« Correct »** attendue pour le cas de test correspondant (pas uniquement « Error » / magenta sur tout le modèle si le pipeline est correct).
+3. Chargement sans panic ; pas de repli matériau global **magenta** sur l’ensemble de la scène.
 
 ---
 

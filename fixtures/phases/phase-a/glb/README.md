@@ -6,6 +6,8 @@
 | `ClearCoatCarPaint.glb` | Stress **`KHR_materials_clearcoat`** — [ClearCoatCarPaint](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearCoatCarPaint/glTF-Binary). |
 | `ClearcoatWicker.glb` | Stress **`KHR_materials_clearcoat`** — [ClearcoatWicker](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/ClearcoatWicker/glTF-Binary). |
 | `IORTestGrid.glb` | Stress **`KHR_materials_ior`** — [IORTestGrid](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/IORTestGrid/glTF-Binary). |
+| `MetalRoughSpheres.glb` | Grille **métal / rugosité** + jugement IBL — [MetalRoughSpheres](https://github.com/bencehari/gltf-sample-assets/tree/main/Models/MetalRoughSpheres/glTF-Binary). |
+| `TextureTransformTest.glb` | Stress **`KHR_texture_transform`** — [Khronos TextureTransformTest](https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TextureTransformTest) ; le dépôt Khronos ne fournit que le dossier `glTF/` : le `.glb` ici est **reproducible** avec `npx @gltf-transform/cli@4.1.0 copy` (voir [phase-a-khronos-shortlist.md](../../../docs/tickets/phase-a-khronos-shortlist.md)). |
 
 Le **gate** historique **DamagedHelmet** reste sous `www/public/` (voir [`manifest.json`](../manifest.json) `relative_path`). Pour une CI **100 %** sous `phase-a/glb/`, copier aussi le casque ici et mettre à jour le manifeste + shortlist.
 

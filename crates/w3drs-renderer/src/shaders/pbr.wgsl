@@ -23,6 +23,16 @@ struct FrameUniforms {
     _pad3a: f32, _pad3b: f32, _pad3c: f32,
 }
 
+/// `KHR_texture_transform` + choix de `texCoord` (aligné `UvTransformGpu` Rust).
+struct UvTransform {
+    offset:    vec2<f32>,
+    rotation:  f32,
+    _pad0:     f32,
+    scale:     vec2<f32>,
+    tex_coord: u32,
+    _pad1:     u32,
+}
+
 struct MaterialUniforms {
     albedo:    vec4<f32>,
     emissive:  vec4<f32>,
@@ -30,13 +40,11 @@ struct MaterialUniforms {
     roughness: f32,
     anisotropy_strength: f32,
     anisotropy_rotation: f32,
-    anisotropy_tex_coord: u32,
     ior:       f32,
     clearcoat_factor:     f32,
     clearcoat_roughness:  f32,
-    clearcoat_tex_coord:       u32,
-    clearcoat_rough_tex_coord: u32,
-    _pad:      vec2<u32>,
+    _pad_main: f32,
+    uv_transforms: array<UvTransform, 7>,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -162,6 +170,18 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
     return f0 + (max(inv, f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+/// `KHR_texture_transform` — même ordre que l’exemple GLSL Khronos : `translation * rotation * scale`.
+fn khr_texture_transform_uv(uv0: vec2<f32>, uv1: vec2<f32>, xf: UvTransform) -> vec2<f32> {
+    let uv = select(uv0, uv1, xf.tex_coord != 0u);
+    let sx = uv.x * xf.scale.x;
+    let sy = uv.y * xf.scale.y;
+    let c = cos(xf.rotation);
+    let s = sin(xf.rotation);
+    let rx = c * sx + s * sy;
+    let ry = -s * sx + c * sy;
+    return vec2<f32>(rx, ry) + xf.offset;
+}
+
 // 3×3 PCF shadow factor: 1.0 = fully lit, 0.0 = fully in shadow.
 // textureSampleCompare must be in uniform control flow, so we always run the
 // loop on clamped coordinates and use select() instead of an early return.
@@ -188,10 +208,14 @@ fn pcf_shadow(world_pos: vec3<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // ── texture sampling ──────────────────────────────────────────────────────
-    let albedo_sample = textureSample(albedo_tex, mat_sampler, in.uv0);
-    let mr_sample     = textureSample(mr_tex, mat_sampler, in.uv0);
-    let emit_sample   = textureSample(emissive_tex, mat_sampler, in.uv0);
+    // ── texture sampling (`KHR_texture_transform` par slot) ───────────────────
+    let uv_alb = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[0u]);
+    let uv_n   = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[1u]);
+    let uv_mr  = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[2u]);
+    let uv_em  = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[3u]);
+    let albedo_sample = textureSample(albedo_tex, mat_sampler, uv_alb);
+    let mr_sample     = textureSample(mr_tex, mat_sampler, uv_mr);
+    let emit_sample   = textureSample(emissive_tex, mat_sampler, uv_em);
 
     let albedo    = material.albedo.rgb * albedo_sample.rgb * in.color.rgb;
     let metallic  = material.metallic  * mr_sample.b;
@@ -199,7 +223,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let emissive  = material.emissive.rgb * emit_sample.rgb;
 
     // ── normal mapping (TBN) ──────────────────────────────────────────────────
-    let normal_sample = textureSample(normal_tex, mat_sampler, in.uv0).xyz;
+    let normal_sample = textureSample(normal_tex, mat_sampler, uv_n).xyz;
     let n_tangent = normalize(normal_sample * 2.0 - vec3<f32>(1.0));
     let tbn = mat3x3<f32>(
         normalize(in.world_tangent),
@@ -208,9 +232,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     );
     let n = normalize(tbn * n_tangent);
 
-    // KHR_materials_clearcoat — facteurs × textures (R / G) ; texCoord 0 ou 1.
-    let uv_cc = select(in.uv0, in.uv1, material.clearcoat_tex_coord != 0u);
-    let uv_cr = select(in.uv0, in.uv1, material.clearcoat_rough_tex_coord != 0u);
+    // KHR_materials_clearcoat — facteurs × textures (R / G) + `KHR_texture_transform`.
+    let uv_cc = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[5u]);
+    let uv_cr = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[6u]);
     let cc_tex_r   = textureSample(clearcoat_tex, mat_sampler, uv_cc).r;
     let cc_rough_g = textureSample(clearcoat_rough_tex, mat_sampler, uv_cr).g;
     let cc_f = clamp(material.clearcoat_factor * cc_tex_r, 0.0, 1.0);
@@ -230,7 +254,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
 
     // KHR_materials_anisotropy (direct specular only; IBL stays isotropic).
-    let uv_aniso = select(in.uv0, in.uv1, material.anisotropy_tex_coord != 0u);
+    let uv_aniso = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[4u]);
     let aniso_sample = textureSample(aniso_tex, mat_sampler, uv_aniso).rgb;
     let cos_r = cos(material.anisotropy_rotation);
     let sin_r = sin(material.anisotropy_rotation);

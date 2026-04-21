@@ -14,7 +14,7 @@
 
 ## Écart architecture (existant → cible)
 
-- **Existant** : **`www/`** + `native-triangle` **sans** éditeur natif, **sans** workspace auteur, **sans** compilateur multi-cibles, plugins = **Rust statique** uniquement.
+- **Existant** : **`www/`** + `khronos-pbr-sample` **sans** éditeur natif, **sans** workspace auteur, **sans** compilateur multi-cibles, plugins = **Rust statique** uniquement.
 - **Cible** : éditeur **hôte** ; workspace [Goals.md](../Goals.md) ; **compilateur** (exe / Node+React / page statique) ; **plugins = DLL (natif) / wasm (web)** + manifestes — voir [`architecture.md`](../architecture.md) (*Éditeur*, *Compilateur*, *Plugins*).
 - **Ajustement** : chaque jalon éditeur met à jour `architecture.md` (diagrammes UI, bus, sécurité extensions).
 

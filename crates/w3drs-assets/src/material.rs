@@ -5,6 +5,37 @@ pub enum ShadingModel {
     Unlit,
 }
 
+/// `KHR_texture_transform` + choix de jeu de coordonnées (glTF `texCoord`, 0 ou 1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextureUvTransform {
+    pub offset: [f32; 2],
+    pub scale: [f32; 2],
+    /// Radians, sens **anti-horaire** sur les UV (Khronos).
+    pub rotation: f32,
+    /// Jeu `TEXCOORD_n` effectif (0 ou 1) — peut être surchargé par l’extension sur la `textureInfo`.
+    pub tex_coord: u32,
+}
+
+impl Default for TextureUvTransform {
+    fn default() -> Self {
+        Self {
+            offset: [0.0, 0.0],
+            scale: [1.0, 1.0],
+            rotation: 0.0,
+            tex_coord: 0,
+        }
+    }
+}
+
+/// Indices des entrées `Material::texture_transforms[]` (alignés shader / GPU).
+pub const TEX_UV_ALBEDO: usize = 0;
+pub const TEX_UV_NORMAL: usize = 1;
+pub const TEX_UV_METALLIC_ROUGHNESS: usize = 2;
+pub const TEX_UV_EMISSIVE: usize = 3;
+pub const TEX_UV_ANISOTROPY: usize = 4;
+pub const TEX_UV_CLEARCOAT: usize = 5;
+pub const TEX_UV_CLEARCOAT_ROUGHNESS: usize = 6;
+
 #[derive(Clone, Debug)]
 pub struct Material {
     pub name: String,
@@ -20,18 +51,14 @@ pub struct Material {
     pub anisotropy_strength: f32,
     /// Rotation in radians (CCW in tangent–bitangent plane from tangent).
     pub anisotropy_rotation: f32,
-    /// glTF `anisotropyTexture.texCoord` set (0 or 1).
-    pub anisotropy_tex_coord: u32,
     /// `KHR_materials_ior` — index of refraction (default **1.5** when extension absent, per Khronos).
     pub ior: f32,
     /// `KHR_materials_clearcoat` — facteur (0–1) ; multiplié par le canal **R** de la texture si présente.
     pub clearcoat_factor: f32,
     /// `KHR_materials_clearcoat` — rugosité de la couche ; multipliée par le canal **G** de la texture roughness si présente.
     pub clearcoat_roughness: f32,
-    /// `clearcoatTexture.texCoord` (0 ou 1).
-    pub clearcoat_tex_coord: u32,
-    /// `clearcoatRoughnessTexture.texCoord` (0 ou 1).
-    pub clearcoat_rough_tex_coord: u32,
+    /// `KHR_texture_transform` + `texCoord` par slot texture (ordre [`TEX_UV_*`](crate::material)).
+    pub texture_transforms: [TextureUvTransform; 7],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -56,12 +83,10 @@ impl Default for Material {
             double_sided: false,
             anisotropy_strength: 0.0,
             anisotropy_rotation: 0.0,
-            anisotropy_tex_coord: 0,
             ior: 1.5,
             clearcoat_factor: 0.0,
             clearcoat_roughness: 0.0,
-            clearcoat_tex_coord: 0,
-            clearcoat_rough_tex_coord: 0,
+            texture_transforms: [TextureUvTransform::default(); 7],
         }
     }
 }
@@ -81,12 +106,12 @@ mod tests {
         assert!(!m.double_sided);
         assert_eq!(m.anisotropy_strength, 0.0);
         assert_eq!(m.anisotropy_rotation, 0.0);
-        assert_eq!(m.anisotropy_tex_coord, 0);
         assert!((m.ior - 1.5).abs() < 1e-6);
         assert_eq!(m.clearcoat_factor, 0.0);
         assert_eq!(m.clearcoat_roughness, 0.0);
-        assert_eq!(m.clearcoat_tex_coord, 0);
-        assert_eq!(m.clearcoat_rough_tex_coord, 0);
+        for t in m.texture_transforms {
+            assert_eq!(t, TextureUvTransform::default());
+        }
     }
 
     #[test]

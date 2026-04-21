@@ -202,7 +202,7 @@ Référence w3dts : `HYBRID_RASTER_PATHTRACE_PLAN.md`.
 
 ## Phase L — Industrialisation « prod »
 
-- [ ] **CI** : `cargo fmt`, `clippy -D warnings`, tests sur `wasm32-unknown-unknown`, **couverture** Rust/TS sur le code livré, suite **E2E** navigateur (harnais type **thirtyfour** / **chromiumoxide**, voir [CONTRIBUTING.md](../CONTRIBUTING.md)), **tests fonctionnels client natif** (`examples/native-triangle` / intégration `wgpu` natif, voir même section), benchmarks non régressifs.
+- [ ] **CI** : `cargo fmt`, `clippy -D warnings`, tests sur `wasm32-unknown-unknown`, **couverture** Rust/TS sur le code livré, suite **E2E** navigateur (harnais type **thirtyfour** / **chromiumoxide**, voir [CONTRIBUTING.md](../CONTRIBUTING.md)), **tests fonctionnels client natif** (`examples/khronos-pbr-sample` / intégration `wgpu` natif, voir même section), benchmarks non régressifs.
 - [ ] **Stabilité API** : semver pour crates + politique de dépréciation pour `wasm-bindgen`.
 - [ ] **Sécurité & supply chain** : `cargo deny` / advisories, politique de dépendances.
 - [ ] **Livraisons** : changelog, artefacts npm pour le paquet WASM, builds natifs signés si besoin.
@@ -266,7 +266,7 @@ Indice total    [██████░░░░░░░░░░░░░░]  
 | Audio / input avancés | ~0 % | Plans w3dts ; runtime w3drs minimal. |
 | Réseau P2P / gameplay | ~0 % | Packages w3dts ; non portés. |
 | Hybrid raster / path | ~0 % | Plan w3dts ; non présent w3drs. |
-| Viewer / éditeur / extensions | ~20 % | w3dts : viewer-editor React mature ; w3drs : `www/` + `native-triangle`, maquette éditeur. |
+| Viewer / éditeur / extensions | ~20 % | w3dts : viewer-editor React mature ; w3drs : `www/` + `khronos-pbr-sample`, maquette éditeur. |
 
 **Moyenne indicative** des lignes ci-dessus ≈ **22 %** ; la **parité globale ~32 %** en tête de section intègre un **poids** un peu plus fort sur le rendu core (déjà avancé). Recalculer explicitement (feuille ou script) quand la politique de poids sera figée.
 

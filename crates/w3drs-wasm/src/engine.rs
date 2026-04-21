@@ -93,7 +93,7 @@ impl W3drsEngine {
             TonemapParams {
                 exposure: 1.0,
                 bloom_strength: 0.04,
-                _pad0: 0.0,
+                flags: 0,
                 _pad1: 0.0,
             },
         );

@@ -11,7 +11,7 @@ log.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-gltf = { version = "1.4", default-features = false, features = ["names", "utils", "import", "extensions", "KHR_materials_ior"] }
+gltf = { version = "1.4", default-features = false, features = ["names", "utils", "import", "extensions", "KHR_materials_ior", "KHR_texture_transform"] }
 image = { version = "0.25", default-features = false, features = ["hdr"] }
 
 [dev-dependencies]

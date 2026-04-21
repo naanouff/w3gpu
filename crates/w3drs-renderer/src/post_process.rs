@@ -17,8 +17,13 @@ pub struct BloomParams {
 pub struct TonemapParams {
     pub exposure:       f32,
     pub bloom_strength: f32,
-    pub _pad0:          f32,
+    /// Bit **0** : si `1`, le fragment tonemap **saute le passage FXAA** (ACES + gamma seulement).
+    pub flags:          u32,
     pub _pad1:          f32,
+}
+
+impl TonemapParams {
+    pub const FLAG_SKIP_FXAA: u32 = 1;
 }
 
 struct BloomTextures {
@@ -316,6 +321,45 @@ impl PostProcessPass {
 
     pub fn update_tonemap_params(&self, queue: &wgpu::Queue, p: TonemapParams) {
         queue.write_buffer(&self.tonemap_params_buf, 0, bytemuck::bytes_of(&p));
+    }
+
+    /// Tonemap (ACES + FXAA optionnel via [`TonemapParams::flags`]) + HDR → swapchain **sans**
+    /// préfiltre bloom ni flous — la texture bloom est vidée au noir ; utiliser `bloom_strength: 0.0`
+    /// pour un rendu neutre.
+    pub fn encode_tonemap_only(
+        &self,
+        encoder:        &mut wgpu::CommandEncoder,
+        swapchain_view: &wgpu::TextureView,
+    ) {
+        {
+            let _rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label:                    Some("bloom_stub_clear"),
+                color_attachments:        &[Some(wgpu::RenderPassColorAttachment {
+                    view:           &self.bloom.view_a,
+                    resolve_target: None,
+                    ops:            wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes:         None,
+                occlusion_query_set:      None,
+            });
+        }
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label:                    Some("tonemap"),
+                color_attachments:        &[Some(wgpu::RenderPassColorAttachment {
+                    view:           swapchain_view,
+                    resolve_target: None,
+                    ops:            wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes:         None,
+                occlusion_query_set:      None,
+            });
+            rp.set_pipeline(&self.tonemap_pipeline);
+            rp.set_bind_group(0, &self.tonemap_bg, &[]);
+            rp.draw(0..3, 0..1);
+        }
     }
 
     /// Run all post-process passes, writing final LDR output to `swapchain_view`.

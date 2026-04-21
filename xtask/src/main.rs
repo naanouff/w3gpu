@@ -62,9 +62,9 @@ fn run_client(root: &Path) {
     println!("==> Building and running native client...");
     run(
         Command::new("cargo")
-            .args(["run", "-p", "native-triangle", "--release"])
+            .args(["run", "-p", "khronos-pbr-sample", "--release"])
             .current_dir(root),
-        "cargo run native-triangle",
+        "cargo run khronos-pbr-sample",
     );
 }
 

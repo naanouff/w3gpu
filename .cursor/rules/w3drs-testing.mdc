@@ -6,7 +6,7 @@ alwaysApply: true
 # w3drs — règles de tests et d’éditeur
 
 - **Rust (`.rs`) et TypeScript (`.ts`)** : toute contribution doit inclure des tests qui **exécutent chaque ligne** de code ajoutée ou modifiée (objectif couverture ligne/branche sur le diff ; pas de chemins morts en revue).
-- **Tests fonctionnels** : pour ECS, multithreading, occlusion/culling, chargement d’assets, etc., ajouter ou étendre des **tests d’intégration** / scénarios dédiés, pas seulement des tests unitaires isolés — **y compris pour le client natif** (`examples/native-triangle`, `cargo xtask client`) : même exigence de couverture fonctionnelle que pour WASM / `www/` lorsque la fonctionnalité existe des deux côtés.
+- **Tests fonctionnels** : pour ECS, multithreading, occlusion/culling, chargement d’assets, etc., ajouter ou étendre des **tests d’intégration** / scénarios dédiés, pas seulement des tests unitaires isolés — **y compris pour le client natif** (`examples/khronos-pbr-sample`, `cargo xtask client`) : même exigence de couverture fonctionnelle que pour WASM / `www/` lorsque la fonctionnalité existe des deux côtés.
 - **E2E navigateur** : l’équivalent direction **Playwright** en Rust est à baser sur **thirtyfour** (WebDriver) ou **chromiumoxide** (CDP) ; détail dans `CONTRIBUTING.md` section *Testing policy*.
 - **Éditeur** : l’UX native s’aligne sur la maquette **`Mode-based v2.html`** (voir `docs/design/README.md`) ; **`www/`** = version **allégée** de cette maquette.
 

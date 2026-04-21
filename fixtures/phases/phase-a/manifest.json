@@ -46,6 +46,24 @@
       "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/IORTestGrid/glTF-Binary/IORTestGrid.glb",
       "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/IORTestGrid",
       "expected_sha256_hex": "863cf24d0e48892ec830a7c712e4eb8bf5c0fd6cc2ae2f34d213b216f0bd6c12"
+    },
+    {
+      "id": "texture_transform_test",
+      "relative_path": "glb/TextureTransformTest.glb",
+      "khronos_sample_model": "TextureTransformTest",
+      "gltf_version": "2.0",
+      "extensions_stressed": ["KHR_texture_transform"],
+      "source_url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TextureTransformTest/glTF/TextureTransformTest.gltf",
+      "upstream_repo_url": "https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TextureTransformTest",
+      "expected_sha256_hex": "78cc065157765e0e376d3135505e8933ff62f3f4f5d0da89871c054211252670"
+    },
+    {
+      "id": "metal_rough_spheres",
+      "relative_path": "glb/MetalRoughSpheres.glb",
+      "gltf_version": "2.0",
+      "source_url": "https://github.com/bencehari/gltf-sample-assets/raw/refs/heads/main/Models/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb",
+      "upstream_repo_url": "https://github.com/bencehari/gltf-sample-assets/tree/main/Models/MetalRoughSpheres",
+      "expected_sha256_hex": "450c05557b0823a10835e32c05caf77a7b175eba94516555c1c9bb084f563f01"
     }
   ],
   "optional_extension_slots": [
@@ -58,6 +76,11 @@
       "extension": "KHR_materials_clearcoat",
       "status": "implemented",
       "note": "Chargeur + shader ; modèles dédiés `clearcoat_car_paint` / `clearcoat_wicker` dans `models[]`. `clearcoatNormalTexture` non implémenté."
+    },
+    {
+      "extension": "KHR_texture_transform",
+      "status": "fixture_in_models",
+      "note": "Sample Khronos empaqueté en `.glb` : entrée `texture_transform_test` (`TextureTransformTest.glb`) ; reproduction du binaire documentée dans phase-a-khronos-shortlist.md."
     },
     {
       "extension": "KHR_materials_transmission",

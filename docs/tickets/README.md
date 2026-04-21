@@ -17,7 +17,7 @@ Référence normative du **cible** : [`docs/architecture.md`](../architecture.md
 | Domaine | Existant (résumé) | Cible (résumé) |
 |---------|-------------------|----------------|
 | **Données / graphes** | Pipeline rendu et assets **surtout dans le code** ; peu de fichiers graphes versionnés. | **Data-driven** : render graph, shader graph, terrain, particules, scripts, physique → **fichiers** + `.w3db`. |
-| **Projet / livrables** | `native-triangle` + `www/` + chemins glTF **ad hoc**. | **Workspace** éditeur + **compilateur** (exe natif, projet Node/React, page statique). |
+| **Projet / livrables** | `khronos-pbr-sample` + `www/` + chemins glTF **ad hoc**. | **Workspace** éditeur + **compilateur** (exe natif, projet Node/React, page statique). |
 | **Plugins** | Trait `Plugin` **Rust** lié statiquement / workspace ; pas de chaîne DLL/wasm tierce documentée. | **Plugin = DLL/dylib/so (natif) ou wasm (web)** + manifeste ; éditeur **hôte** d’extensions. |
 | **Formats** | glTF/HDR en cours ; pas de **`.w3db`**, pas d’import OBJ/STEP/splats prioritaires côté Rust. | Table des formats et priorités dans `architecture.md` ; tickets A–L pour exécution. |
 | **Qualité** | Tests crates + `xtask check` ; E2E / coverage **à renforcer** (phase L). | Seuils mesurables, E2E navigateur, client natif, profils CI = fixtures. |
@@ -40,7 +40,7 @@ Conditions **mesurables** de fin (tests passent, couverture minimale sur le diff
 
 #### Outils de validation (obligatoires dans chaque ticket)
 
-Chaque fichier de phase inclut une sous-section **« Outils de validation »** sous la DOD : commandes exactes (`cargo …`), rapports (`llvm-cov`, rapports HTML), binaires (`xtask`, CLI bake), E2E (`thirtyfour` / `chromiumoxide` quand le périmètre touche `www/`), **tests client natif** quand le périmètre touche `examples/native-triangle` ou le rendu natif.
+Chaque fichier de phase inclut une sous-section **« Outils de validation »** sous la DOD : commandes exactes (`cargo …`), rapports (`llvm-cov`, rapports HTML), binaires (`xtask`, CLI bake), E2E (`thirtyfour` / `chromiumoxide` quand le périmètre touche `www/`), **tests client natif** quand le périmètre touche `examples/khronos-pbr-sample` ou le rendu natif.
 
 Les outils doivent permettre une **revalidation** sur machine propre ou en CI sans étape manuelle non décrite.
 
@@ -72,7 +72,7 @@ Chaque ticket de phase porte une **scène ou un projet de test** versionné, uni
 
 | Étape | Forme | Rôle |
 |-------|--------|------|
-| **Court terme** | Dossier sous [`fixtures/phases/<id>/`](../../fixtures/phases/README.md) + `README.md` | Données + instructions pour **`native-triangle`** et/ou **`www/`** (selon périmètre). |
+| **Court terme** | Dossier sous [`fixtures/phases/<id>/`](../../fixtures/phases/README.md) + `README.md` | Données + instructions pour **`khronos-pbr-sample`** et/ou **`www/`** (selon périmètre). |
 | **À terme** | **Workspace éditeur** + export **`.w3db`** | Même vérité **natif + web** : chargement du paquet binaire pour QA et E2E sans dupliquer la scène en code. |
 
 Les tests automatisés et les outils listés en **DOD** doivent **référencer explicitement** ce chemin (pas de scène « seulement dans la tête du dev »).

@@ -2,8 +2,8 @@
 //!
 //! `cargo test -p w3drs-assets --test phase_a_fixture`
 //!
-//! Si **DamagedHelmet** manque ou fait moins de 1 Mo : `git lfs pull` à la racine du dépôt.
-//! Les autres entrées `models[]` pointent vers `fixtures/phases/phase-a/glb/` (**Git LFS** après `git add`).
+//! Si un `.glb` attendu est **très petit** (pointeur Git LFS non matérialisé) ou absent : `git lfs pull` à la racine du dépôt.
+//! Le gate **DamagedHelmet** fait ~1 Mo une fois résolu ; les autres entrées `models[]` sous `glb/` sont aussi en **Git LFS** (y compris les micro-fixtures Khronos empaquetées, ex. TextureTransformTest ~27 Ko).
 
 use std::fs;
 use std::path::PathBuf;
@@ -12,8 +12,10 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use w3drs_assets::load_from_bytes;
 
-/// Seuil minimal (octets) pour rejeter un pointeur Git LFS non résolu.
-const MIN_GLB_BYTES: u64 = 100_000;
+/// Seuil minimal (octets) pour rejeter un pointeur Git LFS non résolu (~130 o) ou un fichier vide.
+/// Reste bien en dessous des gates lourdes (casque, lampe, etc.) mais autorise des micro-fixtures
+/// Khronos empaquetées en `.glb` (ex. `TextureTransformTest`, ~27 Ko).
+const MIN_GLB_BYTES: u64 = 4_096;
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

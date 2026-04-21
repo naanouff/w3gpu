@@ -1142,6 +1142,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "khronos-pbr-sample"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "env_logger",
+ "glam",
+ "log",
+ "pollster",
+ "w3drs-assets",
+ "w3drs-ecs",
+ "w3drs-renderer",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1293,22 +1309,6 @@ dependencies = [
  "termcolor",
  "thiserror 2.0.18",
  "unicode-xid",
-]
-
-[[package]]
-name = "native-triangle"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "env_logger",
- "glam",
- "log",
- "pollster",
- "w3drs-assets",
- "w3drs-ecs",
- "w3drs-renderer",
- "wgpu",
- "winit",
 ]
 
 [[package]]

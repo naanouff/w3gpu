@@ -23,7 +23,7 @@
 
 ## Périmètre (rappel)
 
-Extensions `KHR_materials_*`, pipeline matériaux versionné, stratégie shader (A1 WGSL / A2 shader graph), régression assets Khronos.
+Extensions `KHR_materials_*`, **`KHR_texture_transform`**, pipeline matériaux versionné, stratégie shader (A1 WGSL / A2 shader graph), régression assets Khronos.
 
 
 ## Scène ou projet de test (validation fonctionnelle)

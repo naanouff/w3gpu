@@ -77,7 +77,7 @@ Spec de `fixtures/phases/phase-e/` : monde physique **data-driven**.
 | Outil | Rôle | Seuil |
 |-------|------|--------|
 | `cargo test` | Déterminisme + triggers | Bit-exact ou epsilon documenté. |
-| Script bench FPS | Mesure `native-triangle` étendu ou binaire démo | ≥ 60 FPS min sur ref (PR). |
+| Script bench FPS | Mesure `khronos-pbr-sample` étendu ou binaire démo | ≥ 60 FPS min sur ref (PR). |
 | `cargo clippy` / `xtask check` | Qualité | Vert. |
 | Couverture | `llvm-cov` sur glue ECS / traits | Seuil diff. |
 

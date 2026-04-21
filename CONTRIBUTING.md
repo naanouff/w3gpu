@@ -33,12 +33,12 @@ Au-delà des tests unitaires, des **tests fonctionnels** (scénarios multi-compo
 
 Ces scénarios vivent en **tests d’intégration** Rust (`tests/` au niveau workspace ou par crate) et, pour le parcours navigateur, en **E2E** (voir ci-dessous).
 
-#### Client natif (`cargo xtask client` / `examples/native-triangle`)
+#### Client natif (`cargo xtask client` / `examples/khronos-pbr-sample`)
 
-Les tests fonctionnels **doivent aussi couvrir le chemin client natif** du projet : tout ce qui est exposé ou exercé par l’exemple desktop **`native-triangle`** (point d’entrée du binaire lancé par `cargo xtask client`) doit être validé par des **tests d’intégration Rust** équivalents lorsque la logique est partagée avec le navigateur (même crates `w3drs-renderer`, ECS, assets, etc.). En pratique :
+Les tests fonctionnels **doivent aussi couvrir le chemin client natif** du projet : tout ce qui est exposé ou exercé par l’exemple desktop **`khronos-pbr-sample`** (point d’entrée du binaire lancé par `cargo xtask client`) doit être validé par des **tests d’intégration Rust** équivalents lorsque la logique est partagée avec le navigateur (même crates `w3drs-renderer`, ECS, assets, etc.). En pratique :
 
 - **Code partagé** : une régression détectée sur **WASM** / **`www/`** doit pouvoir être prévenue par une suite native (et inversement) dès que la fonctionnalité existe des deux côtés.
-- **Surface native-only** (boucle `winit`, `Surface`, backends **Vulkan / Metal / DX12**) : couvrir par des tests d’intégration qui instancient **`wgpu`** en contexte natif (headless ou fenêtré selon l’infra CI), ou par des **binaires de test** / harness dédiés — pas seulement un `cargo check` sur `examples/native-triangle` sans scénario d’exécution.
+- **Surface native-only** (boucle `winit`, `Surface`, backends **Vulkan / Metal / DX12**) : couvrir par des tests d’intégration qui instancient **`wgpu`** en contexte natif (headless ou fenêtré selon l’infra CI), ou par des **binaires de test** / harness dédiés — pas seulement un `cargo check` sur `examples/khronos-pbr-sample` sans scénario d’exécution.
 - Les PR qui modifient le **client natif** ou le rendu utilisé exclusivement par celui-ci incluent les tests fonctionnels correspondants dans la même livraison.
 
 ### Équivalent « Playwright » pour Rust / WebGPU
@@ -75,7 +75,7 @@ w3drs/
 │   ├── w3drs-assets/        # Mesh, Material, Vertex, glTF loader
 │   └── w3drs-wasm/          # wasm-bindgen glue, public JS API
 ├── examples/
-│   └── native-triangle/     # Desktop smoke test (winit)
+│   └── khronos-pbr-sample/     # Desktop GLB viewer — Phase A samples + IBL (winit)
 ├── xtask/                   # cargo xtask runner (www / client)
 └── www/                     # Vite + TypeScript demo consuming the WASM package
 ```
@@ -243,7 +243,7 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 - [ ] `cargo clippy -- -D warnings` clean
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo test -p w3drs-math -p w3drs-ecs -p w3drs-assets` passes
-- [ ] **Tests** : nouvelles / modifiées lignes **Rust** et **TypeScript** couvertes (voir [Testing policy](#testing-policy)) ; tests **fonctionnels** pertinents pour ECS / threading / rendu si le PR touche ces domaines, **y compris le client natif** (`native-triangle` / `cargo xtask client`) lorsque le changement l’affecte
+- [ ] **Tests** : nouvelles / modifiées lignes **Rust** et **TypeScript** couvertes (voir [Testing policy](#testing-policy)) ; tests **fonctionnels** pertinents pour ECS / threading / rendu si le PR touche ces domaines, **y compris le client natif** (`khronos-pbr-sample` / `cargo xtask client`) lorsque le changement l’affecte
 
 **Code Quality**
 - [ ] No `unwrap()` / `expect()` in library code without documented invariant
@@ -269,12 +269,12 @@ Per-object uniforms use a single buffer with `OBJECT_ALIGN = 256` byte stride. N
 
 Every engine API change that affects the public surface (`RenderState`, `GpuContext`, `AssetRegistry`, bind group layout, shader interface) **must be reflected in all examples in the same PR**:
 
-- `examples/native-triangle/` — native desktop smoke test; uses `RenderState` and the full render loop directly
+- `examples/khronos-pbr-sample/` — native desktop smoke test; uses `RenderState` and the full render loop directly
 - `www/src/main.ts` — WASM/browser demo; uses the `W3drsEngine` public JS API
 
 **Checklist for API-breaking changes:**
 
-- [ ] `examples/native-triangle/src/main.rs` updated and compiles
+- [ ] `examples/khronos-pbr-sample/src/main.rs` updated and compiles
 - [ ] `www/src/main.ts` updated (new methods, removed methods, changed signatures)
 - [ ] `cargo xtask check` passes on both native and wasm32 targets
 - [ ] New features have a visible counterpart in at least one example

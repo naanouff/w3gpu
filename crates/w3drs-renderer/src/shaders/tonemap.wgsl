@@ -21,11 +21,13 @@ fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32>
 @group(0) @binding(3) var<uniform>   params: TonemapParams;
 
 struct TonemapParams {
-    exposure:      f32,
+    exposure:       f32,
     bloom_strength: f32,
-    _pad0:         f32,
-    _pad1:         f32,
+    flags:          u32,
+    _pad1:          f32,
 }
+
+const FLAG_SKIP_FXAA: u32 = 1u;
 
 // ── ACES Narkowicz approximation ───────────────────────────────────────────────
 fn aces(x: vec3<f32>) -> vec3<f32> {
@@ -66,6 +68,10 @@ fn fs_tonemap(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 
     // ACES tone mapping
     color = aces(color);
+
+    if ((params.flags & FLAG_SKIP_FXAA) != 0u) {
+        return vec4<f32>(linear_to_srgb(color), 1.0);
+    }
 
     // FXAA — 3×3 luma neighbourhood, edge-blend in LDR space.
     // Tonemapped neighbours (without bloom to avoid double-sampling artefacts).

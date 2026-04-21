@@ -78,7 +78,7 @@ Spec de `fixtures/phases/phase-i/` : scène **simple** + preset hybride.
 | Outil | Rôle | Seuil |
 |-------|------|--------|
 | `cargo test` | Comparateur image / hash | SSIM ou diff max. |
-| Binaire bench / capture | `native-triangle` étendu ou démo dédiée | Artefact CI uploadé (optionnel). |
+| Binaire bench / capture | `khronos-pbr-sample` étendu ou démo dédiée | Artefact CI uploadé (optionnel). |
 | `xtask check` | Native | Vert ; WASM selon scope. |
 
 ---

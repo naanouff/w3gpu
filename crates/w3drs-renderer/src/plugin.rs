@@ -9,7 +9,7 @@ pub trait Plugin: 'static {
 }
 
 /// Point d'entrée unifié du moteur — contient le monde ECS + le scheduler.
-/// Le renderer GPU reste dans `W3drsEngine` (crate w3drs-wasm / native-triangle)
+/// Le renderer GPU reste dans `W3drsEngine` (crate w3drs-wasm / khronos-pbr-sample)
 /// car il dépend de wgpu, mais les systèmes ECS s'enregistrent via `App`.
 pub struct App {
     pub world: World,

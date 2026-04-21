@@ -6,7 +6,7 @@ members = [
     "crates/w3drs-renderer",
     "crates/w3drs-assets",
     "crates/w3drs-wasm",
-    "examples/native-triangle",
+    "examples/khronos-pbr-sample",
     "xtask",
 ]
 

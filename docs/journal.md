@@ -24,7 +24,7 @@
 - Pipeline hardcodé WGSL, rendu d'un triangle coloré
 - `W3drsEngine::tick(dt)` → render pass → submit
 - `requestAnimationFrame` TypeScript
-- Client natif `native-triangle` avec winit
+- Client natif `khronos-pbr-sample` avec winit
 
 **Décisions :**
 - Surface lifetime : `unsafe { std::mem::transmute(surface) }` pour `'static` sur native
@@ -253,7 +253,7 @@ Résultats HTML dans `target/criterion/`.
 
 ### Tests
 - 36 tests ECS existants : tous verts
-- `cargo check -p native-triangle` : 0 warning
+- `cargo check -p khronos-pbr-sample` : 0 warning
 
 ---
 

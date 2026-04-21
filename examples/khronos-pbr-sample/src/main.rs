@@ -1,6 +1,7 @@
-use glam::{Quat, Vec3, Vec4};
+use glam::{Vec3, Vec4};
 use pollster::FutureExt;
 use std::mem::size_of;
+use std::path::PathBuf;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
@@ -8,7 +9,7 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
-use w3drs_assets::{load_hdr_from_bytes, primitives, Material};
+use w3drs_assets::{load_from_bytes, load_hdr_from_bytes, GltfPrimitive, Material};
 use w3drs_ecs::{
     Scheduler, World,
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
@@ -19,7 +20,7 @@ use w3drs_renderer::{
     DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass,
     IblContext, LightUniforms, MaterialTextures, MAX_CULL_ENTITIES,
     PostProcessPass, RenderState, ShadowPass, TonemapParams,
-    camera_system, frustum_culling_system, transform_system,
+    camera_system, transform_system,
 };
 
 fn main() {
@@ -57,23 +58,48 @@ impl OrbitCamera {
     }
 
     fn zoom(&mut self, delta: f32) {
-        self.distance = (self.distance - delta).clamp(4.0, 120.0);
+        self.distance = (self.distance - delta).clamp(0.35, 120.0);
     }
 }
 
-// ── Scene selection ────────────────────────────────────────────────────────────
+/// Désactive le pré-pass Hi‑Z + cull GPU (les sphères derrière le sol étaient trop souvent occlues).
+const VIEWER_GPU_OCCLUSION: bool = false;
+/// Désactive bloom + flous ; tonemap ACES + sortie (FXAA désactivé via `TonemapParams::flags`).
+const VIEWER_FULL_BLOOM_POST: bool = false;
 
-#[derive(Clone, Copy, PartialEq)]
-enum SceneId { Wall, Sieve, Pendulum }
+/// Sept GLB de référence Phase A / Khronos (chemins relatifs à la racine du workspace).
+const KHRONOS_GLBS: &[(&str, &str)] = &[
+    ("DamagedHelmet", "www/public/damaged_helmet_source_glb.glb"),
+    ("AnisotropyBarnLamp", "fixtures/phases/phase-a/glb/AnisotropyBarnLamp.glb"),
+    ("ClearCoatCarPaint", "fixtures/phases/phase-a/glb/ClearCoatCarPaint.glb"),
+    ("ClearcoatWicker", "fixtures/phases/phase-a/glb/ClearcoatWicker.glb"),
+    ("IORTestGrid", "fixtures/phases/phase-a/glb/IORTestGrid.glb"),
+    ("TextureTransformTest", "fixtures/phases/phase-a/glb/TextureTransformTest.glb"),
+    ("MetalRoughSpheres", "fixtures/phases/phase-a/glb/MetalRoughSpheres.glb"),
+];
 
-impl SceneId {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Wall    => "1:Wall",
-            Self::Sieve   => "2:Sieve",
-            Self::Pendulum => "3:Peekaboo",
-        }
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+fn bounds_from_primitives(primitives: &[GltfPrimitive]) -> (Vec3, f32) {
+    if primitives.is_empty() {
+        return (Vec3::ZERO, 2.0);
     }
+    let mut mn = Vec3::splat(f32::MAX);
+    let mut mx = Vec3::splat(f32::MIN);
+    for p in primitives {
+        mn = mn.min(p.mesh.aabb.min);
+        mx = mx.max(p.mesh.aabb.max);
+    }
+    let center = (mn + mx) * 0.5;
+    let radius = ((mx - mn).length() * 0.5).max(0.15);
+    (center, radius)
 }
 
 // ── App ────────────────────────────────────────────────────────────────────────
@@ -84,7 +110,9 @@ struct App { state: Option<State> }
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
-            .create_window(Window::default_attributes().with_title("w3drs"))
+            .create_window(
+                Window::default_attributes().with_title("khronos-pbr-sample — Phase A GLB viewer"),
+            )
             .unwrap();
         self.state = Some(State::new(window).block_on());
     }
@@ -118,13 +146,14 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event: KeyEvent {
                     physical_key: PhysicalKey::Code(code),
-                    state: ElementState::Pressed, ..
-                }, ..
+                    state: ElementState::Pressed,
+                    repeat,
+                    ..
+                },
+                ..
             } => match code {
-                KeyCode::Space  => state.cull_enabled = !state.cull_enabled,
-                KeyCode::Digit1 => state.load_scene(SceneId::Wall),
-                KeyCode::Digit2 => state.load_scene(SceneId::Sieve),
-                KeyCode::Digit3 => state.load_scene(SceneId::Pendulum),
+                KeyCode::ArrowLeft if !repeat => state.prev_sample(),
+                KeyCode::ArrowRight if !repeat => state.next_sample(),
                 _ => {}
             },
 
@@ -145,8 +174,8 @@ impl ApplicationHandler for App {
 
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 3.0,
-                    MouseScrollDelta::PixelDelta(p)   => p.y as f32 * 0.1,
+                    MouseScrollDelta::LineDelta(_, y) => y * 0.75,
+                    MouseScrollDelta::PixelDelta(p)   => p.y as f32 * 0.025,
                 };
                 state.orbit.zoom(scroll);
             }
@@ -182,19 +211,8 @@ struct State {
     mouse_pressed: bool,
     last_cursor:   Option<(f32, f32)>,
 
-    // Scene state
-    current_scene:   SceneId,
-    scene_entities:  Vec<u32>,
-    animated:        Vec<(u32, f32)>,
-    pendulum_entity: Option<u32>,
-
-    // Shared GPU assets (mesh/mat IDs survive scene switches)
-    sphere_mesh:  u32,
-    cube_mesh:    u32,
-    mat_occluded: u32,
-    mat_witness:  u32,
-    mat_wall:     u32,
-    mat_sweeper:  u32,
+    sample_idx:     usize,
+    model_entities: Vec<u32>,
 
     // Readback + metrics
     readback_buf:     wgpu::Buffer,
@@ -202,7 +220,6 @@ struct State {
     potential_count:  u32,
     frustum_visible:  u32,
 
-    cull_enabled: bool,
     total_time:   f32,
     last_instant: std::time::Instant,
     world:        World,
@@ -221,51 +238,14 @@ impl State {
             .await.expect("GPU context creation failed");
 
         let render_state   = RenderState::new(&context.device, context.surface_format);
-        let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
-
-        // Slot 0 — fallback material
-        asset_registry.upload_material(
-            &Material::default(), MaterialTextures::default(),
-            &context.device, &render_state.material_bg_layout,
-        );
-
-        // ── Shared meshes ─────────────────────────────────────────────────────
-        let sphere_mesh = asset_registry.upload_mesh(
-            &primitives::uv_sphere(0.35, 16, 20), &context.device, &context.queue,
-        );
-        let cube_mesh = asset_registry.upload_mesh(
-            &primitives::cube(), &context.device, &context.queue,
-        );
-
-        // ── Shared materials ──────────────────────────────────────────────────
-        let mat_occluded = asset_registry.upload_material(
-            &Material { albedo: [0.9, 0.75, 0.1, 1.0], metallic: 0.6, roughness: 0.35, ..Default::default() },
-            MaterialTextures::default(), &context.device, &render_state.material_bg_layout,
-        );
-        let mat_witness = asset_registry.upload_material(
-            &Material { albedo: [0.1, 0.85, 0.65, 1.0], metallic: 0.3, roughness: 0.4, ..Default::default() },
-            MaterialTextures::default(), &context.device, &render_state.material_bg_layout,
-        );
-        let mat_wall = asset_registry.upload_material(
-            &Material { albedo: [0.65, 0.65, 0.7, 1.0], metallic: 0.4, roughness: 0.5, ..Default::default() },
-            MaterialTextures::default(), &context.device, &render_state.material_bg_layout,
-        );
-        let mat_sweeper = asset_registry.upload_material(
-            &Material { albedo: [0.85, 0.25, 0.1, 1.0], metallic: 0.8, roughness: 0.2, ..Default::default() },
-            MaterialTextures::default(), &context.device, &render_state.material_bg_layout,
-        );
-        let mat_ground = asset_registry.upload_material(
-            &Material { albedo: [0.2, 0.2, 0.22, 1.0], metallic: 0.0, roughness: 0.95, ..Default::default() },
-            MaterialTextures::default(), &context.device, &render_state.material_bg_layout,
-        );
+        let asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
         // ── ECS ───────────────────────────────────────────────────────────────
         let mut world     = World::new();
         let mut scheduler = Scheduler::new();
         scheduler
             .add_system(transform_system)
-            .add_system(camera_system)
-            .add_system(frustum_culling_system);
+            .add_system(camera_system);
 
         // Camera entity
         let camera_entity = world.create_entity();
@@ -274,24 +254,11 @@ impl State {
         ));
         world.add_component(camera_entity, TransformComponent::default());
 
-        // Ground plane (permanent, always visible)
-        let ground = world.create_entity();
-        world.add_component(ground, RenderableComponent::new(cube_mesh, mat_ground));
-        {
-            let mut t = TransformComponent::from_position(Vec3::new(0.0, -2.0, 0.0));
-            t.scale = Vec3::new(60.0, 0.05, 60.0);
-            t.update_local_matrix();
-            world.add_component(ground, t);
-        }
-
         // ── Shadow pass ───────────────────────────────────────────────────────
         let shadow_pass = ShadowPass::new(&context.device, &render_state.instance_bg_layout);
 
-        // ── IBL ───────────────────────────────────────────────────────────────
-        let workspace = {
-            let manifest = env!("CARGO_MANIFEST_DIR");
-            std::path::Path::new(manifest).parent().unwrap().parent().unwrap().to_path_buf()
-        };
+        // ── IBL (HDR par défaut, même fichier que `www/`) ─────────────────────
+        let workspace = workspace_root();
         let ibl_context = match std::fs::read(workspace.join("www/public/studio_small_03_2k.hdr")) {
             Ok(bytes) => match load_hdr_from_bytes(&bytes) {
                 Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue),
@@ -323,7 +290,12 @@ impl State {
             size.width.max(1),
             size.height.max(1),
             BloomParams  { threshold: 1.0, knee: 0.5,  _pad0: 0.0, _pad1: 0.0 },
-            TonemapParams { exposure: 1.0, bloom_strength: 0.04, _pad0: 0.0, _pad1: 0.0 },
+            TonemapParams {
+                exposure:       1.0,
+                bloom_strength: 0.0,
+                flags:          TonemapParams::FLAG_SKIP_FXAA,
+                _pad1:          0.0,
+            },
         );
 
         // ── Readback buffer ───────────────────────────────────────────────────
@@ -334,151 +306,157 @@ impl State {
             mapped_at_creation: false,
         });
 
-        let orbit = OrbitCamera::new(22.0, 0.18, 0.0, Vec3::ZERO);
+        let orbit = OrbitCamera::new(6.0, 0.22, 0.0, Vec3::ZERO);
 
         let mut state = Self {
             window, context, render_state, asset_registry, ibl_context,
             shadow_pass, env_bind_group, hiz_pass, cull_pass, hdr_target, post_process,
             camera_entity, orbit, mouse_pressed: false, last_cursor: None,
-            current_scene: SceneId::Wall,
-            scene_entities: Vec::new(),
-            animated: Vec::new(),
-            pendulum_entity: None,
-            sphere_mesh, cube_mesh,
-            mat_occluded, mat_witness, mat_wall, mat_sweeper,
+            sample_idx: 0,
+            model_entities: Vec::new(),
             readback_buf,
             last_hiz_visible: 0, potential_count: 0, frustum_visible: 0,
-            cull_enabled: true,
             total_time: 0.0,
             last_instant: std::time::Instant::now(),
             world, scheduler,
         };
 
-        state.load_scene(SceneId::Wall);
+        state.load_sample(0);
         state
     }
 
-    // ── Scene loading ─────────────────────────────────────────────────────────
-
-    fn load_scene(&mut self, scene: SceneId) {
-        for &e in &self.scene_entities { self.world.destroy_entity(e); }
-        self.scene_entities.clear();
-        self.animated.clear();
-        self.pendulum_entity = None;
-        self.total_time = 0.0;
-        self.current_scene = scene;
-        match scene {
-            SceneId::Wall     => self.setup_wall(),
-            SceneId::Sieve    => self.setup_sieve(),
-            SceneId::Pendulum => self.setup_pendulum(),
-        }
+    fn prev_sample(&mut self) {
+        let n = KHRONOS_GLBS.len();
+        self.load_sample((self.sample_idx + n - 1) % n);
     }
 
-    /// Scene 1 — Wall of Occlusion
-    ///
-    /// A single large gray slab sits between camera and a 40×30=1200 sphere grid.
-    /// 6 cyan "witness" spheres placed outside the wall's x-extent stay visible.
-    /// Expected: Hi-Z drawn ≈ 7 (wall + 6 witnesses).
-    fn setup_wall(&mut self) {
-        self.orbit = OrbitCamera::new(22.0, 0.18, 0.0, Vec3::ZERO);
-
-        let wall = self.spawn_cube(Vec3::new(0.0, 0.0, 6.0), Vec3::new(20.0, 14.0, 0.5), self.mat_wall);
-        self.scene_entities.push(wall);
-
-        // 40 columns × 30 rows in XY plane at z = -4
-        for row in 0..30i32 {
-            for col in 0..40i32 {
-                let x = (col - 20) as f32 * 0.5;   // -9.75 … +9.75
-                let y = (row - 15) as f32 * 0.5;   // -7.25 … +7.25
-                let e = self.spawn_sphere(Vec3::new(x, y, -4.0), self.mat_occluded);
-                let phase = (row * 40 + col) as f32 * 0.025;
-                self.scene_entities.push(e);
-                self.animated.push((e, phase));
-            }
-        }
-
-        // 6 witness spheres outside wall extent (wall covers x ∈ [-10, +10])
-        for &sx in &[-1.0f32, 1.0] {
-            for &sy in &[-2.0f32, 0.0, 2.0] {
-                let e = self.spawn_sphere(Vec3::new(sx * 12.0, sy, -4.0), self.mat_witness);
-                self.scene_entities.push(e);
-            }
-        }
+    fn next_sample(&mut self) {
+        let n = KHRONOS_GLBS.len();
+        self.load_sample((self.sample_idx + 1) % n);
     }
 
-    /// Scene 2 — Sieve (Hi-Z mip selection validation)
-    ///
-    /// 10 thin vertical pillars spaced 2 units apart with 1.2-unit gaps.
-    /// A 21×21=441 sphere grid behind the pillars.
-    /// Expected: spheres behind pillars culled, spheres through gaps visible.
-    fn setup_sieve(&mut self) {
-        self.orbit = OrbitCamera::new(20.0, 0.12, 0.0, Vec3::ZERO);
+    /// Recharge un GLB Phase A : nouvelle `AssetRegistry` (libère GPU des meshes/mats précédents).
+    fn load_sample(&mut self, idx: usize) {
+        for &e in &self.model_entities {
+            self.world.destroy_entity(e);
+        }
+        self.model_entities.clear();
+        self.sample_idx = idx % KHRONOS_GLBS.len();
+        let (label, rel_path) = KHRONOS_GLBS[self.sample_idx];
+        let path = workspace_root().join(rel_path);
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+            panic!("lecture GLB échouée {} : {e}", path.display());
+        });
+        let primitives = load_from_bytes(&bytes)
+            .unwrap_or_else(|e| panic!("parse glTF {} : {e}", path.display()));
 
-        // 10 pillars: x ∈ {-9, -7, -5, -3, -1, 1, 3, 5, 7, 9}
-        for i in 0..10i32 {
-            let x = (i - 5) as f32 * 2.0 + 1.0;
-            let p = self.spawn_cube(Vec3::new(x, 0.0, 6.0), Vec3::new(0.8, 18.0, 0.8), self.mat_wall);
-            self.scene_entities.push(p);
+        self.asset_registry = AssetRegistry::new(&self.context.device, &self.context.queue);
+        self.asset_registry.upload_material(
+            &Material::default(),
+            MaterialTextures::default(),
+            &self.context.device,
+            &self.render_state.material_bg_layout,
+        );
+
+        let (center, radius) = bounds_from_primitives(&primitives);
+        let dist = (radius * 2.8).clamp(1.2, 80.0);
+        self.orbit = OrbitCamera::new(dist, 0.22, 0.0, center);
+
+        for prim in primitives {
+            let mesh_id = self.asset_registry.upload_mesh(
+                &prim.mesh,
+                &self.context.device,
+                &self.context.queue,
+            );
+            let textures = MaterialTextures {
+                albedo: prim.albedo_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        true,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                normal: prim.normal_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                metallic_roughness: prim.metallic_roughness_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                emissive: prim.emissive_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        true,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                anisotropy: prim.anisotropy_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                clearcoat: prim.clearcoat_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                clearcoat_roughness: prim.clearcoat_roughness_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+            };
+            let mat_id = self.asset_registry.upload_material(
+                &prim.material,
+                textures,
+                &self.context.device,
+                &self.render_state.material_bg_layout,
+            );
+            let e = self.world.create_entity();
+            self.world
+                .add_component(e, RenderableComponent::new(mesh_id, mat_id));
+            let mut t = TransformComponent::default();
+            t.update_local_matrix();
+            self.world.add_component(e, t);
+            self.model_entities.push(e);
         }
 
-        // 21×21 = 441 spheres at z = -4 in XY grid
-        for row in 0..21i32 {
-            for col in 0..21i32 {
-                let x = (col - 10) as f32 * 0.5;  // -5.0 … +5.0
-                let y = (row - 10) as f32 * 0.5;  // -5.0 … +5.0
-                let e = self.spawn_sphere(Vec3::new(x, y, -4.0), self.mat_occluded);
-                self.scene_entities.push(e);
-            }
-        }
-
-        // 6 witnesses outside pillar x-range (> |9|)
-        for &sx in &[-1.0f32, 1.0] {
-            for &sy in &[-2.0f32, 0.0, 2.0] {
-                let e = self.spawn_sphere(Vec3::new(sx * 12.0, sy, -4.0), self.mat_witness);
-                self.scene_entities.push(e);
-            }
-        }
-    }
-
-    /// Scene 3 — Temporal Peekaboo (synchronisation validation)
-    ///
-    /// An orange slab sweeps back and forth across a 20×20=400 sphere grid.
-    /// Correct Hi-Z: spheres appear/disappear in perfect sync with the slab.
-    /// Lag would cause 1-frame-delayed visibility changes.
-    fn setup_pendulum(&mut self) {
-        self.orbit = OrbitCamera::new(20.0, 0.12, 0.0, Vec3::ZERO);
-
-        let sweeper = self.spawn_cube(Vec3::new(0.0, 0.0, 6.0), Vec3::new(14.0, 16.0, 0.5), self.mat_sweeper);
-        self.pendulum_entity = Some(sweeper);
-        self.scene_entities.push(sweeper);
-
-        for row in 0..20i32 {
-            for col in 0..20i32 {
-                let x = (col - 10) as f32 * 0.5;  // -4.75 … +4.75
-                let y = (row - 10) as f32 * 0.5;
-                let e = self.spawn_sphere(Vec3::new(x, y, -3.0), self.mat_occluded);
-                self.scene_entities.push(e);
-            }
-        }
-    }
-
-    fn spawn_sphere(&mut self, pos: Vec3, mat_id: u32) -> u32 {
-        let e = self.world.create_entity();
-        self.world.add_component(e, RenderableComponent::new(self.sphere_mesh, mat_id));
-        let mut t = TransformComponent::from_position(pos);
-        t.update_local_matrix();
-        self.world.add_component(e, t);
-        e
-    }
-
-    fn spawn_cube(&mut self, pos: Vec3, scale: Vec3, mat_id: u32) -> u32 {
-        let e = self.world.create_entity();
-        self.world.add_component(e, RenderableComponent::new(self.cube_mesh, mat_id));
-        let mut t = TransformComponent::from_position(pos);
-        t.scale = scale;
-        t.update_local_matrix();
-        self.world.add_component(e, t);
-        e
+        log::info!("Modèle [{}/{}] {} — {}", self.sample_idx + 1, KHRONOS_GLBS.len(), label, path.display());
+        self.window.request_redraw();
     }
 
     // ── Per-frame update ──────────────────────────────────────────────────────
@@ -503,22 +481,6 @@ impl State {
         self.total_time  += dt;
 
         self.update_orbit_camera();
-
-        // Slow spin on occluded spheres (visual interest when culling disabled)
-        for &(entity, phase) in &self.animated {
-            if let Some(t) = self.world.get_component_mut::<TransformComponent>(entity) {
-                t.rotation = Quat::from_rotation_y(self.total_time * 0.3 + phase);
-                t.update_local_matrix();
-            }
-        }
-
-        // Sweeping occluder (Scene 3)
-        if let Some(pen) = self.pendulum_entity {
-            if let Some(t) = self.world.get_component_mut::<TransformComponent>(pen) {
-                t.position.x = (self.total_time * 1.2).sin() * 10.0;
-                t.update_local_matrix();
-            }
-        }
 
         self.scheduler.run(&mut self.world, dt, self.total_time);
 
@@ -551,7 +513,7 @@ impl State {
                 screen_size:  [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
                 entity_count,
                 mip_levels:   self.hiz_pass.mip_count,
-                cull_enabled: if self.cull_enabled { 1 } else { 0 },
+                cull_enabled: if VIEWER_GPU_OCCLUSION { 1 } else { 0 },
                 _pad:         [0; 3],
             }),
         );
@@ -572,6 +534,8 @@ impl State {
                 self.last_hiz_visible = args.iter().map(|a| a.instance_count).sum();
             }
             self.readback_buf.unmap();
+        } else {
+            self.last_hiz_visible = 0;
         }
 
         // Monotonicity invariant: culling can only reduce draw count, never increase it.
@@ -587,15 +551,16 @@ impl State {
             self.frustum_visible, self.potential_count,
         );
 
-        let cull_str = if self.cull_enabled { "ON" } else { "OFF" };
+        let (name, _) = KHRONOS_GLBS[self.sample_idx];
+        let mode = if VIEWER_GPU_OCCLUSION { "Hi-Z on" } else { "Hi-Z off" };
+        let pp = if VIEWER_FULL_BLOOM_POST { "bloom on" } else { "bloom off" };
         self.window.set_title(&format!(
-            "w3drs | Scene: {} | Total: {} | Frustum: {} | Hi-Z drawn: {} | Cull: {} \
-             | [1/2/3] switch  [SPACE] toggle  [LMB drag] orbit  [scroll] zoom",
-            self.current_scene.name(),
-            self.potential_count,
-            self.frustum_visible,
+            "khronos-pbr-sample | {name} ({}/{}) | {mode} {pp} | draws {} / vis {} | \
+             [←/→] modèle  [LMB] orbite  [molette] zoom",
+            self.sample_idx + 1,
+            KHRONOS_GLBS.len(),
             self.last_hiz_visible,
-            cull_str,
+            self.frustum_visible,
         ));
     }
 
@@ -622,12 +587,14 @@ impl State {
         let indirect_stride = size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut enc = self.context.device.create_command_encoder(&Default::default());
 
-        // 1. Z-prepass + Hi-Z pyramid
-        self.hiz_pass.encode(
-            &mut enc, &self.render_state.instance_bind_group, &self.asset_registry, sorted,
-        );
+        // 1. Z-prepass + Hi-Z pyramid (requis seulement si cull GPU activé)
+        if VIEWER_GPU_OCCLUSION {
+            self.hiz_pass.encode(
+                &mut enc, &self.render_state.instance_bind_group, &self.asset_registry, sorted,
+            );
+        }
 
-        // 2. GPU occlusion cull → writes entity_indirect_buf
+        // 2. GPU cull (Hi‑Z ou tout dessiner si `cull_enabled == 0` dans le shader)
         self.cull_pass.encode(&mut enc, entity_count);
 
         // 3. Copy indirect buffer → readback staging
@@ -705,8 +672,12 @@ impl State {
             }
         }
 
-        // 6. Post-process: bloom + ACES tonemap + FXAA → swapchain
-        self.post_process.encode(&mut enc, &view);
+        // 6. Post-process → swapchain
+        if VIEWER_FULL_BLOOM_POST {
+            self.post_process.encode(&mut enc, &view);
+        } else {
+            self.post_process.encode_tonemap_only(&mut enc, &view);
+        }
 
         self.context.queue.submit(std::iter::once(enc.finish()));
         output.present();
@@ -718,7 +689,7 @@ impl State {
 fn count_visible_renderables(world: &World) -> u32 {
     world.query_entities::<RenderableComponent>()
         .into_iter()
-        .filter(|&e| world.get_component::<RenderableComponent>(e).map_or(false, |r| r.visible))
+        .filter(|&e| world.get_component::<RenderableComponent>(e).is_some_and(|r| r.visible))
         .count() as u32
 }
 
