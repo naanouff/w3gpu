@@ -1,0 +1,10 @@
+---
+description: w3drs — migration depuis le projet w3dts (référence locale)
+alwaysApply: true
+---
+
+# w3drs — migration depuis w3dts
+
+- Le développement de **w3drs** est une **migration** du projet **w3dts**.
+- Dépôt de référence (code et historique à comparer / porter) : `C:\Local\Travail\Web\W3Drs\w3dts`.
+- Lors d’implémentations ou de choix d’architecture, privilégier l’alignement avec w3dts quand c’est pertinent, tout en respectant les conventions w3drs (data-driven, ROADMAP, etc.).
