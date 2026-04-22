@@ -19,9 +19,10 @@ pub fn load_hdr_from_bytes(bytes: &[u8]) -> Result<HdrImage, HdrError> {
     let rgb32 = img.into_rgb32f();
     let width = rgb32.width();
     let height = rgb32.height();
-    let pixels: Vec<[f32; 3]> = rgb32
-        .pixels()
-        .map(|p| [p[0], p[1], p[2]])
-        .collect();
-    Ok(HdrImage { pixels, width, height })
+    let pixels: Vec<[f32; 3]> = rgb32.pixels().map(|p| [p[0], p[1], p[2]]).collect();
+    Ok(HdrImage {
+        pixels,
+        width,
+        height,
+    })
 }

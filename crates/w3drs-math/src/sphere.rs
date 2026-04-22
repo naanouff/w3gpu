@@ -15,8 +15,12 @@ impl BoundingSphere {
         if points.is_empty() {
             return Self::default();
         }
-        let center = points.iter().copied().fold(Vec3::ZERO, |acc, p| acc + p) / points.len() as f32;
-        let radius = points.iter().map(|&p| p.distance(center)).fold(0.0_f32, f32::max);
+        let center =
+            points.iter().copied().fold(Vec3::ZERO, |acc, p| acc + p) / points.len() as f32;
+        let radius = points
+            .iter()
+            .map(|&p| p.distance(center))
+            .fold(0.0_f32, f32::max);
         Self { center, radius }
     }
 }
@@ -56,7 +60,11 @@ mod tests {
 
     #[test]
     fn radius_is_max_distance_from_centroid() {
-        let pts = vec![Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0)];
+        let pts = vec![
+            Vec3::ZERO,
+            Vec3::new(4.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 0.0),
+        ];
         let s = BoundingSphere::from_points(&pts);
         // centroid = (2, 0, 0), max dist = 2
         assert!((s.center.x - 2.0).abs() < 1e-5);

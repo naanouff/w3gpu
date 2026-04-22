@@ -1,7 +1,7 @@
+pub(crate) mod archetype;
 pub mod components;
 pub mod entity;
 pub mod scheduler;
-pub(crate) mod archetype;
 pub(crate) mod storage;
 pub mod world;
 

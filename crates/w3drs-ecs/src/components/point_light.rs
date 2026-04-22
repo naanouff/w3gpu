@@ -9,7 +9,11 @@ pub struct PointLightComponent {
 
 impl Default for PointLightComponent {
     fn default() -> Self {
-        Self { color: Vec3::ONE, intensity: 1.0, range: 10.0 }
+        Self {
+            color: Vec3::ONE,
+            intensity: 1.0,
+            range: 10.0,
+        }
     }
 }
 

@@ -3,13 +3,13 @@
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    pub position:  [f32; 3], // location 0
-    pub uv0:       [f32; 2], // location 1
-    pub uv1:       [f32; 2], // location 2
-    pub normal:    [f32; 3], // location 3
-    pub tangent:   [f32; 3], // location 4
+    pub position: [f32; 3],  // location 0
+    pub uv0: [f32; 2],       // location 1
+    pub uv1: [f32; 2],       // location 2
+    pub normal: [f32; 3],    // location 3
+    pub tangent: [f32; 3],   // location 4
     pub bitangent: [f32; 3], // location 5
-    pub color:     [f32; 4], // location 6
+    pub color: [f32; 4],     // location 6
 }
 
 impl Vertex {

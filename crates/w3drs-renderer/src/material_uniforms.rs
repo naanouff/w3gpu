@@ -43,7 +43,8 @@ pub struct MaterialUniforms {
 
 impl From<&w3drs_assets::Material> for MaterialUniforms {
     fn from(m: &w3drs_assets::Material) -> Self {
-        let uv: [UvTransformGpu; 7] = std::array::from_fn(|i| UvTransformGpu::from(m.texture_transforms[i]));
+        let uv: [UvTransformGpu; 7] =
+            std::array::from_fn(|i| UvTransformGpu::from(m.texture_transforms[i]));
         Self {
             albedo: m.albedo,
             emissive: [m.emissive[0], m.emissive[1], m.emissive[2], 0.0],

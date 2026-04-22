@@ -50,7 +50,13 @@ impl World {
         });
         let row = self.archetypes[0].entities.len();
         self.archetypes[0].entities.push(id);
-        self.entity_location.insert(id, Location { archetype_id: 0, row });
+        self.entity_location.insert(
+            id,
+            Location {
+                archetype_id: 0,
+                row,
+            },
+        );
         id
     }
 
@@ -65,7 +71,9 @@ impl World {
 
     pub fn add_component<T: 'static>(&mut self, entity: Entity, component: T) {
         let type_id = TypeId::of::<T>();
-        let Some(loc) = self.entity_location.get(&entity).copied() else { return };
+        let Some(loc) = self.entity_location.get(&entity).copied() else {
+            return;
+        };
 
         // Fast path: archetype already has this type → replace in-place.
         if self.archetypes[loc.archetype_id].has_type(type_id) {
@@ -111,8 +119,12 @@ impl World {
 
     pub fn remove_component<T: 'static>(&mut self, entity: Entity) {
         let type_id = TypeId::of::<T>();
-        let Some(loc) = self.entity_location.get(&entity).copied() else { return };
-        if !self.archetypes[loc.archetype_id].has_type(type_id) { return; }
+        let Some(loc) = self.entity_location.get(&entity).copied() else {
+            return;
+        };
+        if !self.archetypes[loc.archetype_id].has_type(type_id) {
+            return;
+        }
 
         // Build the new archetype key (old key ∖ {T}).
         let new_key: ArchetypeKey = self.archetypes[loc.archetype_id]
@@ -138,10 +150,15 @@ impl World {
         // Extract just T (discard it), then migrate the rest.
         // We temporarily remove T's column from the old archetype so migrate()
         // won't try to copy it — then put it back afterwards to avoid a leak.
-        let t_col = self.archetypes[loc.archetype_id].columns.remove(&type_id).unwrap();
+        let t_col = self.archetypes[loc.archetype_id]
+            .columns
+            .remove(&type_id)
+            .unwrap();
         self.migrate(entity, loc, new_arch_id);
         // restore the column (swap_remove already shrunk it)
-        self.archetypes[loc.archetype_id].columns.insert(type_id, t_col);
+        self.archetypes[loc.archetype_id]
+            .columns
+            .insert(type_id, t_col);
     }
 
     // ── component read ────────────────────────────────────────────────────
@@ -157,7 +174,9 @@ impl World {
     }
 
     pub fn has_component<T: 'static>(&self, entity: Entity) -> bool {
-        let Some(loc) = self.entity_location.get(&entity) else { return false };
+        let Some(loc) = self.entity_location.get(&entity) else {
+            return false;
+        };
         self.archetypes[loc.archetype_id].has_type(TypeId::of::<T>())
     }
 
@@ -198,7 +217,10 @@ impl World {
             .flat_map(move |a| {
                 let entities_ptr = a.entities.as_ptr();
                 let len = a.entities.len();
-                let col = a.columns.get_mut(&type_id).unwrap()
+                let col = a
+                    .columns
+                    .get_mut(&type_id)
+                    .unwrap()
                     .as_any_mut()
                     .downcast_mut::<TypedVec<T>>()
                     .unwrap();
@@ -219,17 +241,23 @@ impl World {
     /// cross-entity dependencies (e.g. transform recomputation for flat scenes).
     pub fn for_each_without_mut<T, Excl, F>(&mut self, f: F)
     where
-        T:    'static + Send + Sync,
+        T: 'static + Send + Sync,
         Excl: 'static,
-        F:    Fn(&mut T) + Sync + Send,
+        F: Fn(&mut T) + Sync + Send,
     {
-        let t_id    = TypeId::of::<T>();
+        let t_id = TypeId::of::<T>();
         let excl_id = TypeId::of::<Excl>();
 
         for arch in &mut self.archetypes {
-            if !arch.has_type(t_id) || arch.has_type(excl_id) { continue; }
-            let Some(col) = arch.columns.get_mut(&t_id) else { continue };
-            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else { continue };
+            if !arch.has_type(t_id) || arch.has_type(excl_id) {
+                continue;
+            }
+            let Some(col) = arch.columns.get_mut(&t_id) else {
+                continue;
+            };
+            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else {
+                continue;
+            };
             Self::parallel_for_each(&mut typed.data, &f);
         }
     }
@@ -243,17 +271,21 @@ impl World {
     {
         let t_id = TypeId::of::<T>();
         for arch in &mut self.archetypes {
-            if !arch.has_type(t_id) { continue; }
-            let Some(col) = arch.columns.get_mut(&t_id) else { continue };
-            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else { continue };
+            if !arch.has_type(t_id) {
+                continue;
+            }
+            let Some(col) = arch.columns.get_mut(&t_id) else {
+                continue;
+            };
+            let Some(typed) = col.as_any_mut().downcast_mut::<TypedVec<T>>() else {
+                continue;
+            };
             Self::parallel_for_each(&mut typed.data, &f);
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn parallel_for_each<T: Send + Sync, F: Fn(&mut T) + Sync + Send>(
-        data: &mut Vec<T>, f: &F,
-    ) {
+    fn parallel_for_each<T: Send + Sync, F: Fn(&mut T) + Sync + Send>(data: &mut Vec<T>, f: &F) {
         use rayon::prelude::*;
         data.par_iter_mut().for_each(f);
     }
@@ -276,7 +308,13 @@ impl World {
         // Fix location of the entity that fell into `row`.
         if row < self.archetypes[arch_id].entities.len() {
             let moved = self.archetypes[arch_id].entities[row];
-            self.entity_location.insert(moved, Location { archetype_id: arch_id, row });
+            self.entity_location.insert(
+                moved,
+                Location {
+                    archetype_id: arch_id,
+                    row,
+                },
+            );
         }
     }
 
@@ -302,7 +340,11 @@ impl World {
             let old_arch = &mut self.archetypes[old_arch_id];
             old_arch.entities.swap_remove(old_row);
             for tid in &col_types {
-                let val = old_arch.columns.get_mut(tid).unwrap().swap_remove_any(old_row);
+                let val = old_arch
+                    .columns
+                    .get_mut(tid)
+                    .unwrap()
+                    .swap_remove_any(old_row);
                 extracted.push((*tid, val));
             }
         }
@@ -310,7 +352,13 @@ impl World {
         // Fix location of the entity that was swapped into old_row.
         if old_row < self.archetypes[old_arch_id].entities.len() {
             let moved = self.archetypes[old_arch_id].entities[old_row];
-            self.entity_location.insert(moved, Location { archetype_id: old_arch_id, row: old_row });
+            self.entity_location.insert(
+                moved,
+                Location {
+                    archetype_id: old_arch_id,
+                    row: old_row,
+                },
+            );
         }
 
         // Step 2 — push extracted components into the NEW arch.
@@ -324,13 +372,21 @@ impl World {
             // the value is simply dropped here.
         }
 
-        self.entity_location.insert(entity, Location { archetype_id: new_arch_id, row: new_row });
+        self.entity_location.insert(
+            entity,
+            Location {
+                archetype_id: new_arch_id,
+                row: new_row,
+            },
+        );
         new_row
     }
 }
 
 impl Default for World {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

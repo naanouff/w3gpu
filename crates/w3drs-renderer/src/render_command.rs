@@ -6,32 +6,32 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct EntityCullData {
-    pub aabb_min:    [f32; 3],
+    pub aabb_min: [f32; 3],
     pub first_index: u32,
-    pub aabb_max:    [f32; 3],
+    pub aabb_max: [f32; 3],
     pub index_count: u32,
     pub base_vertex: i32,
-    pub _pad:        [u32; 3],
+    pub _pad: [u32; 3],
 }
 
 /// One renderable entity collected from ECS, with world-space AABB and mesh
 /// info pre-filled so the GPU cull pass can write draw args directly.
 pub struct DrawEntity {
-    pub mesh_id:      u32,
-    pub material_id:  u32,
+    pub mesh_id: u32,
+    pub material_id: u32,
     pub world_matrix: [[f32; 4]; 4],
-    pub cast_shadow:  bool,
+    pub cast_shadow: bool,
     /// World-space AABB (pre-transformed on CPU).
-    pub aabb_min:     [f32; 3],
-    pub aabb_max:     [f32; 3],
-    pub first_index:  u32,
-    pub index_count:  u32,
-    pub base_vertex:  i32,
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
+    pub first_index: u32,
+    pub index_count: u32,
+    pub base_vertex: i32,
 }
 
 /// Shadow draw batch derived from the sorted entity list (grouped by mesh_id).
 pub struct ShadowBatch {
-    pub mesh_id:        u32,
+    pub mesh_id: u32,
     pub first_instance: u32,
     pub instance_count: u32,
 }
@@ -43,14 +43,17 @@ pub fn build_entity_list(
 ) -> (Vec<[[f32; 4]; 4]>, Vec<EntityCullData>, Vec<DrawEntity>) {
     entities.sort_unstable_by_key(|e| (e.mesh_id, e.material_id));
     let matrices: Vec<[[f32; 4]; 4]> = entities.iter().map(|e| e.world_matrix).collect();
-    let cull_data: Vec<EntityCullData> = entities.iter().map(|e| EntityCullData {
-        aabb_min:    e.aabb_min,
-        first_index: e.first_index,
-        aabb_max:    e.aabb_max,
-        index_count: e.index_count,
-        base_vertex: e.base_vertex,
-        _pad:        [0; 3],
-    }).collect();
+    let cull_data: Vec<EntityCullData> = entities
+        .iter()
+        .map(|e| EntityCullData {
+            aabb_min: e.aabb_min,
+            first_index: e.first_index,
+            aabb_max: e.aabb_max,
+            index_count: e.index_count,
+            base_vertex: e.base_vertex,
+            _pad: [0; 3],
+        })
+        .collect();
     (matrices, cull_data, entities)
 }
 
@@ -62,8 +65,10 @@ pub fn derive_shadow_batches(entities: &[DrawEntity]) -> Vec<ShadowBatch> {
     let mut i = 0;
     while i < entities.len() {
         let mesh_id = entities[i].mesh_id;
-        let first   = i as u32;
-        while i < entities.len() && entities[i].mesh_id == mesh_id { i += 1; }
+        let first = i as u32;
+        while i < entities.len() && entities[i].mesh_id == mesh_id {
+            i += 1;
+        }
         batches.push(ShadowBatch {
             mesh_id,
             first_instance: first,
@@ -97,10 +102,10 @@ pub struct DrawBatch {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct DrawIndexedIndirectArgs {
-    pub index_count:    u32,
+    pub index_count: u32,
     pub instance_count: u32,
-    pub first_index:    u32,
-    pub base_vertex:    i32,
+    pub first_index: u32,
+    pub base_vertex: i32,
     pub first_instance: u32,
 }
 
@@ -115,27 +120,26 @@ pub fn build_batches(mut cmds: Vec<RenderCommand>) -> (Vec<[[f32; 4]; 4]>, Vec<D
 
     let mut i = 0;
     while i < cmds.len() {
-        let mesh_id    = cmds[i].mesh_id;
-        let mat_id     = cmds[i].material_id;
-        let first      = matrices.len() as u32;
+        let mesh_id = cmds[i].mesh_id;
+        let mat_id = cmds[i].material_id;
+        let first = matrices.len() as u32;
         let mut shadow = false;
-        let start      = i;
+        let start = i;
 
-        while i < cmds.len()
-            && cmds[i].mesh_id     == mesh_id
-            && cmds[i].material_id == mat_id
-        {
-            if cmds[i].cast_shadow { shadow = true; }
+        while i < cmds.len() && cmds[i].mesh_id == mesh_id && cmds[i].material_id == mat_id {
+            if cmds[i].cast_shadow {
+                shadow = true;
+            }
             matrices.push(cmds[i].world_matrix);
             i += 1;
         }
 
         batches.push(DrawBatch {
             mesh_id,
-            material_id:    mat_id,
+            material_id: mat_id,
             first_instance: first,
             instance_count: (i - start) as u32,
-            cast_shadow:    shadow,
+            cast_shadow: shadow,
         });
     }
 

@@ -19,7 +19,11 @@ pub(crate) struct Archetype {
 
 impl Archetype {
     pub fn new(key: ArchetypeKey) -> Self {
-        Self { key, entities: Vec::new(), columns: HashMap::new() }
+        Self {
+            key,
+            entities: Vec::new(),
+            columns: HashMap::new(),
+        }
     }
 
     /// Add an empty typed column for T (no-op if already present).
@@ -41,13 +45,17 @@ impl Archetype {
     /// Typed get — returns None if the column doesn't exist or the row is out of bounds.
     pub fn get<T: 'static>(&self, row: usize) -> Option<&T> {
         let col = self.columns.get(&TypeId::of::<T>())?;
-        if row >= col.len() { return None; }
+        if row >= col.len() {
+            return None;
+        }
         col.get_any(row).downcast_ref()
     }
 
     pub fn get_mut<T: 'static>(&mut self, row: usize) -> Option<&mut T> {
         let col = self.columns.get_mut(&TypeId::of::<T>())?;
-        if row >= col.len() { return None; }
+        if row >= col.len() {
+            return None;
+        }
         col.get_any_mut(row).downcast_mut()
     }
 

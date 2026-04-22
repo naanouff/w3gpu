@@ -101,16 +101,18 @@ fn transform_vertices(vertices: &mut [Vertex], world: Mat4) {
         let n = Vec3::from_array(v.normal);
         let t = Vec3::from_array(v.tangent);
         let b = Vec3::from_array(v.bitangent);
-        let handedness = if n.cross(t).dot(b) >= 0.0 { 1.0f32 } else { -1.0f32 };
+        let handedness = if n.cross(t).dot(b) >= 0.0 {
+            1.0f32
+        } else {
+            -1.0f32
+        };
 
         let n_w = normal_mat.transform_vector3(n);
         let n_w = n_w.try_normalize().unwrap_or(Vec3::Y);
 
         let t_w = linear * t;
         let t_w = t_w.try_normalize().unwrap_or(Vec3::X);
-        let t_orth = (t_w - n_w * t_w.dot(n_w))
-            .try_normalize()
-            .unwrap_or(t_w);
+        let t_orth = (t_w - n_w * t_w.dot(n_w)).try_normalize().unwrap_or(t_w);
         let b_w = n_w.cross(t_orth) * handedness;
 
         v.normal = n_w.to_array();
@@ -591,20 +593,20 @@ mod tests {
 
 #[derive(Clone, Debug, Default)]
 struct ParsedAnisotropy {
-    strength:      f32,
-    rotation:      f32,
+    strength: f32,
+    rotation: f32,
     texture_index: Option<usize>,
-    uv:            TextureUvTransform,
+    uv: TextureUvTransform,
 }
 
 #[derive(Clone, Debug, Default)]
 struct ParsedClearcoat {
-    factor:                  f32,
-    roughness:               f32,
+    factor: f32,
+    roughness: f32,
     clearcoat_texture_index: Option<usize>,
-    rough_texture_index:     Option<usize>,
-    clearcoat_uv:            TextureUvTransform,
-    rough_uv:                TextureUvTransform,
+    rough_texture_index: Option<usize>,
+    clearcoat_uv: TextureUvTransform,
+    rough_uv: TextureUvTransform,
 }
 
 fn json_vec2_f32(a: Option<&serde_json::Value>, default: [f32; 2]) -> [f32; 2] {
@@ -645,7 +647,9 @@ fn texture_uv_merge_khr_json(
 }
 
 /// Lit `KHR_texture_transform` sur une `textureInfo` JSON (extensions imbriquées).
-fn texture_uv_transform_from_json_tex_info(tex: &serde_json::Map<String, serde_json::Value>) -> TextureUvTransform {
+fn texture_uv_transform_from_json_tex_info(
+    tex: &serde_json::Map<String, serde_json::Value>,
+) -> TextureUvTransform {
     let base_tc = tex
         .get("texCoord")
         .and_then(serde_json::Value::as_u64)
@@ -795,7 +799,11 @@ fn extension_texture_index_coord(
         .unwrap_or((None, 0))
 }
 
-fn convert_material(mat: &gltf::Material<'_>, aniso: &ParsedAnisotropy, clearcoat: &ParsedClearcoat) -> Material {
+fn convert_material(
+    mat: &gltf::Material<'_>,
+    aniso: &ParsedAnisotropy,
+    clearcoat: &ParsedClearcoat,
+) -> Material {
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
     let emissive = mat.emissive_factor();

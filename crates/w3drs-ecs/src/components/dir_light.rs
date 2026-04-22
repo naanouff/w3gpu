@@ -28,6 +28,9 @@ mod tests {
         let l = DirectionalLightComponent::default();
         assert_eq!(l.intensity, 1.0);
         assert!(l.cast_shadow);
-        assert!((l.direction.length() - 1.0).abs() < 1e-5, "direction must be normalized");
+        assert!(
+            (l.direction.length() - 1.0).abs() < 1e-5,
+            "direction must be normalized"
+        );
     }
 }

@@ -15,7 +15,7 @@ use w3drs_renderer::{CullPass, CullUniforms, DrawIndexedIndirectArgs, EntityCull
 
 struct Gpu {
     device: wgpu::Device,
-    queue:  wgpu::Queue,
+    queue: wgpu::Queue,
 }
 
 /// Returns `None` if no GPU adapter is available (headless CI).
@@ -27,8 +27,8 @@ fn try_gpu() -> Option<Gpu> {
         });
         let adapter = inst
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference:       wgpu::PowerPreference::None,
-                compatible_surface:     None,
+                power_preference: wgpu::PowerPreference::None,
+                compatible_surface: None,
                 force_fallback_adapter: false,
             })
             .await?;
@@ -65,25 +65,33 @@ fn make_hiz(gpu: &Gpu, depth: f32) -> (wgpu::Texture, wgpu::TextureView) {
     const W: u32 = 64;
     const H: u32 = 64;
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-        label:           Some("test hiz"),
-        size:            wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+        label: Some("test hiz"),
+        size: wgpu::Extent3d {
+            width: W,
+            height: H,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
-        sample_count:    1,
-        dimension:       wgpu::TextureDimension::D2,
-        format:          wgpu::TextureFormat::R32Float,
-        usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats:    &[],
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
     });
     let data: Vec<f32> = vec![depth; (W * H) as usize];
     gpu.queue.write_texture(
         texture.as_image_copy(),
         bytemuck::cast_slice(&data),
         wgpu::TexelCopyBufferLayout {
-            offset:         0,
-            bytes_per_row:  Some(W * 4),   // 64 × 4 bytes = 256, aligned to COPY_BYTES_PER_ROW_ALIGNMENT
+            offset: 0,
+            bytes_per_row: Some(W * 4), // 64 × 4 bytes = 256, aligned to COPY_BYTES_PER_ROW_ALIGNMENT
             rows_per_image: Some(H),
         },
-        wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: W,
+            height: H,
+            depth_or_array_layers: 1,
+        },
     );
     let view = texture.create_view(&Default::default());
     (texture, view)
@@ -97,7 +105,7 @@ fn entity(aabb_min: [f32; 3], aabb_max: [f32; 3]) -> EntityCullData {
         aabb_max,
         index_count: 36,
         base_vertex: 0,
-        _pad:        [0; 3],
+        _pad: [0; 3],
     }
 }
 
@@ -105,11 +113,11 @@ fn entity(aabb_min: [f32; 3], aabb_max: [f32; 3]) -> EntityCullData {
 fn uniforms(view_proj: [[f32; 4]; 4], entity_count: u32, cull_enabled: u32) -> CullUniforms {
     CullUniforms {
         view_proj,
-        screen_size:  [64.0, 64.0],
+        screen_size: [64.0, 64.0],
         entity_count,
-        mip_levels:   1,
+        mip_levels: 1,
         cull_enabled,
-        _pad:         [0; 3],
+        _pad: [0; 3],
     }
 }
 
@@ -118,32 +126,30 @@ fn uniforms(view_proj: [[f32; 4]; 4], entity_count: u32, cull_enabled: u32) -> C
 /// Upload entities + uniforms, dispatch cull compute, read back `instance_count`
 /// for each entity. Returns a `Vec<u32>` parallel to `entities`.
 fn run_cull(
-    gpu:      &Gpu,
-    cull:     &CullPass,
+    gpu: &Gpu,
+    cull: &CullPass,
     readback: &wgpu::Buffer,
-    uni:      CullUniforms,
+    uni: CullUniforms,
     entities: &[EntityCullData],
 ) -> Vec<u32> {
     let n = uni.entity_count as usize;
     assert!(n > 0 && n <= entities.len());
 
-    gpu.queue.write_buffer(&cull.cull_uniform_buf, 0, bytemuck::bytes_of(&uni));
-    gpu.queue.write_buffer(&cull.entity_cull_buf,  0, bytemuck::cast_slice(entities));
+    gpu.queue
+        .write_buffer(&cull.cull_uniform_buf, 0, bytemuck::bytes_of(&uni));
+    gpu.queue
+        .write_buffer(&cull.entity_cull_buf, 0, bytemuck::cast_slice(entities));
 
     let stride = size_of::<DrawIndexedIndirectArgs>() as u64;
     let mut enc = gpu.device.create_command_encoder(&Default::default());
     cull.encode(&mut enc, uni.entity_count);
-    enc.copy_buffer_to_buffer(
-        &cull.entity_indirect_buf, 0,
-        readback, 0,
-        n as u64 * stride,
-    );
+    enc.copy_buffer_to_buffer(&cull.entity_indirect_buf, 0, readback, 0, n as u64 * stride);
     gpu.queue.submit([enc.finish()]);
 
     let slice = readback.slice(..n as u64 * stride);
     slice.map_async(wgpu::MapMode::Read, |_| {});
     gpu.device.poll(wgpu::Maintain::Wait);
-    let view   = slice.get_mapped_range();
+    let view = slice.get_mapped_range();
     let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
     let result = args[..n].iter().map(|a| a.instance_count).collect();
     drop(view);
@@ -154,9 +160,9 @@ fn run_cull(
 /// Create a MAP_READ | COPY_DST readback buffer sized for `n` indirect args.
 fn make_readback(gpu: &Gpu, n: usize) -> wgpu::Buffer {
     gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label:              Some("readback"),
-        size:               (n * size_of::<DrawIndexedIndirectArgs>()) as u64,
-        usage:              wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        label: Some("readback"),
+        size: (n * size_of::<DrawIndexedIndirectArgs>()) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     })
 }
@@ -174,12 +180,14 @@ fn cull_disabled_marks_all_visible() {
     let readback = make_readback(&gpu, 3);
 
     let entities = [
-        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),   // at origin
-        entity([5.0,  5.0, -10.0], [6.0, 6.0, -9.0]),   // far right
-        entity([-0.5, -0.5,  8.0], [0.5, 0.5, 9.0]),    // near camera
+        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]), // at origin
+        entity([5.0, 5.0, -10.0], [6.0, 6.0, -9.0]), // far right
+        entity([-0.5, -0.5, 8.0], [0.5, 0.5, 9.0]),  // near camera
     ];
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 3, 0 /* DISABLED */),
         &entities,
     );
@@ -199,7 +207,9 @@ fn visible_entity_clear_sky() {
 
     // Entity at origin, 10 units from camera → NDC z ≈ 0.99 < 1.0 → visible
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])],
     );
@@ -220,7 +230,9 @@ fn entity_behind_close_occluder() {
     let readback = make_readback(&gpu, 1);
 
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])],
     );
@@ -244,7 +256,9 @@ fn near_plane_straddler_never_culled() {
     // corners at z=9  → view_z=-1 → clip.w=1  (in front)
     // corners at z=11 → view_z=+1 → clip.w=-1 (behind)  → any_behind=true → depth_near=0.0
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0])],
     );
@@ -264,7 +278,9 @@ fn all_corners_behind_camera() {
     // Entity at z=11 to 13 — entirely behind camera at z=10.
     // All corners have view_z > 0 → clip.w < 0 → all_behind=true.
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, 11.0], [0.5, 0.5, 13.0])],
     );
@@ -286,7 +302,9 @@ fn entity_outside_frustum_xy() {
     // Frustum half-width at z=0 (view_z=-10) = 10 * tan(30°) ≈ 5.77 world units.
     // Entity at x=10..11 → NDC x = proj[0][0]*10/10 ≈ 1.73 → entirely right of frustum.
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5])],
     );
@@ -307,12 +325,14 @@ fn multiple_entities_mixed() {
     let readback = make_readback(&gpu, 3);
 
     let entities = [
-        entity([-0.5, -0.5, -0.5], [0.5,  0.5,  0.5]),  // visible
-        entity([10.0, -0.5, -0.5], [11.0, 0.5,  0.5]),  // outside frustum → culled
-        entity([-1.0, -1.0,  7.0], [1.0,  1.0,  9.0]),  // near camera → visible
+        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),  // visible
+        entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5]), // outside frustum → culled
+        entity([-1.0, -1.0, 7.0], [1.0, 1.0, 9.0]),   // near camera → visible
     ];
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 3, 1),
         &entities,
     );
@@ -335,27 +355,31 @@ fn monotonicity_cull_on_never_exceeds_cull_off() {
 
     // Build a varied scene: different depths, one outside frustum.
     let entities = [
-        entity([-0.5, -0.5, -0.5], [ 0.5,  0.5,  0.5]),  // far   → likely culled
-        entity([-0.5, -0.5,  8.0], [ 0.5,  0.5,  9.0]),  // near  → might pass
-        entity([10.0, -0.5, -0.5], [11.0,  0.5,  0.5]),  // off-screen → culled
-        entity([-0.5, -0.5,  9.0], [ 0.5,  0.5, 11.0]),  // straddler → never culled
+        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]), // far   → likely culled
+        entity([-0.5, -0.5, 8.0], [0.5, 0.5, 9.0]),  // near  → might pass
+        entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5]), // off-screen → culled
+        entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0]), // straddler → never culled
     ];
     let n = entities.len() as u32;
     let readback = make_readback(&gpu, entities.len());
 
     let off = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), n, 0 /* OFF */),
         &entities,
     );
     let on = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), n, 1 /* ON */),
         &entities,
     );
 
     let off_sum: u32 = off.iter().sum();
-    let on_sum:  u32 = on.iter().sum();
+    let on_sum: u32 = on.iter().sum();
 
     // With cull OFF every in-cull-buf entity gets instance_count=1
     // (XY frustum and behind-camera are still applied even when cull_enabled=0
@@ -379,12 +403,14 @@ fn straddler_visible_among_culled_neighbours() {
     let readback = make_readback(&gpu, 3);
 
     let entities = [
-        entity([-0.5, -0.5, -0.5], [0.5,  0.5,  0.5]),   // far → culled (depth > 0)
-        entity([-0.5, -0.5,  9.0], [0.5,  0.5, 11.0]),   // straddler → depth_near=0 → visible
-        entity([-0.5, -0.5,  7.0], [0.5,  0.5,  9.0]),   // near but in front → depth≈0.9 > 0 → culled
+        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]), // far → culled (depth > 0)
+        entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0]), // straddler → depth_near=0 → visible
+        entity([-0.5, -0.5, 7.0], [0.5, 0.5, 9.0]),  // near but in front → depth≈0.9 > 0 → culled
     ];
     let result = run_cull(
-        &gpu, &cull, &readback,
+        &gpu,
+        &cull,
+        &readback,
         uniforms(standard_view_proj(), 3, 1),
         &entities,
     );

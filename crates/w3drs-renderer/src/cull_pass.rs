@@ -10,29 +10,29 @@ pub const MAX_CULL_ENTITIES: u64 = 4096;
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct CullUniforms {
-    pub view_proj:    [[f32; 4]; 4],  // 64
-    pub screen_size:  [f32; 2],       //  8
-    pub entity_count: u32,            //  4
-    pub mip_levels:   u32,            //  4
-    pub cull_enabled: u32,            //  4
-    pub _pad:         [u32; 3],       // 12
+    pub view_proj: [[f32; 4]; 4], // 64
+    pub screen_size: [f32; 2],    //  8
+    pub entity_count: u32,        //  4
+    pub mip_levels: u32,          //  4
+    pub cull_enabled: u32,        //  4
+    pub _pad: [u32; 3],           // 12
 }
 
 /// GPU resources for the Hi-Z occlusion-cull compute pass.
 pub struct CullPass {
-    pipeline:           wgpu::ComputePipeline,
+    pipeline: wgpu::ComputePipeline,
     #[allow(dead_code)]
-    cull_bg_layout:     wgpu::BindGroupLayout,
+    cull_bg_layout: wgpu::BindGroupLayout,
     pub hiz_bg_layout: wgpu::BindGroupLayout,
 
-    pub cull_uniform_buf:    wgpu::Buffer,
-    pub entity_cull_buf:     wgpu::Buffer,
+    pub cull_uniform_buf: wgpu::Buffer,
+    pub entity_cull_buf: wgpu::Buffer,
     /// GPU-written indirect draw args — one `DrawIndexedIndirectArgs` per entity.
     /// instance_count = 0 (culled) or 1 (visible).
     pub entity_indirect_buf: wgpu::Buffer,
 
     cull_bg: wgpu::BindGroup,
-    hiz_bg:  Option<wgpu::BindGroup>,
+    hiz_bg: Option<wgpu::BindGroup>,
 }
 
 impl CullPass {
@@ -109,8 +109,8 @@ impl CullPass {
             label: Some("entity indirect buf"),
             size: MAX_CULL_ENTITIES * size_of::<DrawIndexedIndirectArgs>() as u64,
             usage: wgpu::BufferUsages::STORAGE
-                 | wgpu::BufferUsages::INDIRECT
-                 | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::INDIRECT
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -136,9 +136,7 @@ impl CullPass {
         // ── pipeline ─────────────────────────────────────────────────────────
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("occlusion cull shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/occlusion_cull.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/occlusion_cull.wgsl").into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,

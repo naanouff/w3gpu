@@ -31,15 +31,17 @@ impl GpuContext {
             .ok_or(EngineError::NoAdapter)?;
 
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("w3drs device"),
-                required_features: wgpu::Features::empty(),
-                // Use WebGPU-tier limits (not WebGL2 downlevel) — storage buffers
-                // in vertex shaders are required for instanced draw indirect (Phase 4).
-                required_limits: wgpu::Limits::default()
-                    .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::default(),
-            }, None)
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("w3drs device"),
+                    required_features: wgpu::Features::empty(),
+                    // Use WebGPU-tier limits (not WebGL2 downlevel) — storage buffers
+                    // in vertex shaders are required for instanced draw indirect (Phase 4).
+                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::default(),
+                },
+                None,
+            )
             .await?;
 
         let surface_caps = surface.get_capabilities(&adapter);
@@ -64,7 +66,15 @@ impl GpuContext {
 
         let (depth_texture, depth_view) = create_depth_texture(&device, width, height);
 
-        Ok(Self { device, queue, surface, surface_config, surface_format, depth_texture, depth_view })
+        Ok(Self {
+            device,
+            queue,
+            surface,
+            surface_config,
+            surface_format,
+            depth_texture,
+            depth_view,
+        })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -78,10 +88,18 @@ impl GpuContext {
     }
 }
 
-pub fn create_depth_texture(device: &Device, width: u32, height: u32) -> (wgpu::Texture, wgpu::TextureView) {
+pub fn create_depth_texture(
+    device: &Device,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth texture"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,

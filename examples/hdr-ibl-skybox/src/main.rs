@@ -1,8 +1,16 @@
-use glam::{Vec3, Vec4};
+//! Visualise la **même** HDR deux façons : fond équirectangulaire (skybox) + IBL sur une sphère
+//! métallique très réfléchissante — utile pour comparer couleurs / orientation / fireflies entre
+//! l’échantillonnage direct du fichier et la cubemap préfiltrée CPU (`IblContext::from_hdr`).
+//!
+//! **Debug** : **← / →** changent la vue plein écran (HDR caméra, faces préfiltre, faces
+//! irradiance) ; **`[` / `]`** ajustent le mip affiché pour les vues préfiltre (1–6).
+//! **`I`** active/désactive la **diffuse IBL** (cubemap d’irradiance) sur la sphère PBR.
+
+use glam::{Mat4, Vec3, Vec4};
 use pollster::FutureExt;
 use std::mem::size_of;
 use std::path::PathBuf;
-use w3drs_assets::{load_from_bytes, load_hdr_from_bytes, GltfPrimitive, Material};
+use w3drs_assets::{load_hdr_from_bytes, primitives, HdrImage, Material};
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
@@ -10,8 +18,9 @@ use w3drs_ecs::{
 use w3drs_renderer::{
     build_entity_list, camera_system, derive_shadow_batches, transform_system, AssetRegistry,
     BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms,
+    IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE,
     GpuContext, HdrTarget, HizPass, IblContext, LightUniforms, MaterialTextures, PostProcessPass,
-    RenderState, ShadowPass, TonemapParams, MAX_CULL_ENTITIES,
+    RenderState, ShadowPass, TonemapParams, DEPTH_FORMAT, HDR_FORMAT,
 };
 use winit::{
     application::ApplicationHandler,
@@ -21,12 +30,153 @@ use winit::{
     window::{Window, WindowId},
 };
 
+const ENV_DEBUG_WGSL: &str = include_str!("../shaders/env_debug.wgsl");
+
+/// Modes : 0 HDR sky, 1–6 préfiltre (faces), 7–12 irradiance (faces).
+const DEBUG_VIEW_COUNT: u32 = 13;
+const FACE_ABBREV: [&str; 6] = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
+
+fn debug_view_line(mode: u32, lod: f32) -> String {
+    match mode {
+        0 => "HDR équirect (caméra)".into(),
+        1..=6 => format!(
+            "Préfiltre face {} — mip {:.1}",
+            FACE_ABBREV[(mode - 1) as usize],
+            lod
+        ),
+        7..=12 => format!("Irradiance face {}", FACE_ABBREV[(mode - 7) as usize]),
+        _ => "?".into(),
+    }
+}
+
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::default();
     event_loop.run_app(&mut app).unwrap();
+}
+
+#[derive(Default)]
+struct App {
+    state: Option<State>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = event_loop
+            .create_window(
+                Window::default_attributes()
+                    .with_title("hdr-ibl-skybox — HDR sky + chrome sphere (IBL same file)"),
+            )
+            .unwrap();
+        self.state = Some(State::new(window).block_on());
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                match code {
+                    KeyCode::ArrowLeft => {
+                        state.debug_view =
+                            (state.debug_view + DEBUG_VIEW_COUNT - 1) % DEBUG_VIEW_COUNT;
+                    }
+                    KeyCode::ArrowRight => {
+                        state.debug_view = (state.debug_view + 1) % DEBUG_VIEW_COUNT;
+                    }
+                    KeyCode::BracketLeft => {
+                        state.debug_prefilter_lod = (state.debug_prefilter_lod - 0.5).max(0.0);
+                    }
+                    KeyCode::BracketRight => {
+                        state.debug_prefilter_lod = (state.debug_prefilter_lod + 0.5).min(24.0);
+                    }
+                    KeyCode::KeyI => {
+                        state.disable_irradiance_diffuse_ibl =
+                            !state.disable_irradiance_diffuse_ibl;
+                    }
+                    _ => {}
+                }
+                state.window.request_redraw();
+            }
+            WindowEvent::Resized(size) => {
+                state.context.resize(size.width, size.height);
+                state
+                    .hiz_pass
+                    .resize(&state.context.device, size.width, size.height);
+                state
+                    .cull_pass
+                    .rebuild_hiz_bg(&state.context.device, &state.hiz_pass.hiz_full_view);
+                state
+                    .hdr_target
+                    .resize(&state.context.device, size.width, size.height);
+                state.post_process.resize(
+                    &state.context.device,
+                    &state.hdr_target.view,
+                    size.width,
+                    size.height,
+                );
+                for e in state.world.query_entities::<CameraComponent>() {
+                    if let Some(cam) = state.world.get_component_mut::<CameraComponent>(e) {
+                        cam.aspect = size.width as f32 / size.height as f32;
+                    }
+                }
+                state.window.request_redraw();
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state: btn,
+                ..
+            } => {
+                state.mouse_pressed = btn == ElementState::Pressed;
+                if !state.mouse_pressed {
+                    state.last_cursor = None;
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let pos = (position.x as f32, position.y as f32);
+                if state.mouse_pressed {
+                    if let Some(last) = state.last_cursor {
+                        state.orbit.drag(pos.0 - last.0, pos.1 - last.1);
+                    }
+                }
+                state.last_cursor = Some(pos);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 0.75,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.025,
+                };
+                state.orbit.zoom(scroll);
+            }
+            WindowEvent::RedrawRequested => {
+                state.tick();
+                state.window.request_redraw();
+            }
+            _ => {}
+        }
+    }
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 
 // ── Orbit camera ───────────────────────────────────────────────────────────────
@@ -65,160 +215,262 @@ impl OrbitCamera {
     }
 }
 
-/// Désactive le pré-pass Hi‑Z + cull GPU (les sphères derrière le sol étaient trop souvent occlues).
-const VIEWER_GPU_OCCLUSION: bool = false;
-/// Désactive bloom + flous ; tonemap ACES + sortie (FXAA désactivé via `TonemapParams::flags`).
-const VIEWER_FULL_BLOOM_POST: bool = false;
+// ── HDR equirect texture (RGBA16F) — même grille que le bake IBL côté CPU ─────
 
-/// Sept GLB de référence Phase A / Khronos (chemins relatifs à la racine du workspace).
-const KHRONOS_GLBS: &[(&str, &str)] = &[
-    ("DamagedHelmet", "www/public/damaged_helmet_source_glb.glb"),
-    (
-        "AnisotropyBarnLamp",
-        "fixtures/phases/phase-a/glb/AnisotropyBarnLamp.glb",
-    ),
-    (
-        "ClearCoatCarPaint",
-        "fixtures/phases/phase-a/glb/ClearCoatCarPaint.glb",
-    ),
-    (
-        "ClearcoatWicker",
-        "fixtures/phases/phase-a/glb/ClearcoatWicker.glb",
-    ),
-    ("IORTestGrid", "fixtures/phases/phase-a/glb/IORTestGrid.glb"),
-    (
-        "TextureTransformTest",
-        "fixtures/phases/phase-a/glb/TextureTransformTest.glb",
-    ),
-    (
-        "MetalRoughSpheres",
-        "fixtures/phases/phase-a/glb/MetalRoughSpheres.glb",
-    ),
-];
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
+#[inline]
+fn f32_to_f16(x: f32) -> u16 {
+    let bits = x.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xff) as i32 - 127 + 15;
+    let mant = bits & 0x7fffff;
+    if exp <= 0 {
+        sign
+    } else if exp >= 31 {
+        sign | 0x7c00
+    } else {
+        sign | ((exp as u16) << 10) | (mant >> 13) as u16
+    }
 }
 
-fn bounds_from_primitives(primitives: &[GltfPrimitive]) -> (Vec3, f32) {
-    if primitives.is_empty() {
-        return (Vec3::ZERO, 2.0);
-    }
-    let mut mn = Vec3::splat(f32::MAX);
-    let mut mx = Vec3::splat(f32::MIN);
-    for p in primitives {
-        mn = mn.min(p.mesh.aabb.min);
-        mx = mx.max(p.mesh.aabb.max);
-    }
-    let center = (mn + mx) * 0.5;
-    let radius = ((mx - mn).length() * 0.5).max(0.15);
-    (center, radius)
-}
-
-// ── App ────────────────────────────────────────────────────────────────────────
-
-#[derive(Default)]
-struct App {
-    state: Option<State>,
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(
-                Window::default_attributes().with_title("khronos-pbr-sample — Phase A GLB viewer"),
-            )
-            .unwrap();
-        self.state = Some(State::new(window).block_on());
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-
-            WindowEvent::Resized(size) => {
-                state.context.resize(size.width, size.height);
-                state
-                    .hiz_pass
-                    .resize(&state.context.device, size.width, size.height);
-                state
-                    .cull_pass
-                    .rebuild_hiz_bg(&state.context.device, &state.hiz_pass.hiz_full_view);
-                state
-                    .hdr_target
-                    .resize(&state.context.device, size.width, size.height);
-                state.post_process.resize(
-                    &state.context.device,
-                    &state.hdr_target.view,
-                    size.width,
-                    size.height,
-                );
-                for e in state.world.query_entities::<CameraComponent>() {
-                    if let Some(cam) = state.world.get_component_mut::<CameraComponent>(e) {
-                        cam.aspect = size.width as f32 / size.height as f32;
-                    }
-                }
-                state.window.request_redraw();
-            }
-
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
-                        state: ElementState::Pressed,
-                        repeat,
-                        ..
-                    },
-                ..
-            } => match code {
-                KeyCode::ArrowLeft if !repeat => state.prev_sample(),
-                KeyCode::ArrowRight if !repeat => state.next_sample(),
-                _ => {}
-            },
-
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: btn,
-                ..
-            } => {
-                state.mouse_pressed = btn == ElementState::Pressed;
-                if !state.mouse_pressed {
-                    state.last_cursor = None;
-                }
-            }
-
-            WindowEvent::CursorMoved { position, .. } => {
-                let pos = (position.x as f32, position.y as f32);
-                if state.mouse_pressed {
-                    if let Some(last) = state.last_cursor {
-                        state.orbit.drag(pos.0 - last.0, pos.1 - last.1);
-                    }
-                }
-                state.last_cursor = Some(pos);
-            }
-
-            WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 0.75,
-                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.025,
-                };
-                state.orbit.zoom(scroll);
-            }
-
-            WindowEvent::RedrawRequested => {
-                state.tick();
-                state.window.request_redraw();
-            }
-            _ => {}
+fn pack_hdr_rgba16f(hdr: &HdrImage) -> Vec<u8> {
+    let mut out = Vec::with_capacity(hdr.pixels.len() * 8);
+    for [r, g, b] in &hdr.pixels {
+        for h in [
+            f32_to_f16(*r),
+            f32_to_f16(*g),
+            f32_to_f16(*b),
+            f32_to_f16(1.0),
+        ] {
+            out.extend_from_slice(&h.to_le_bytes());
         }
+    }
+    out
+}
+
+fn upload_hdr_equirect_rgba16f(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hdr: &HdrImage,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let data = pack_hdr_rgba16f(hdr);
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("hdr equirect sky"),
+        size: wgpu::Extent3d {
+            width: hdr.width,
+            height: hdr.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: HDR_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(hdr.width * 8),
+            rows_per_image: Some(hdr.height),
+        },
+        wgpu::Extent3d {
+            width: hdr.width,
+            height: hdr.height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = tex.create_view(&Default::default());
+    (tex, view)
+}
+
+// ── Sky pass (fullscreen equirect) ───────────────────────────────────────────
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SkyUniforms {
+    inv_view_projection: [[f32; 4]; 4],
+    camera_position: [f32; 3],
+    _pad0: f32,
+    view_mode: u32,
+    _pad1: u32,
+    prefilter_lod: f32,
+    _pad2: f32,
+}
+
+struct SkyPass {
+    pipeline: wgpu::RenderPipeline,
+    uniform_buf: wgpu::Buffer,
+    frame_bind_group: wgpu::BindGroup,
+    textures_bind_group: wgpu::BindGroup,
+}
+
+impl SkyPass {
+    fn new(device: &wgpu::Device, hdr_view: &wgpu::TextureView, ibl: &IblContext) -> Self {
+        let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky frame layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(size_of::<SkyUniforms>() as u64).unwrap(),
+                    ),
+                },
+                count: None,
+            }],
+        });
+        let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("env debug textures"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("env debug pipeline layout"),
+            bind_group_layouts: &[&frame_layout, &tex_layout],
+            push_constant_ranges: &[],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("env_debug"),
+            source: wgpu::ShaderSource::Wgsl(ENV_DEBUG_WGSL.into()),
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR_FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sky uniforms"),
+            size: size_of::<SkyUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky frame bg"),
+            layout: &frame_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buf.as_entire_binding(),
+            }],
+        });
+        let textures_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("env debug textures bg"),
+            layout: &tex_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(hdr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&ibl.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&ibl.prefiltered_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&ibl.irradiance_view),
+                },
+            ],
+        });
+        Self {
+            pipeline,
+            uniform_buf,
+            frame_bind_group,
+            textures_bind_group,
+        }
+    }
+
+    fn write_uniforms(
+        &self,
+        queue: &wgpu::Queue,
+        inv_vp: Mat4,
+        cam_pos: Vec3,
+        view_mode: u32,
+        prefilter_lod: f32,
+    ) {
+        let u = SkyUniforms {
+            inv_view_projection: inv_vp.to_cols_array_2d(),
+            camera_position: cam_pos.to_array(),
+            _pad0: 0.0,
+            view_mode,
+            _pad1: 0,
+            prefilter_lod,
+            _pad2: 0.0,
+        };
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&u));
     }
 }
 
@@ -229,34 +481,34 @@ struct State {
     context: GpuContext,
     render_state: RenderState,
     asset_registry: AssetRegistry,
+    /// Retenir les textures IBL (le bind group d’environnement ne possède que des vues).
     #[allow(dead_code)]
     ibl_context: IblContext,
+    /// Texture 2D RGBA16F (même fichier que l’IBL) — le sky n’a que la vue.
+    #[allow(dead_code)]
+    hdr_equirect_tex: wgpu::Texture,
+    sky_pass: SkyPass,
     shadow_pass: ShadowPass,
     env_bind_group: wgpu::BindGroup,
     hiz_pass: HizPass,
     cull_pass: CullPass,
     hdr_target: HdrTarget,
     post_process: PostProcessPass,
-
-    // Camera
     camera_entity: u32,
     orbit: OrbitCamera,
     mouse_pressed: bool,
     last_cursor: Option<(f32, f32)>,
-
-    sample_idx: usize,
-    model_entities: Vec<u32>,
-
-    // Readback + metrics
-    readback_buf: wgpu::Buffer,
-    last_hiz_visible: u32,
-    potential_count: u32,
-    frustum_visible: u32,
-
     total_time: f32,
     last_instant: std::time::Instant,
     world: World,
     scheduler: Scheduler,
+
+    /// 0 = HDR sky ; 1–6 / 7–12 = faces préfiltre / irradiance (voir `DEBUG_VIEW_COUNT`).
+    debug_view: u32,
+    /// LOD affiché pour les modes préfiltre 1–6 (`[` / `]`).
+    debug_prefilter_lod: f32,
+    /// Si vrai : pas de `textureSample(irradiance_map)` dans le diffuse IBL (touche **I**).
+    disable_irradiance_diffuse_ibl: bool,
 }
 
 impl State {
@@ -273,16 +525,14 @@ impl State {
             .expect("GPU context creation failed");
 
         let render_state = RenderState::new(&context.device, context.surface_format);
-        let asset_registry = AssetRegistry::new(&context.device, &context.queue);
+        let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
-        // ── ECS ───────────────────────────────────────────────────────────────
         let mut world = World::new();
         let mut scheduler = Scheduler::new();
         scheduler
             .add_system(transform_system)
             .add_system(camera_system);
 
-        // Camera entity
         let camera_entity = world.create_entity();
         world.add_component(
             camera_entity,
@@ -290,21 +540,21 @@ impl State {
         );
         world.add_component(camera_entity, TransformComponent::default());
 
-        // ── Shadow pass ───────────────────────────────────────────────────────
         let shadow_pass = ShadowPass::new(&context.device, &render_state.instance_bg_layout);
 
-        // ── IBL (HDR par défaut, même fichier que `www/`) ─────────────────────
         let workspace = workspace_root();
-        let ibl_context = match std::fs::read(workspace.join("www/public/studio_small_03_2k.hdr")) {
-            Ok(bytes) => match load_hdr_from_bytes(&bytes) {
-                Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue),
-                Err(e) => {
-                    log::warn!("HDR parse failed ({e})");
-                    IblContext::new_default(&context.device, &context.queue)
-                }
-            },
-            Err(_) => IblContext::new_default(&context.device, &context.queue),
-        };
+        let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
+        let hdr_bytes = std::fs::read(&hdr_path).unwrap_or_else(|e| {
+            panic!("Lecture HDR {} : {e}", hdr_path.display());
+        });
+        let hdr_image = load_hdr_from_bytes(&hdr_bytes)
+            .unwrap_or_else(|e| panic!("parse HDR {} : {e}", hdr_path.display()));
+
+        let (hdr_equirect_tex, hdr_equirect_view) =
+            upload_hdr_equirect_rgba16f(&context.device, &context.queue, &hdr_image);
+
+        let ibl_context = IblContext::from_hdr(&hdr_image, &context.device, &context.queue);
+        let sky_pass = SkyPass::new(&context.device, &hdr_equirect_view, &ibl_context);
         let env_bind_group = build_env_bind_group(
             &context.device,
             &render_state.ibl_bg_layout,
@@ -312,7 +562,6 @@ impl State {
             &shadow_pass,
         );
 
-        // ── Hi-Z + cull passes ────────────────────────────────────────────────
         let mut hiz_pass = HizPass::new(
             &context.device,
             &render_state.instance_bg_layout,
@@ -325,7 +574,6 @@ impl State {
         let mut cull_pass = CullPass::new(&context.device);
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
-        // ── HDR target + post-process pass ───────────────────────────────────
         let hdr_target = HdrTarget::new(&context.device, size.width.max(1), size.height.max(1));
         let post_process = PostProcessPass::new(
             &context.device,
@@ -347,22 +595,46 @@ impl State {
             },
         );
 
-        // ── Readback buffer ───────────────────────────────────────────────────
-        let readback_buf = context.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("indirect readback"),
-            size: MAX_CULL_ENTITIES * size_of::<DrawIndexedIndirectArgs>() as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        asset_registry.upload_material(
+            &Material::default(),
+            MaterialTextures::default(),
+            &context.device,
+            &render_state.material_bg_layout,
+        );
 
-        let orbit = OrbitCamera::new(6.0, 0.22, 0.0, Vec3::ZERO);
+        let sphere_mesh = primitives::uv_sphere(0.42, 56, 112);
+        let mesh_id = asset_registry.upload_mesh(&sphere_mesh, &context.device, &context.queue);
 
-        let mut state = Self {
+        let chrome = Material {
+            name: "chrome-debug".into(),
+            albedo: [0.95, 0.95, 0.98, 1.0],
+            metallic: 1.0,
+            roughness: 0.035,
+            ..Default::default()
+        };
+        let mat_id = asset_registry.upload_material(
+            &chrome,
+            MaterialTextures::default(),
+            &context.device,
+            &render_state.material_bg_layout,
+        );
+
+        let sphere_entity = world.create_entity();
+        world.add_component(sphere_entity, RenderableComponent::new(mesh_id, mat_id));
+        let mut t = TransformComponent::default();
+        t.update_local_matrix();
+        world.add_component(sphere_entity, t);
+
+        let orbit = OrbitCamera::new(2.2, 0.18, 0.0, Vec3::ZERO);
+
+        Self {
             window,
             context,
             render_state,
             asset_registry,
             ibl_context,
+            hdr_equirect_tex,
+            sky_pass,
             shadow_pass,
             env_bind_group,
             hiz_pass,
@@ -373,168 +645,20 @@ impl State {
             orbit,
             mouse_pressed: false,
             last_cursor: None,
-            sample_idx: 0,
-            model_entities: Vec::new(),
-            readback_buf,
-            last_hiz_visible: 0,
-            potential_count: 0,
-            frustum_visible: 0,
             total_time: 0.0,
             last_instant: std::time::Instant::now(),
             world,
             scheduler,
-        };
-
-        state.load_sample(0);
-        state
-    }
-
-    fn prev_sample(&mut self) {
-        let n = KHRONOS_GLBS.len();
-        self.load_sample((self.sample_idx + n - 1) % n);
-    }
-
-    fn next_sample(&mut self) {
-        let n = KHRONOS_GLBS.len();
-        self.load_sample((self.sample_idx + 1) % n);
-    }
-
-    /// Recharge un GLB Phase A : nouvelle `AssetRegistry` (libère GPU des meshes/mats précédents).
-    fn load_sample(&mut self, idx: usize) {
-        for &e in &self.model_entities {
-            self.world.destroy_entity(e);
+            debug_view: 0,
+            debug_prefilter_lod: 0.0,
+            disable_irradiance_diffuse_ibl: true,
         }
-        self.model_entities.clear();
-        self.sample_idx = idx % KHRONOS_GLBS.len();
-        let (label, rel_path) = KHRONOS_GLBS[self.sample_idx];
-        let path = workspace_root().join(rel_path);
-        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
-            panic!("lecture GLB échouée {} : {e}", path.display());
-        });
-        let primitives = load_from_bytes(&bytes)
-            .unwrap_or_else(|e| panic!("parse glTF {} : {e}", path.display()));
-
-        self.asset_registry = AssetRegistry::new(&self.context.device, &self.context.queue);
-        self.asset_registry.upload_material(
-            &Material::default(),
-            MaterialTextures::default(),
-            &self.context.device,
-            &self.render_state.material_bg_layout,
-        );
-
-        let (center, radius) = bounds_from_primitives(&primitives);
-        let dist = (radius * 2.8).clamp(1.2, 80.0);
-        self.orbit = OrbitCamera::new(dist, 0.22, 0.0, center);
-
-        for prim in primitives {
-            let mesh_id = self.asset_registry.upload_mesh(
-                &prim.mesh,
-                &self.context.device,
-                &self.context.queue,
-            );
-            let textures = MaterialTextures {
-                albedo: prim.albedo_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        true,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                normal: prim.normal_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        false,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                metallic_roughness: prim.metallic_roughness_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        false,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                emissive: prim.emissive_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        true,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                anisotropy: prim.anisotropy_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        false,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                clearcoat: prim.clearcoat_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        false,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-                clearcoat_roughness: prim.clearcoat_roughness_image.as_ref().map(|img| {
-                    self.asset_registry.upload_texture_rgba8(
-                        &img.data,
-                        img.width,
-                        img.height,
-                        false,
-                        &self.context.device,
-                        &self.context.queue,
-                    )
-                }),
-            };
-            let mat_id = self.asset_registry.upload_material(
-                &prim.material,
-                textures,
-                &self.context.device,
-                &self.render_state.material_bg_layout,
-            );
-            let e = self.world.create_entity();
-            self.world
-                .add_component(e, RenderableComponent::new(mesh_id, mat_id));
-            let mut t = TransformComponent::default();
-            t.update_local_matrix();
-            self.world.add_component(e, t);
-            self.model_entities.push(e);
-        }
-
-        log::info!(
-            "Modèle [{}/{}] {} — {}",
-            self.sample_idx + 1,
-            KHRONOS_GLBS.len(),
-            label,
-            path.display()
-        );
-        self.window.request_redraw();
     }
-
-    // ── Per-frame update ──────────────────────────────────────────────────────
 
     fn update_orbit_camera(&mut self) {
         let eye = self.orbit.eye();
         let target = self.orbit.target;
-        let (_, rot, _) = glam::Mat4::look_at_rh(eye, target, Vec3::Y)
+        let (_, rot, _) = Mat4::look_at_rh(eye, target, Vec3::Y)
             .inverse()
             .to_scale_rotation_translation();
         if let Some(t) = self
@@ -554,13 +678,9 @@ impl State {
         self.total_time += dt;
 
         self.update_orbit_camera();
-
         self.scheduler.run(&mut self.world, dt, self.total_time);
 
         let entities = collect_draw_entities(&self.world, &self.asset_registry);
-        self.frustum_visible = entities.len() as u32;
-        self.potential_count = count_visible_renderables(&self.world);
-
         let (matrices, cull_data, sorted) = build_entity_list(entities);
         let entity_count = sorted.len() as u32;
         let shadow_batches = derive_shadow_batches(&sorted);
@@ -589,69 +709,37 @@ impl State {
                 screen_size: [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
                 entity_count,
                 mip_levels: self.hiz_pass.mip_count,
-                cull_enabled: if VIEWER_GPU_OCCLUSION { 1 } else { 0 },
-                _pad: [0; 3],
+                cull_enabled: 0,
+                _pad: [0u32; 3],
             }),
         );
         self.hiz_pass
             .update_camera(&self.context.queue, view_proj.to_cols_array_2d());
 
+        let (view, projection, cam_pos) = world_active_camera(&self.world);
+        let inv_vp = (projection * view).inverse();
+        self.sky_pass.write_uniforms(
+            &self.context.queue,
+            inv_vp,
+            cam_pos,
+            self.debug_view,
+            self.debug_prefilter_lod,
+        );
+
         self.render(entity_count, &sorted, &shadow_batches);
 
-        // ── Readback: sum instance_count fields from the indirect buffer ───────
-        if entity_count > 0 {
-            let stride = size_of::<DrawIndexedIndirectArgs>() as u64;
-            let bytes = entity_count as u64 * stride;
-            let slice = self.readback_buf.slice(..bytes);
-            slice.map_async(wgpu::MapMode::Read, |_| {});
-            self.context.device.poll(wgpu::Maintain::Wait);
-            {
-                let view = slice.get_mapped_range();
-                let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
-                self.last_hiz_visible = args.iter().map(|a| a.instance_count).sum();
-            }
-            self.readback_buf.unmap();
+        let irr = if self.disable_irradiance_diffuse_ibl {
+            "irradiance IBL off"
         } else {
-            self.last_hiz_visible = 0;
-        }
-
-        // Monotonicity invariant: culling can only reduce draw count, never increase it.
-        // A violation here means a logic error in the cull pass or the ECS pipeline.
-        debug_assert!(
-            self.last_hiz_visible <= self.frustum_visible,
-            "Hi-Z culling emitted more draws than frustum: hiz={} frustum={}",
-            self.last_hiz_visible,
-            self.frustum_visible,
-        );
-        debug_assert!(
-            self.frustum_visible <= self.potential_count,
-            "Frustum culling emitted more draws than total: frustum={} total={}",
-            self.frustum_visible,
-            self.potential_count,
-        );
-
-        let (name, _) = KHRONOS_GLBS[self.sample_idx];
-        let mode = if VIEWER_GPU_OCCLUSION {
-            "Hi-Z on"
-        } else {
-            "Hi-Z off"
-        };
-        let pp = if VIEWER_FULL_BLOOM_POST {
-            "bloom on"
-        } else {
-            "bloom off"
+            "irradiance IBL on"
         };
         self.window.set_title(&format!(
-            "khronos-pbr-sample | {name} ({}/{}) | {mode} {pp} | draws {} / vis {} | \
-             [←/→] modèle  [LMB] orbite  [molette] zoom",
-            self.sample_idx + 1,
-            KHRONOS_GLBS.len(),
-            self.last_hiz_visible,
-            self.frustum_visible,
+            "hdr-ibl-skybox | {} ({}/{}) | {irr} [I] | [←/→] [ ] ] | LMB orbite",
+            debug_view_line(self.debug_view, self.debug_prefilter_lod),
+            self.debug_view + 1,
+            DEBUG_VIEW_COUNT,
         ));
     }
-
-    // ── Render ────────────────────────────────────────────────────────────────
 
     fn render(
         &self,
@@ -671,7 +759,11 @@ impl State {
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
-            bytemuck::bytes_of(&build_frame_uniforms(&self.world, self.total_time)),
+            bytemuck::bytes_of(&build_frame_uniforms(
+                &self.world,
+                self.total_time,
+                self.disable_irradiance_diffuse_ibl,
+            )),
         );
         self.shadow_pass
             .update_light(&self.context.queue, &build_light_uniforms());
@@ -682,31 +774,9 @@ impl State {
             .device
             .create_command_encoder(&Default::default());
 
-        // 1. Z-prepass + Hi-Z pyramid (requis seulement si cull GPU activé)
-        if VIEWER_GPU_OCCLUSION {
-            self.hiz_pass.encode(
-                &mut enc,
-                &self.render_state.instance_bind_group,
-                &self.asset_registry,
-                sorted,
-            );
-        }
-
-        // 2. GPU cull (Hi‑Z ou tout dessiner si `cull_enabled == 0` dans le shader)
         self.cull_pass.encode(&mut enc, entity_count);
 
-        // 3. Copy indirect buffer → readback staging
-        if entity_count > 0 {
-            enc.copy_buffer_to_buffer(
-                &self.cull_pass.entity_indirect_buf,
-                0,
-                &self.readback_buf,
-                0,
-                entity_count as u64 * indirect_stride,
-            );
-        }
-
-        // 4. Shadow depth pass (CPU-batched)
+        // Shadow map
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
@@ -739,18 +809,18 @@ impl State {
             }
         }
 
-        // 5. PBR main pass (GPU draw_indexed_indirect) → HDR target
+        // HDR main: clear → sky (equirect) → PBR sphere (IBL + direct)
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main"),
+                label: Some("main hdr"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.hdr_target.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.04,
-                            g: 0.04,
-                            b: 0.06,
+                            r: 0.02,
+                            g: 0.02,
+                            b: 0.03,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -760,13 +830,19 @@ impl State {
                     view: &self.context.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            rp.set_pipeline(&self.sky_pass.pipeline);
+            rp.set_bind_group(0, &self.sky_pass.frame_bind_group, &[]);
+            rp.set_bind_group(1, &self.sky_pass.textures_bind_group, &[]);
+            rp.draw(0..3, 0..1);
+
             rp.set_pipeline(&self.render_state.pipeline);
             rp.set_bind_group(0, &self.render_state.frame_bind_group, &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
@@ -790,30 +866,11 @@ impl State {
             }
         }
 
-        // 6. Post-process → swapchain
-        if VIEWER_FULL_BLOOM_POST {
-            self.post_process.encode(&mut enc, &view);
-        } else {
-            self.post_process.encode_tonemap_only(&mut enc, &view);
-        }
+        self.post_process.encode_tonemap_only(&mut enc, &view);
 
         self.context.queue.submit(std::iter::once(enc.finish()));
         output.present();
     }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-fn count_visible_renderables(world: &World) -> u32 {
-    world
-        .query_entities::<RenderableComponent>()
-        .into_iter()
-        .filter(|&e| {
-            world
-                .get_component::<RenderableComponent>(e)
-                .is_some_and(|r| r.visible)
-        })
-        .count() as u32
 }
 
 fn collect_draw_entities(world: &World, registry: &AssetRegistry) -> Vec<DrawEntity> {
@@ -832,7 +889,7 @@ fn collect_draw_entities(world: &World, registry: &AssetRegistry) -> Vec<DrawEnt
         let world_matrix = world
             .get_component::<TransformComponent>(entity)
             .map(|t| t.world_matrix)
-            .unwrap_or(glam::Mat4::IDENTITY);
+            .unwrap_or(Mat4::IDENTITY);
         let Some(mesh) = registry.get_mesh(r.mesh_id) else {
             continue;
         };
@@ -856,7 +913,7 @@ fn collect_draw_entities(world: &World, registry: &AssetRegistry) -> Vec<DrawEnt
     result
 }
 
-fn transform_aabb(mat: &glam::Mat4, local_min: Vec3, local_max: Vec3) -> (Vec3, Vec3) {
+fn transform_aabb(mat: &Mat4, local_min: Vec3, local_max: Vec3) -> (Vec3, Vec3) {
     let corners = [
         Vec3::new(local_min.x, local_min.y, local_min.z),
         Vec3::new(local_max.x, local_min.y, local_min.z),
@@ -880,7 +937,7 @@ fn transform_aabb(mat: &glam::Mat4, local_min: Vec3, local_max: Vec3) -> (Vec3, 
     )
 }
 
-fn camera_view_proj(world: &World) -> (glam::Mat4, glam::Mat4) {
+fn camera_view_proj(world: &World) -> (Mat4, Mat4) {
     world
         .query_entities::<CameraComponent>()
         .into_iter()
@@ -892,14 +949,35 @@ fn camera_view_proj(world: &World) -> (glam::Mat4, glam::Mat4) {
                 None
             }
         })
-        .unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY))
+        .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY))
+}
+
+fn world_active_camera(world: &World) -> (Mat4, Mat4, Vec3) {
+    world
+        .query_entities::<CameraComponent>()
+        .into_iter()
+        .find_map(|e| {
+            let cam = world.get_component::<CameraComponent>(e)?;
+            if !cam.is_active {
+                return None;
+            }
+            let pos = world
+                .get_component::<TransformComponent>(e)
+                .map(|t| {
+                    let w = t.world_matrix.w_axis;
+                    Vec3::new(w.x, w.y, w.z)
+                })
+                .unwrap_or(Vec3::ZERO);
+            Some((cam.view_matrix, cam.projection_matrix, pos))
+        })
+        .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY, Vec3::ZERO))
 }
 
 fn build_light_uniforms() -> LightUniforms {
     let light_dir = Vec3::new(-0.5, -1.0, -0.5).normalize();
     let light_pos = -light_dir * 30.0;
-    let light_view = glam::Mat4::look_at_rh(light_pos, Vec3::ZERO, Vec3::Y);
-    let light_proj = glam::Mat4::orthographic_rh(-25.0, 25.0, -25.0, 25.0, 0.1, 80.0);
+    let light_view = Mat4::look_at_rh(light_pos, Vec3::ZERO, Vec3::Y);
+    let light_proj = Mat4::orthographic_rh(-25.0, 25.0, -25.0, 25.0, 0.1, 80.0);
     LightUniforms {
         view_proj: (light_proj * light_view).to_cols_array_2d(),
         shadow_bias: 0.001,
@@ -907,7 +985,11 @@ fn build_light_uniforms() -> LightUniforms {
     }
 }
 
-fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
+fn build_frame_uniforms(
+    world: &World,
+    total_time: f32,
+    disable_irradiance_diffuse_ibl: bool,
+) -> FrameUniforms {
     let (view, projection, cam_pos) = world
         .query_entities::<CameraComponent>()
         .into_iter()
@@ -925,9 +1007,14 @@ fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
                 .unwrap_or(Vec3::ZERO);
             Some((cam.view_matrix, cam.projection_matrix, pos))
         })
-        .unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY, Vec3::ZERO));
+        .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY, Vec3::ZERO));
     let inv_vp = (projection * view).inverse();
     let light = build_light_uniforms();
+    let ibl_flags = if disable_irradiance_diffuse_ibl {
+        IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE
+    } else {
+        0
+    };
     FrameUniforms {
         projection: projection.to_cols_array_2d(),
         view: view.to_cols_array_2d(),
@@ -942,8 +1029,8 @@ fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
         _pad2: [0.0; 3],
         light_view_proj: light.view_proj,
         shadow_bias: light.shadow_bias,
-        ibl_flags: 0,
-        ibl_diffuse_scale: 1.0,
+        ibl_flags,
+        ibl_diffuse_scale: 0.1,
         _pad3: 0.0,
     }
 }

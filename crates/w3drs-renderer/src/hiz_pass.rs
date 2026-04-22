@@ -1,11 +1,8 @@
 use std::mem::size_of;
 
 use crate::{
-    asset_registry::AssetRegistry,
-    gpu_context::DEPTH_FORMAT,
-    light_uniforms::LightUniforms,
-    render_command::DrawEntity,
-    vertex_layout::VERTEX_BUFFER_LAYOUT,
+    asset_registry::AssetRegistry, gpu_context::DEPTH_FORMAT, light_uniforms::LightUniforms,
+    render_command::DrawEntity, vertex_layout::VERTEX_BUFFER_LAYOUT,
 };
 
 const HIZ_INIT_WGSL: &str = include_str!("shaders/hiz_init.wgsl");
@@ -24,8 +21,8 @@ pub struct HizPass {
     pub camera_bg: wgpu::BindGroup,
 
     // ── compute pipelines (static) ───────────────────────────────────────────
-    init_pipeline:  wgpu::ComputePipeline,
-    down_pipeline:  wgpu::ComputePipeline,
+    init_pipeline: wgpu::ComputePipeline,
+    down_pipeline: wgpu::ComputePipeline,
     init_bg_layout: wgpu::BindGroupLayout,
     down_bg_layout: wgpu::BindGroupLayout,
 
@@ -35,11 +32,11 @@ pub struct HizPass {
     /// Full mip-chain view of the Hi-Z R32Float texture — bind to cull pass.
     pub hiz_full_view: wgpu::TextureView,
     pub mip_count: u32,
-    pub width:     u32,
-    pub height:    u32,
+    pub width: u32,
+    pub height: u32,
 
     // internal per-mip compute bind groups (rebuilt on resize)
-    init_bg:  wgpu::BindGroup,
+    init_bg: wgpu::BindGroup,
     down_bgs: Vec<wgpu::BindGroup>,
 }
 
@@ -82,9 +79,7 @@ impl HizPass {
         // ── z-prepass pipeline (shadow_depth.wgsl, depth-only) ───────────────
         let zp_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("zprepass shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/shadow_depth.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow_depth.wgsl").into()),
         });
         let zp_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("zprepass pipeline layout"),
@@ -208,7 +203,11 @@ impl HizPass {
 
         let (zprepass_depth_view, hiz_full_view, mip_count, init_bg, down_bgs) =
             Self::build_resolution_resources(
-                device, width, height, &init_bg_layout, &down_bg_layout,
+                device,
+                width,
+                height,
+                &init_bg_layout,
+                &down_bg_layout,
             );
 
         Self {
@@ -231,23 +230,32 @@ impl HizPass {
 
     /// Recreate resolution-dependent resources on window resize.
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        if width == self.width && height == self.height { return; }
-        self.width  = width;
+        if width == self.width && height == self.height {
+            return;
+        }
+        self.width = width;
         self.height = height;
-        let (depth_view, hiz_view, mip_count, init_bg, down_bgs) =
-            Self::build_resolution_resources(
-                device, width, height, &self.init_bg_layout, &self.down_bg_layout,
-            );
+        let (depth_view, hiz_view, mip_count, init_bg, down_bgs) = Self::build_resolution_resources(
+            device,
+            width,
+            height,
+            &self.init_bg_layout,
+            &self.down_bg_layout,
+        );
         self.zprepass_depth_view = depth_view;
-        self.hiz_full_view       = hiz_view;
-        self.mip_count           = mip_count;
-        self.init_bg             = init_bg;
-        self.down_bgs            = down_bgs;
+        self.hiz_full_view = hiz_view;
+        self.mip_count = mip_count;
+        self.init_bg = init_bg;
+        self.down_bgs = down_bgs;
     }
 
     /// Upload camera view_proj into the z-prepass uniform buffer.
     pub fn update_camera(&self, queue: &wgpu::Queue, view_proj: [[f32; 4]; 4]) {
-        let uniforms = LightUniforms { view_proj, shadow_bias: 0.0, _pad: [0.0; 3] };
+        let uniforms = LightUniforms {
+            view_proj,
+            shadow_bias: 0.0,
+            _pad: [0.0; 3],
+        };
         queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&uniforms));
     }
 
@@ -279,7 +287,9 @@ impl HizPass {
             rp.set_bind_group(0, &self.camera_bg, &[]);
             rp.set_bind_group(1, instance_bind_group, &[]);
             for (idx, entity) in sorted_entities.iter().enumerate() {
-                let Some(mesh) = registry.get_mesh(entity.mesh_id) else { continue };
+                let Some(mesh) = registry.get_mesh(entity.mesh_id) else {
+                    continue;
+                };
                 rp.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 rp.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 let i = idx as u32;
@@ -322,11 +332,21 @@ impl HizPass {
         height: u32,
         init_bg_layout: &wgpu::BindGroupLayout,
         down_bg_layout: &wgpu::BindGroupLayout,
-    ) -> (wgpu::TextureView, wgpu::TextureView, u32, wgpu::BindGroup, Vec<wgpu::BindGroup>) {
+    ) -> (
+        wgpu::TextureView,
+        wgpu::TextureView,
+        u32,
+        wgpu::BindGroup,
+        Vec<wgpu::BindGroup>,
+    ) {
         // Z-prepass depth texture (screen-sized)
         let zp_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("zprepass depth tex"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -342,7 +362,11 @@ impl HizPass {
         // Hi-Z R32Float texture (screen-sized, mip chain)
         let hiz_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("hi-z tex"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: mip_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -354,11 +378,13 @@ impl HizPass {
 
         // One view per mip level (for compute read/write)
         let mip_views: Vec<wgpu::TextureView> = (0..mip_count)
-            .map(|m| hiz_tex.create_view(&wgpu::TextureViewDescriptor {
-                base_mip_level:  m,
-                mip_level_count: Some(1),
-                ..Default::default()
-            }))
+            .map(|m| {
+                hiz_tex.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: m,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            })
             .collect();
 
         // Init bind group: zp_depth (binding 0) → hiz mip 0 (binding 1)
@@ -379,20 +405,22 @@ impl HizPass {
 
         // Down bind groups: mip[i] (src) → mip[i+1] (dst)
         let down_bgs: Vec<wgpu::BindGroup> = (0..mip_count as usize - 1)
-            .map(|i| device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("hiz down bg"),
-                layout: down_bg_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&mip_views[i]),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&mip_views[i + 1]),
-                    },
-                ],
-            }))
+            .map(|i| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("hiz down bg"),
+                    layout: down_bg_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&mip_views[i]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&mip_views[i + 1]),
+                        },
+                    ],
+                })
+            })
             .collect();
 
         (zp_view, hiz_full_view, mip_count, init_bg, down_bgs)
@@ -400,4 +428,6 @@ impl HizPass {
 }
 
 #[inline]
-fn div_ceil(a: u32, b: u32) -> u32 { (a + b - 1) / b }
+fn div_ceil(a: u32, b: u32) -> u32 {
+    (a + b - 1) / b
+}

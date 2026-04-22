@@ -16,7 +16,9 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new() -> Self {
-        Self { systems: Vec::new() }
+        Self {
+            systems: Vec::new(),
+        }
     }
 
     pub fn add_system<S: System>(&mut self, system: S) -> &mut Self {
@@ -32,7 +34,9 @@ impl Scheduler {
 }
 
 impl Default for Scheduler {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

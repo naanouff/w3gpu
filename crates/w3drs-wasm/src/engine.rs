@@ -589,7 +589,9 @@ impl W3drsEngine {
             _pad2: [0.0; 3],
             light_view_proj: light.view_proj,
             shadow_bias: light.shadow_bias,
-            _pad3: [0.0; 3],
+            ibl_flags: 0,
+            ibl_diffuse_scale: 1.0,
+            _pad3: 0.0,
         }
     }
 

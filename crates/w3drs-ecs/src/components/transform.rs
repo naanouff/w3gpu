@@ -28,7 +28,8 @@ impl TransformComponent {
     }
 
     pub fn update_local_matrix(&mut self) {
-        self.local_matrix = Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
+        self.local_matrix =
+            Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
         self.dirty = true;
     }
 }

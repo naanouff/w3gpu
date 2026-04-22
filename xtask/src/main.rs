@@ -9,6 +9,7 @@ fn main() {
         eprintln!("Tasks:");
         eprintln!("  www          Build WASM then start Vite dev server");
         eprintln!("  client       Build and run the native desktop client");
+        eprintln!("  hdr-skybox   Build and run hdr-ibl-skybox (HDR sky + chrome sphere)");
         eprintln!("  check        cargo check for all targets (native + wasm32)");
         eprintln!("  setup-hooks  Install .githooks/pre-commit into .git/hooks");
         std::process::exit(1);
@@ -17,13 +18,14 @@ fn main() {
     let root = workspace_root();
 
     match task.as_str() {
-        "www"         => run_www(&root),
-        "client"      => run_client(&root),
-        "check"       => run_check(&root),
+        "www" => run_www(&root),
+        "client" => run_client(&root),
+        "hdr-skybox" => run_hdr_skybox(&root),
+        "check" => run_check(&root),
         "setup-hooks" => setup_hooks(&root),
         other => {
             eprintln!("Unknown task: '{other}'");
-            eprintln!("Available tasks: www, client, check, setup-hooks");
+            eprintln!("Available tasks: www, client, hdr-skybox, check, setup-hooks");
             std::process::exit(1);
         }
     }
@@ -48,12 +50,17 @@ fn run_www(root: &Path) {
 
     if !www_dir.join("node_modules").exists() {
         println!("==> Installing npm dependencies...");
-        run(Command::new(npm).arg("install").current_dir(&www_dir), "npm install");
+        run(
+            Command::new(npm).arg("install").current_dir(&www_dir),
+            "npm install",
+        );
     }
 
     println!("==> Starting Vite dev server  (http://localhost:5173)");
     run(
-        Command::new(npm).args(["run", "vite"]).current_dir(&www_dir),
+        Command::new(npm)
+            .args(["run", "vite"])
+            .current_dir(&www_dir),
         "vite dev",
     );
 }
@@ -65,6 +72,16 @@ fn run_client(root: &Path) {
             .args(["run", "-p", "khronos-pbr-sample", "--release"])
             .current_dir(root),
         "cargo run khronos-pbr-sample",
+    );
+}
+
+fn run_hdr_skybox(root: &Path) {
+    println!("==> Building and running hdr-ibl-skybox...");
+    run(
+        Command::new("cargo")
+            .args(["run", "-p", "hdr-ibl-skybox", "--release"])
+            .current_dir(root),
+        "cargo run hdr-ibl-skybox",
     );
 }
 
@@ -80,7 +97,13 @@ fn run_check(root: &Path) {
     println!("==> cargo check — wasm32 target...");
     run(
         Command::new("cargo")
-            .args(["check", "-p", "w3drs-wasm", "--target", "wasm32-unknown-unknown"])
+            .args([
+                "check",
+                "-p",
+                "w3drs-wasm",
+                "--target",
+                "wasm32-unknown-unknown",
+            ])
             .current_dir(root),
         "cargo check wasm32",
     );
@@ -97,8 +120,7 @@ fn setup_hooks(root: &Path) {
         std::process::exit(1);
     }
 
-    std::fs::copy(&hooks_src, &hooks_dst)
-        .unwrap_or_else(|e| panic!("Failed to copy hook: {e}"));
+    std::fs::copy(&hooks_src, &hooks_dst).unwrap_or_else(|e| panic!("Failed to copy hook: {e}"));
 
     // Make executable on Unix
     #[cfg(unix)]
@@ -124,7 +146,11 @@ fn workspace_root() -> PathBuf {
 }
 
 fn npm_cmd() -> &'static str {
-    if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" }
+    if cfg!(target_os = "windows") {
+        "npm.cmd"
+    } else {
+        "npm"
+    }
 }
 
 fn run(cmd: &mut Command, label: &str) {

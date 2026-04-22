@@ -1,0 +1,21 @@
+[package]
+name = "hdr-ibl-skybox"
+edition.workspace = true
+version.workspace = true
+description = "Debug viewer: HDR as equirect skybox + chrome sphere (IBL from same file)."
+
+[[bin]]
+name = "hdr-ibl-skybox"
+path = "src/main.rs"
+
+[dependencies]
+w3drs-renderer = { path = "../../crates/w3drs-renderer" }
+w3drs-assets = { path = "../../crates/w3drs-assets" }
+w3drs-ecs = { path = "../../crates/w3drs-ecs" }
+wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+glam.workspace = true
+bytemuck.workspace = true
+winit = "0.30"
+pollster = "0.4"
+log = { workspace = true }
+env_logger = "0.11"

@@ -15,6 +15,11 @@ struct FrameUniforms {
     _pad2a:              f32,
     _pad2b:              f32,
     _pad2c:              f32,
+    light_view_proj:     mat4x4<f32>,
+    shadow_bias:         f32,
+    ibl_flags:            u32,
+    ibl_diffuse_scale:   f32,
+    _pad3:               f32,
 }
 
 struct ObjectUniforms {

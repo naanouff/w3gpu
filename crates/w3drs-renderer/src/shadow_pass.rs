@@ -1,5 +1,5 @@
-use std::mem::size_of;
 use crate::{light_uniforms::LightUniforms, vertex_layout::VERTEX_BUFFER_LAYOUT};
+use std::mem::size_of;
 
 pub const SHADOW_SIZE: u32 = 2048;
 const SHADOW_WGSL: &str = include_str!("shaders/shadow_depth.wgsl");
@@ -57,9 +57,7 @@ impl ShadowPass {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            size_of::<LightUniforms>() as u64,
-                        ),
+                        min_binding_size: wgpu::BufferSize::new(size_of::<LightUniforms>() as u64),
                     },
                     count: None,
                 }],
@@ -92,45 +90,43 @@ impl ShadowPass {
             source: wgpu::ShaderSource::Wgsl(SHADOW_WGSL.into()),
         });
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("shadow depth pipeline layout"),
-                bind_group_layouts: &[&shadow_light_bg_layout, instance_bg_layout],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("shadow depth pipeline layout"),
+            bind_group_layouts: &[&shadow_light_bg_layout, instance_bg_layout],
+            push_constant_ranges: &[],
+        });
 
-        let depth_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("shadow depth pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[VERTEX_BUFFER_LAYOUT],
-                    compilation_options: Default::default(),
+        let depth_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("shadow depth pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[VERTEX_BUFFER_LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                // slope-scaled bias prevents self-shadowing artifacts
+                bias: wgpu::DepthBiasState {
+                    constant: 1,
+                    slope_scale: 1.0,
+                    clamp: 0.0,
                 },
-                fragment: None,
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    // slope-scaled bias prevents self-shadowing artifacts
-                    bias: wgpu::DepthBiasState {
-                        constant: 1,
-                        slope_scale: 1.0,
-                        clamp: 0.0,
-                    },
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         Self {
             depth_pipeline,
@@ -143,10 +139,6 @@ impl ShadowPass {
     }
 
     pub fn update_light(&self, queue: &wgpu::Queue, uniforms: &LightUniforms) {
-        queue.write_buffer(
-            &self.light_uniform_buffer,
-            0,
-            bytemuck::bytes_of(uniforms),
-        );
+        queue.write_buffer(&self.light_uniform_buffer, 0, bytemuck::bytes_of(uniforms));
     }
 }

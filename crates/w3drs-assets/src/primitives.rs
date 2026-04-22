@@ -3,9 +3,9 @@ use crate::vertex::Vertex;
 
 pub fn triangle() -> Mesh {
     let vertices = vec![
-        Vertex::new([ 0.0,  0.5, 0.0], [0.0, 0.0, 1.0], [0.5, 0.0]),
+        Vertex::new([0.0, 0.5, 0.0], [0.0, 0.0, 1.0], [0.5, 0.0]),
         Vertex::new([-0.5, -0.5, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0]),
-        Vertex::new([ 0.5, -0.5, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0]),
+        Vertex::new([0.5, -0.5, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0]),
     ];
     Mesh::new(vertices, vec![0, 1, 2])
 }
@@ -24,11 +24,11 @@ pub fn cube() -> Mesh {
 
     let local_verts: &[[f32; 3]; 4] = &[
         [-0.5, -0.5, 0.0],
-        [ 0.5, -0.5, 0.0],
-        [ 0.5,  0.5, 0.0],
-        [-0.5,  0.5, 0.0],
+        [0.5, -0.5, 0.0],
+        [0.5, 0.5, 0.0],
+        [-0.5, 0.5, 0.0],
     ];
-    let uvs: &[[f32; 2]; 4] = &[[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]];
+    let uvs: &[[f32; 2]; 4] = &[[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]];
 
     let mut vertices = Vec::with_capacity(24);
     let mut indices = Vec::with_capacity(36);
@@ -50,7 +50,7 @@ pub fn cube() -> Mesh {
             ];
             vertices.push(Vertex::new(pos, *normal, uvs[i]));
         }
-        indices.extend_from_slice(&[base, base+1, base+2, base, base+2, base+3]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     Mesh::new(vertices, indices)
@@ -59,28 +59,28 @@ pub fn cube() -> Mesh {
 /// UV sphere — radius `r`, `stacks` latitude bands, `sectors` longitude segments.
 /// Tangents and bitangents are analytically correct for PBR normal mapping.
 pub fn uv_sphere(radius: f32, stacks: u32, sectors: u32) -> Mesh {
-    let stacks  = stacks.max(2);
+    let stacks = stacks.max(2);
     let sectors = sectors.max(3);
     let mut vertices = Vec::with_capacity(((stacks + 1) * (sectors + 1)) as usize);
-    let mut indices  = Vec::with_capacity((stacks * sectors * 6) as usize);
+    let mut indices = Vec::with_capacity((stacks * sectors * 6) as usize);
 
     for i in 0..=stacks {
-        let phi     = std::f32::consts::PI * i as f32 / stacks as f32;
+        let phi = std::f32::consts::PI * i as f32 / stacks as f32;
         let cos_phi = phi.cos();
         let sin_phi = phi.sin();
-        let y       = radius * cos_phi;
-        let ring_r  = radius * sin_phi;
+        let y = radius * cos_phi;
+        let ring_r = radius * sin_phi;
 
         for j in 0..=sectors {
-            let theta     = std::f32::consts::TAU * j as f32 / sectors as f32;
+            let theta = std::f32::consts::TAU * j as f32 / sectors as f32;
             let cos_theta = theta.cos();
             let sin_theta = theta.sin();
             let x = ring_r * cos_theta;
             let z = ring_r * sin_theta;
-            let normal  = [sin_phi * cos_theta, cos_phi, sin_phi * sin_theta];
-            let uv      = [j as f32 / sectors as f32, i as f32 / stacks as f32];
-            let mut v   = Vertex::new([x, y, z], normal, uv);
-            v.tangent   = [-sin_theta, 0.0, cos_theta];
+            let normal = [sin_phi * cos_theta, cos_phi, sin_phi * sin_theta];
+            let uv = [j as f32 / sectors as f32, i as f32 / stacks as f32];
+            let mut v = Vertex::new([x, y, z], normal, uv);
+            v.tangent = [-sin_theta, 0.0, cos_theta];
             v.bitangent = [cos_phi * cos_theta, -sin_phi, cos_phi * sin_theta];
             vertices.push(v);
         }
@@ -129,7 +129,7 @@ mod tests {
     fn cube_normals_are_unit_length() {
         for v in cube().vertices {
             let n = v.normal;
-            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-5, "normal not unit: {}", len);
         }
     }

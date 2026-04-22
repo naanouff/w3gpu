@@ -17,6 +17,7 @@ pollster = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+rayon = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { workspace = true, features = ["wgsl", "webgpu"] }

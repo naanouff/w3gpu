@@ -28,7 +28,9 @@ pub fn transform_system(world: &mut World, _dt: f32, _t: f32) {
 
     // ── Pass 2: hierarchical entities — BFS top-down ──────────────────────
     let hierarchical: Vec<Entity> = world.query_entities::<HierarchyComponent>();
-    if hierarchical.is_empty() { return; }
+    if hierarchical.is_empty() {
+        return;
+    }
 
     // Roots = have HierarchyComponent with no parent.
     let roots: Vec<Entity> = hierarchical
