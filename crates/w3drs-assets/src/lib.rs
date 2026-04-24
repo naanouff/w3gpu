@@ -2,6 +2,7 @@ pub mod gltf_loader;
 pub mod hdr_loader;
 pub mod material;
 pub mod mesh;
+pub mod phase_a_viewer_config;
 pub mod primitives;
 pub mod vertex;
 
@@ -13,4 +14,8 @@ pub use material::{
     TEX_UV_NORMAL,
 };
 pub use mesh::Mesh;
+pub use phase_a_viewer_config::{
+    load_phase_a_viewer_config_or_default, parse_phase_a_viewer_config_str_or_default,
+    PhaseATonemap, PhaseAVariant, PhaseAViewerConfig,
+};
 pub use vertex::Vertex;

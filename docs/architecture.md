@@ -205,6 +205,7 @@ flowchart TD
 | **`.w3db`** | Paquet binaire projet (scènes, blobs, index LOD, manifeste) ; **entrée** du [compilateur](#compilateur--livrables) pour les livrables. | Spécification à rédiger — [ROADMAP Phase D](ROADMAP.md), [ticket phase D](tickets/phase-D-format-w3db-streaming.md). |
 | **HDR / EXR** | IBL (précompute CPU). | Voir pipeline IBL ci-dessous + assets LFS `www/public/`. |
 | **JSON / RON** (cible) | Config éditeur, input maps, métadonnées **data-driven**. | Schémas versionnés au fil des merges ; voir aussi graphes dédiés ci-dessous. |
+| **`fixtures/phases/phase-a/materials/*.json`** | Config **viewer** Phase A (variantes, `ibl_diffuse_scale`, `tonemap.exposure` / `bloom_strength`) — chargée par `khronos-pbr-sample` via `w3drs_assets::load_phase_a_viewer_config_or_default`. | v1 : voir champs dans [`phase_a_viewer_config.rs`](../crates/w3drs-assets/src/phase_a_viewer_config.rs). |
 
 *Tables de champs binaires `.w3db` : consigner ici les versions `v0`, `v1`, … lorsque la spec sera figée.*
 
@@ -228,7 +229,7 @@ flowchart TD
 
 | Sujet | Priorité / condition | Notes |
 |-------|------------------------|--------|
-| **Format matériaux** (interne ou interchange) | À définir | Spec à trancher (champs, versions, compat glTF). |
+| **Format matériaux** (interne ou interchange) | **Amorcé** (Phase A) | Paramètres **viewer** + variantes en JSON sous `fixtures/.../materials/` ; spec matériau **runtime** / `.w3db` toujours à trancher. |
 | **SBSAR** (Substance archive) | À définir | Support si **module Rust** ou pipeline **bake** fiable ; sinon export textures vers formats runtime. |
 | **MaterialX** | À définir | Si **module Rust** complet (lecture + résolution) ; liens avec shader graph et Substance à documenter. |
 
@@ -373,6 +374,8 @@ MainPass   (group 0 = frame, 1 = object, 2 = material, 3 = IBL, 4 = shadow)
     ↓ surface présentation
 ```
 
+**Phase B (en cours)** : graphe déclaratif — spec [`schemas/render-graph-v0.md`](schemas/render-graph-v0.md), données [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/), crate **`w3drs-render-graph`** (parse + **`validate_exec_v0`**, sans `wgpu`), exécuteur natif **`w3drs_renderer::render_graph_exec`** (`run_graph_v0_checksum`). **WASM** : `w3drsValidateRenderGraphV0` dans `www/pkg` (validation seule). Le viewer PBR reste **codé** jusqu’à fusion graphe ↔ pipeline.
+
 #### AssetRegistry
 
 Registre des ressources GPU avec IDs opaques :
@@ -388,15 +391,9 @@ Material id=0 = matériau par défaut (toujours présent).
 
 #### IBL (implémenté)
 
-Précomputation CPU depuis une image HDR équirectangulaire :
+Précomputation CPU depuis une image HDR équirectangulaire ; tailles par préréglage **`IblGenerationSpec`** / `ibl_tier` (défaut **max** : irradiance 128, pré-filtré 512, LUT 256 — voir `crates/w3drs-renderer/src/ibl_spec.rs`).
 
-| Ressource | Format | Taille |
-|---|---|---|
-| Irradiance cubemap | rgba16float | 32×32×6 |
-| Prefiltered env cubemap | rgba16float | 128×128×6×5mips |
-| BRDF LUT | rg16float | 256×256 |
-
-API : `IblContext::from_hdr(hdr, device, queue, layout)` ou `IblContext::new_default(...)`.
+API : `IblContext::from_hdr_with_spec(...)` ou `from_hdr` (alias **max**), `IblContext::new_default(...)`.
 
 ---
 

@@ -1,0 +1,14 @@
+[package]
+name = "phase-b-graph"
+edition.workspace = true
+version.workspace = true
+description = "Démo headless Phase B : parse JSON + validation + run_graph_v0_checksum (wgpu)."
+
+[[bin]]
+name = "phase-b-graph"
+path = "src/main.rs"
+
+[dependencies]
+w3drs-renderer = { path = "../../crates/w3drs-renderer" }
+wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+pollster = "0.4"

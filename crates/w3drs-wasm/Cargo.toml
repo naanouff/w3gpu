@@ -11,6 +11,9 @@ w3drs-math = { path = "../w3drs-math" }
 w3drs-ecs = { path = "../w3drs-ecs" }
 w3drs-renderer = { path = "../w3drs-renderer" }
 w3drs-assets = { path = "../w3drs-assets" }
+w3drs-render-graph = { path = "../w3drs-render-graph" }
+# Sans `wasm-bindgen`, `instant` attend un import hôte `env::now` (f64) — inutilisable ici.
+instant = { workspace = true, features = ["wasm-bindgen"] }
 glam.workspace = true
 bytemuck.workspace = true
 log.workspace = true

@@ -25,9 +25,11 @@ crates/
   w3drs-ecs/        # World, Scheduler, archetype SoA storage, Rayon parallel iter
   w3drs-assets/     # Mesh, Material, Vertex, glTF loader, HDR loader, primitives
   w3drs-renderer/   # wgpu context, PBR + IBL + shadows + post-processing, Hi-Z cull
+  w3drs-render-graph/  # Phase B: JSON parse + validate_exec_v0 (no wgpu; shared native + WASM)
   w3drs-wasm/       # wasm-bindgen glue — public JS/TS API
 examples/
   khronos-pbr-sample/  # Desktop viewer (winit) — seven Phase A GLB + orbit + IBL
+  phase-b-graph/        # Headless: render graph JSON + checksum (Phase B fixture)
 www/                # Vite project consuming the WASM package
   public/           # Static assets tracked via Git LFS (*.glb, *.gltf, *.bin, *.hdr)
 xtask/              # cargo xtask runner
@@ -57,7 +59,15 @@ cargo xtask www      # build WASM + start Vite dev server (http://localhost:5173
 cargo xtask client   # build + run the native desktop client
 ```
 
-Both commands handle all build steps automatically. `cargo xtask www` also runs `npm install` if `node_modules` is missing.
+Both commands handle all build steps automatically. `cargo xtask www` also runs `npm install` if `node_modules` is missing. On **Windows**, `xtask` appelle **`npm.cmd`** (évite le shim `npm.ps1` bloqué par la politique d’exécution PowerShell). TypeScript (Vitest) dans `www/` : `cd www && npm test` — voir [Testing policy](CONTRIBUTING.md#testing-policy) dans [CONTRIBUTING.md](CONTRIBUTING.md).
+
+#### Windows PowerShell — « Impossible de charger … npm.ps1 »
+
+Si `npm run dev` échoue avec *l’exécution de scripts est désactivée* :
+
+- Depuis la racine du dépôt **`w3drs/`** : **`cargo xtask www`** (recommandé).
+- Ou depuis **`w3drs/www/`** : **`npm.cmd run dev`** (ou **`npm.cmd run build:wasm`**) au lieu de `npm run …`.
+- Alternative : ouvrir **cmd.exe** ou **Git Bash**, ou assouplir la politique pour l’utilisateur : `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (décision locale à votre poste).
 
 The native viewer (`khronos-pbr-sample`) cycles seven reference GLBs from the repo (DamagedHelmet + Phase A fixtures) with **← / →**, orbit camera, and the default HDR `www/public/studio_small_03_2k.hdr` for IBL.
 
@@ -98,7 +108,7 @@ const engine = await W3drsEngine.create('my-canvas');
 
 // Load an equirectangular HDR for image-based lighting (optional, call before load_gltf)
 const hdr = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());
-engine.load_hdr(hdr); // precomputes irradiance 32×32, prefiltered 128×128×5mips, BRDF LUT 256×256
+engine.load_hdr(hdr); // → HdrLoadStats (ms: parse, ibl, env bind) — irradiance / prefilter / BRDF LUT
 
 // Load a GLB at runtime
 const bytes = new Uint8Array(await (await fetch('/model.glb')).arrayBuffer());

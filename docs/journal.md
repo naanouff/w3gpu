@@ -93,8 +93,9 @@
 - `fresnel_schlick_roughness()` pour terme Fresnel indirect
 
 ### API WASM
-- `engine.load_hdr(bytes: Uint8Array) → void` — appelé avant `load_gltf`
-- `www/src/main.ts` : fetch HDR, appel `load_hdr`, puis load_gltf
+- `engine.load_hdr(bytes: Uint8Array) → HdrLoadStats` (`.free()` côté JS) — appelé avant `load_gltf`
+- `www/src/hdrLoadTimings.ts` + `main.ts` : mêmes mesures ; `window.w3drsHdrLoadTimings` (succès) ; **tests** `npm test` (Vitest) ; E2E `npm run test:e2e` (WebGPU, souvent `--headed`) ; chrono HDR WASM = crate **`instant`** avec la feature **`wasm-bindgen`** (sinon l’hôte devrait fournir `env::now` ; pas `std::time::Instant` en wasm32).
+- **Natif** : `khronos-pbr-sample` log `HDR (natif) parse=… ibl=… env_bind=… total=…` au démarrage.
 
 ### Fix rotation casque (damaged_helmet.glb)
 - Le casque était à l'envers → rotation +90° autour de X comme base
@@ -257,7 +258,93 @@ Résultats HTML dans `target/criterion/`.
 
 ---
 
+## Phase A — Parité rendu w3dts (PBR + IBL) — 2026-04
+
+**Objectif roadmap** : [ROADMAP § Phase A](ROADMAP.md) ; ticket [Phase A — PBR + matériaux](tickets/phase-A-pbr-materiaux-gltf.md).
+
+**Réalisé :**
+
+- **`pbr.wgsl`** : recopie fonctionnelle des helpers w3dts (`DistributionGGX`, `GeometrySmith4`, `D_GGX_Anisotropic`, `V_SmithGGXCorrelated_Anisotropic`, `fresnelSchlick*`) et du flux `pbr_master_node` (TBN Gram–Schmidt + handedness, `roughness` 0.04–1, direct `(D·G·F)/(4 NdotV NdotL)` cutout `roughness ≥ 0.999`, IBL bent normal + `mix(R, N, r²)`, `MAX_REFLECTION_LOD = 4`). Clearcoat additif (extension w3drs) en GGX + Smith4. Flags `ibl_flags` / `ibl_diffuse_scale` sur le diffuse IBL.
+- **`ibl.rs`** : intégrale LUT split-sum alignée w3dts `brdf.frag` (visibilité corrélée + poids) ; `BRDF_LUT_SAMPLES = 1024`.
+- **Exemples** : `khronos-pbr-sample`, `w3drs-wasm`, **`hdr-ibl-skybox`** (debug env / IBL, args `--tier` / chemin `.hdr` comme `hdr-ibl-bench`).
+- **CI** : pre-commit `cargo check` natif + wasm32.
+
+**Clôture (2026-04-20)** : Phase A **terminée** pour le périmètre [checklist PBR](tickets/phase-a-pbr-checklist-w3dts.md) + [enregistrement des gates](tickets/phase-a-gates-record.md) (DamagedHelmet, natif + web). **Automatisé** vérifié : `cargo test -p w3drs-assets --test phase_a_fixture`, `cargo test -p w3drs-assets -p w3drs-renderer`, `cargo xtask check` — tous verts. **Suite hors ticket** : golden SSIM **optionnel** ; variantes **JSON/RON** et rigueur transmission (opaque + réfraction) : [Moyen terme — ticket A](tickets/phase-A-pbr-materiaux-gltf.md#moyen-terme--rigueur-pbr--prod) et [ROADMAP § Phase A — Poursuites](ROADMAP.md#phase-a--parité-rendu-moteur-pbr--matériaux--gltf).
+
+**Suite (2026-04-20)** : `materials/default.json` + module `phase_a_viewer_config` : `ibl_diffuse_scale` et `tonemap` lus par `khronos-pbr-sample` (remplace des constantes Rust pour ces paramètres). Même schéma côté **web** : `parse_phase_a_viewer_config_str_or_default`, `W3drsEngine::applyPhaseAViewerConfigJson`, `www/public/phase-a/materials/default.json` chargé au boot dans `www/src/main.ts` (`npm run build:wasm` → `www/pkg/`).
+
+**Suite (2026-04-21)** : extensions **KHR** (*emissive_strength*, *specular*, *transmission*, *volume*) lues côté `gltf` + shader ; **stratégie A1** (WGSL direct) vs **A2** (hors scope court) + **matrice natif / WASM** figées dans [phase-a-pbr-checklist-w3dts](tickets/phase-a-pbr-checklist-w3dts.md) ; [Moyen terme PBR/prod](tickets/phase-A-pbr-materiaux-gltf.md#moyen-terme--rigueur-pbr--prod) (transmission « vraie », sheen, JSON variantes) pour la suite.
+
+**Suite (www — manifeste modèles)** : [`www/public/phase-a/viewer-manifest.json`](../www/public/phase-a/viewer-manifest.json) (ids alignés sur le manifeste `fixtures/`, chemins d’URL Vite) consommé par `www/src/main.ts` — `?m=`, **←/→** si plusieurs entrées ; second modèle léger **TextureTransform** sous `www/public/phase-a/glb/` (aligné `texture_transform_test`) en plus du gate *DamagedHelmet* (`.glb` lourds ailleurs = copie manuelle si besoin).
+
+**Résolution textures IBL** (bake partagé natif / WASM, `ibl.rs` + `ibl_spec.rs`) : par défaut **`ibl_tier`: `max`** = irradiance **128²×6** (1 mip, `Rgba16Float`) · pré-filtré **512²×6** (**10** mips, `Rgba16Float`) · LUT BRDF **256²** (`Rg16Float`). Autres préréglages **`high` / `medium` / `low` / `min`** (tailles décroissantes) — voir [checklist Phase A](tickets/phase-a-pbr-checklist-w3dts.md) (section *Préréglages ibl_tier*). Bench : `cargo run -p hdr-ibl-bench --release -- --tier=…`.
+
+**Mesures charge HDR** (`www/public/studio_small_03_2k.hdr`, **session 2026-04-23**, Windows, build **--release**) :
+
+| Outil | parse (ms) | IBL bake (ms) | env_bind (ms) | total cœur (ms) | Remarque |
+|-------|------------|---------------|---------------|-----------------|----------|
+| `cargo run -p hdr-ibl-bench --release -- --tier=max` | 16.12 | 9818.54 | — | 9834.66 | Binaire headless, pas de bind group (`load_hdr` + `IblContext::from_hdr_with_spec`, tier **max**) |
+| `khronos-pbr-sample` (stderr + log) | 19.7 | 9281.8 | 0.1 | 9301.6 | Intégré (chaîne env complète) ; l’écart IBL vs bench = charge machine / ordre d’exécution sur la même session |
+| `www` + `w3drs-wasm` (console) — *mesure contributeur* | 39.93 | 120515.46 | 0.03 | 120555.42 | Même binaire `studio_small_03_2k` (~6,67 Mo) : `clientFetch+Buffer=37,47` ms, mur appel `load_hdr` = `clientWasmCallWallMs` **120559** ms. Le bake IBL côté WASM est **bien plus lent** qu’en natif sur la même plage d’environnements (navigateur : JS/WASM, thread unique pour le cœur CPU) — *ordre de grandeur* utile, pas chrono labo. |
+
+**Grille `hdr-ibl-bench` par `ibl_tier`** (même fichier HDR, **session 2026-04-20**, Windows **--release**, une passe par tier) :
+
+| `ibl_tier` | parse (ms) | IBL bake (ms) | core (ms) |
+|------------|------------|---------------|-----------|
+| `min` | 24.55 | 31.72 | 56.27 |
+| `low` | 26.79 | 187.09 | 213.88 |
+| `medium` | 17.27 | 671.68 | 688.95 |
+| `high` | 19.04 | 4509.18 | 4528.22 |
+| `max` | 16.08 | 9456.87 | 9472.95 |
+
+- **Rejouer** le bench : `cargo run -p hdr-ibl-bench --release -- --tier=max` (chemin `.hdr` optionnel après les options ; `-t` / `--tier`). Le **natif** affiche `HDR (natif) …` sur **stderr** au boot. **WASM** : `ibl_tier` dans `phase-a/materials/default.json` + rechargement page ; console `[w3drs] HDR timing` / `w3drsHdrLoadTimings`. **Exemple fenêtré** : `cargo run -p hdr-ibl-skybox --release -- --tier=low` (mêmes args que le bench).
+
+---
+
+## Phase B — Graphe de rendu (jalon v0) — 2026-04
+
+**Objectif** : [ROADMAP § Phase B](ROADMAP.md) ; ticket [Phase B — graphe & compute](tickets/phase-B-graphe-rendu-compute.md).
+
+**Réalisé** :
+
+- Schéma : [`docs/schemas/render-graph-v0.md`](schemas/render-graph-v0.md).
+- Fixture : [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/) (`render_graph.json`, WGSL compute + raster minimal, `expected.md`, README).
+- Crate **`w3drs-render-graph`** : `parse_render_graph_json` + validation + tests parse.
+- **Natif** : `w3drs-renderer` → module **`render_graph_exec`** (`run_graph_v0_checksum` : passes du JSON, readback `Rgba16Float`, FNV-1a 64) ; test d’intégration **`phase_b_graph_exec`** (deux soumissions → même checksum ; skip si pas d’adaptateur GPU).
+- **B.1 (registre GPU)** : [`RenderGraphGpuRegistry`](../crates/w3drs-renderer/src/render_graph_exec.rs) — textures / buffers nommés depuis le JSON, `resize_texture_2d`, `run_graph_v0_checksum_with_registry` ; tests étendus [`phase_b_graph_exec`](../crates/w3drs-renderer/tests/phase_b_graph_exec.rs).
+- **B.2 (pré-barrières)** : `validate_exec_v0` étendu — `texture_reads` / `storage_writes` sur les passes `compute` (optionnel JSON), contrôle des usages `render_attachment` / `texture_binding` / `storage` vs références des passes, interdiction des doublons dans `color_targets`, `depth_target` + formats depth ; `pass_ids_in_order_v0` ; erreurs mappées côté `RenderGraphExecError` (natif). **Exécuteur** : `raster_mesh` attache `depth_target` (fixture `scene_depth` + sync `www/public/phase-b/`). Schéma : [render-graph-v0.md](schemas/render-graph-v0.md) ; ticket [Phase B](tickets/phase-B-graphe-rendu-compute.md).
+
+**Suite (validation)** : `validate_render_graph_exec_v0` (sans GPU) + tests d’erreur `RenderGraphExecError` ; `Rgba8Unorm` autorisé pour textures non-readback ; readback checksum = **`Rgba16Float`** uniquement (`InvalidReadbackFormat`).
+
+**Suite (WASM / partage)** : `validate_exec_v0` déplacé dans **`w3drs-render-graph`** (sans `wgpu`) ; export **`w3drsValidateRenderGraphV0`** dans le paquet `www/pkg` ; `w3drs-renderer` réexporte `validate_exec_v0` + `RenderGraphValidateError` (natif).
+
+**Exemple CLI** : `cargo run -p phase-b-graph --release` — charge `fixtures/phases/phase-b/render_graph.json` (+ `shaders/`), valide, affiche le **checksum** (stderr).
+
+**Web** : `www/public/phase-b/` (JSON + WGSL copiés du fixture) + `main.ts` → `w3drsValidateRenderGraphV0` au chargement (smoke aligné natif).
+
+**Suite** : bindings / barrières génériques, fusion avec le viewer PBR, exécuteur GPU WASM. **Plan détaillé (jalons B.1–B.6)** : [Phase B — *Plan d’exécution*](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) ; [schéma render-graph v0 — feuille de route](schemas/render-graph-v0.md#feuille-de-route--exécuteur-complet-parité-moteur-objectif-w3dts).
+
+---
+
+## Documentation — port 1:1, gates Phase A, plan Phase B (2026-04-24)
+
+**Contexte** : cadrer l’**intention produit** d’un **port 1:1** w3dts → w3drs (équivalence **fonctionnelle** par domaine, exceptions d’implémentation explicites) et consigner la **procédure** pour les gates Phase A (désormais **clôturés** — voir [phase-a-gates-record.md](tickets/phase-a-gates-record.md)) et la suite Phase B.
+
+**Réalisé (doc + règles)** :
+
+- [ROADMAP](ROADMAP.md) : section *Port 1:1 — définition et exceptions acceptables* (table moteur / `.w3db` / éditeur / périmètre) ; objectif d’accroche réécrit en tête de document.
+- [tickets/README.md](tickets/README.md) : lien vers cette section pour les revues *parité*.
+- [`.cursor/rules/w3drs-w3dts-migration.mdc`](../.cursor/rules/w3drs-w3dts-migration.mdc) : règle alignée sur l’intention 1:1.
+- [phase-a-gates-record.md](tickets/phase-a-gates-record.md) : modèle d’**enregistrement** pour les *gates* visuels (natif + web) ; [phase-a-pbr-checklist-w3dts.md](tickets/phase-a-pbr-checklist-w3dts.md) : renvoi *Enregistrement DOD* ; [phase-A-pbr-materiaux-gltf.md](tickets/phase-A-pbr-materiaux-gltf.md) : DOD liée aux gates.
+- [phase-B-graphe-rendu-compute.md](tickets/phase-B-graphe-rendu-compute.md) : *Plan d’exécution* (B.0–B.6) + statut ; [render-graph-v0.md](schemas/render-graph-v0.md) : *Feuille de route* exécuteur complet.
+- [ROADMAP](ROADMAP.md) *Barre de progression* : note de **révision 2026-04-24** (mise à jour textuelle sans recalcul de pourcentage).
+
+**Suite** : ~~emplir phase-a-gates-record~~ **fait** (clôture Phase A 2026-04-20) ; implémenter jalons Phase B (B.1→) côté code.
+
+---
+
 ## À venir
 
-- **Phase 6** : Éditeur multi-mode (Design / Debug / Ship)
-- **Phase 7** : SaaS bridge + Cloud compute
+- **Phase A** : ~~clôture~~ **terminée** (2026-04-20) — [phase-a-gates-record.md](tickets/phase-a-gates-record.md), [ticket A](tickets/phase-A-pbr-materiaux-gltf.md) **Terminée**
+- **Phase B** : [plan B.1–B.6](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) (registre, barrières, viewer, WASM, ECS)
+- **ROADMAP** : Phase K (éditeur / workspace) — voir [ROADMAP.md](ROADMAP.md)

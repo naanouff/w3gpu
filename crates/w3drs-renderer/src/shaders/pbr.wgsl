@@ -42,7 +42,7 @@ struct UvTransform {
 
 struct MaterialUniforms {
     albedo:    vec4<f32>,
-    emissive:  vec4<f32>,
+    emissive:  vec4<f32>, // rgb + emissive_strength (w)
     metallic:  f32,
     roughness: f32,
     anisotropy_strength: f32,
@@ -51,7 +51,12 @@ struct MaterialUniforms {
     clearcoat_factor:     f32,
     clearcoat_roughness:  f32,
     _pad_main: f32,
-    uv_transforms: array<UvTransform, 7>,
+    khr0:       vec4<f32>, // transmission, thickness, atten dist, specular factor
+    khr1:       vec4<f32>, // specular color factor + 0
+    khr2:       vec4<f32>, // attenuation color + 0
+    khr_flags:  u32,
+    _kf0: u32, _kf1: u32, _kf2: u32,
+    uv_transforms: array<UvTransform, 11>,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -65,6 +70,10 @@ struct MaterialUniforms {
 @group(2) @binding(6) var clearcoat_tex:        texture_2d<f32>;
 @group(2) @binding(7) var clearcoat_rough_tex:  texture_2d<f32>;
 @group(2) @binding(8) var mat_sampler:          sampler;
+@group(2) @binding(9)  var trans_tex:     texture_2d<f32>;
+@group(2) @binding(10) var specular_tex:  texture_2d<f32>;
+@group(2) @binding(11) var spec_color_tex: texture_2d<f32>;
+@group(2) @binding(12) var thick_tex:     texture_2d<f32>;
 
 @group(3) @binding(0) var irradiance_map:  texture_cube<f32>;
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
@@ -233,7 +242,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo    = material.albedo.rgb * albedo_sample.rgb * in.color.rgb;
     let metallic  = material.metallic  * mr_sample.b;
     let roughness = clamp(material.roughness * mr_sample.g, 0.04, 1.0);
-    let emissive  = material.emissive.rgb * emit_sample.rgb;
+    let emissive  = material.emissive.rgb * emit_sample.rgb * material.emissive.w;
 
     let normal_sample = textureSample(normal_tex, mat_sampler, uv_n).xyz;
     let n_tangent = normalize(normal_sample * 2.0 - vec3<f32>(1.0));
@@ -291,8 +300,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let at = max(at0, 1e-4);
     let ab = max(ab0, 1e-4);
 
-    // ── Direct (w3dts §5, une lumière directionnelle) ─────────────────────────
-    let f0 = mix(dielectric_f0_from_ior(material.ior), albedo, metallic);
+    // ── KHR `specular` F0 (diélectrique) + Direct (w3dts §5) ─────────────────
+    var f0_dielec = dielectric_f0_from_ior(material.ior);
+    if ((material.khr_flags & 1u) != 0u) {
+        let uv_sp = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[8u]);
+        let uv_sc = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[9u]);
+        let s_w = material.khr0.w * textureSample(specular_tex, mat_sampler, uv_sp).a;
+        let c_tex = textureSample(spec_color_tex, mat_sampler, uv_sc).rgb;
+        f0_dielec = min(material.khr1.xyz * c_tex * s_w, vec3<f32>(1.0));
+    }
+    let f0 = mix(f0_dielec, albedo, metallic);
     let NdotL = max(dot(N, L), 0.0);
     var specular_base = vec3<f32>(0.0);
     var diffuse_direct = vec3<f32>(0.0);
@@ -400,8 +417,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         cc_rough_eff >= 0.999,
     );
 
-    let ambient = diffuseIBL_surf + specularIBL + spec_ibl_coat;
-    let color = ambient + direct + emissive;
+    var ambient = diffuseIBL_surf + specularIBL + spec_ibl_coat;
+    // KHR transmission + volume (approx. IBL « à travers » + Beer)
+    // Pas de branchement sur des valeurs issues d’un `textureSample` (WGSL: flux de contrôle uniforme).
+    if ((material.khr_flags & 2u) != 0u) {
+        let uv_t = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[7u]);
+        let t_amt = material.khr0.x * textureSample(trans_tex, mat_sampler, uv_t).r;
+        var att = vec3<f32>(1.0);
+        if ((material.khr_flags & 4u) != 0u) {
+            let uv_tk = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[10u]);
+            let th = max(material.khr0.y * textureSample(thick_tex, mat_sampler, uv_tk).g, 0.0);
+            let d = max(material.khr0.z, 0.0001);
+            att = exp(-(th / d) * (vec3<f32>(1.0) - material.khr2.xyz));
+        }
+        let t_mix = t_amt * (1.0 - metallic);
+        let behind = textureSampleLevel(
+            prefiltered_map,
+            ibl_sampler,
+            -R_vec,
+            roughness * MAX_REFLECTION_LOD,
+        ).rgb;
+        let w = min(max(t_mix, 0.0), 1.0);
+        ambient = ambient * (1.0 - w) + behind * albedo * att * w;
+    }
 
+    let color = ambient + direct + emissive;
     return vec4<f32>(color, material.albedo.a * albedo_sample.a);
 }

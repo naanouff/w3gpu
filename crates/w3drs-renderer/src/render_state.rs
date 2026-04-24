@@ -63,7 +63,7 @@ impl RenderState {
                 }],
             });
 
-        // Group 2: uniform + 7 textures (albedo, normal, MR, emissive, anisotropy, clearcoat×2) + sampler.
+        // Group 2: uniform + 11 textures (… + transmission, specular×2, thickness) + sampler.
         let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -105,6 +105,10 @@ impl RenderState {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    tex_entry(9),  // KHR transmission (R)
+                    tex_entry(10), // KHR specular (A)
+                    tex_entry(11), // KHR specular color (sRGB)
+                    tex_entry(12), // KHR volume thickness (G)
                 ],
             });
 

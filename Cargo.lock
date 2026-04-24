@@ -946,6 +946,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
 
 [[package]]
+name = "hdr-ibl-bench"
+version = "0.1.0"
+dependencies = [
+ "pollster",
+ "w3drs-assets",
+ "w3drs-renderer",
+ "wgpu",
+]
+
+[[package]]
 name = "hdr-ibl-skybox"
 version = "0.1.0"
 dependencies = [
@@ -1009,6 +1019,18 @@ name = "inflections"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
+
+[[package]]
+name = "instant"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "is-terminal"
@@ -1689,6 +1711,15 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "phase-b-graph"
+version = "0.1.0"
+dependencies = [
+ "pollster",
+ "w3drs-renderer",
+ "wgpu",
+]
 
 [[package]]
 name = "pin-project"
@@ -2456,6 +2487,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "w3drs-render-graph"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "w3drs-renderer"
 version = "0.1.0"
 dependencies = [
@@ -2469,6 +2509,7 @@ dependencies = [
  "w3drs-assets",
  "w3drs-ecs",
  "w3drs-math",
+ "w3drs-render-graph",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2483,11 +2524,13 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "glam",
+ "instant",
  "js-sys",
  "log",
  "w3drs-assets",
  "w3drs-ecs",
  "w3drs-math",
+ "w3drs-render-graph",
  "w3drs-renderer",
  "wasm-bindgen",
  "wasm-bindgen-futures",

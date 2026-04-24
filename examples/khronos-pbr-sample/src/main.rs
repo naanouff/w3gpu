@@ -2,7 +2,10 @@ use glam::{Vec3, Vec4};
 use pollster::FutureExt;
 use std::mem::size_of;
 use std::path::PathBuf;
-use w3drs_assets::{load_from_bytes, load_hdr_from_bytes, GltfPrimitive, Material};
+use w3drs_assets::{
+    load_from_bytes, load_hdr_from_bytes, load_phase_a_viewer_config_or_default, GltfPrimitive,
+    Material, PhaseAViewerConfig,
+};
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
@@ -10,8 +13,8 @@ use w3drs_ecs::{
 use w3drs_renderer::{
     build_entity_list, camera_system, derive_shadow_batches, transform_system, AssetRegistry,
     BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms,
-    GpuContext, HdrTarget, HizPass, IblContext, LightUniforms, MaterialTextures, PostProcessPass,
-    RenderState, ShadowPass, TonemapParams, MAX_CULL_ENTITIES,
+    GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures,
+    PostProcessPass, RenderState, ShadowPass, TonemapParams, MAX_CULL_ENTITIES,
 };
 use winit::{
     application::ApplicationHandler,
@@ -228,6 +231,8 @@ struct State {
     window: Window,
     context: GpuContext,
     render_state: RenderState,
+    /// `fixtures/phases/phase-a/materials/default.json` (data-driven, Phase A).
+    phase_a_viewer: PhaseAViewerConfig,
     asset_registry: AssetRegistry,
     #[allow(dead_code)]
     ibl_context: IblContext,
@@ -293,24 +298,78 @@ impl State {
         // ── Shadow pass ───────────────────────────────────────────────────────
         let shadow_pass = ShadowPass::new(&context.device, &render_state.instance_bg_layout);
 
-        // ── IBL (HDR par défaut, même fichier que `www/`) ─────────────────────
         let workspace = workspace_root();
-        let ibl_context = match std::fs::read(workspace.join("www/public/studio_small_03_2k.hdr")) {
-            Ok(bytes) => match load_hdr_from_bytes(&bytes) {
-                Ok(hdr) => IblContext::from_hdr(&hdr, &context.device, &context.queue),
-                Err(e) => {
-                    log::warn!("HDR parse failed ({e})");
-                    IblContext::new_default(&context.device, &context.queue)
+        let phase_a_viewer = load_phase_a_viewer_config_or_default(
+            &workspace.join("fixtures/phases/phase-a/materials/default.json"),
+        );
+        let pav = phase_a_viewer.active_settings();
+        let ibl_tier = pav.ibl_tier.clone();
+        let ibl_spec = IblGenerationSpec::from_tier_name(ibl_tier.as_str());
+        let tonemap_cfg = pav.tonemap.as_ref();
+        let tonemap_exposure = tonemap_cfg.map(|t| t.exposure).unwrap_or(1.0);
+        let tonemap_bloom = if VIEWER_FULL_BLOOM_POST {
+            tonemap_cfg.map(|t| t.bloom_strength).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        // ── IBL (HDR par défaut, même fichier que `www/`, mesures alignées WASM) ─
+        let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
+        let mut hdr_ok = false;
+        let mut hdr_parse_ms = 0.0f64;
+        let mut hdr_ibl_ms = 0.0f64;
+        let ibl_context = match std::fs::read(&hdr_path) {
+            Ok(bytes) => {
+                let t_parse = std::time::Instant::now();
+                match load_hdr_from_bytes(&bytes) {
+                    Ok(hdr) => {
+                        hdr_parse_ms = t_parse.elapsed().as_secs_f64() * 1e3;
+                        let t_ibl = std::time::Instant::now();
+                        let ctx = IblContext::from_hdr_with_spec(
+                            &hdr,
+                            &context.device,
+                            &context.queue,
+                            &ibl_spec,
+                        );
+                        hdr_ibl_ms = t_ibl.elapsed().as_secs_f64() * 1e3;
+                        hdr_ok = true;
+                        ctx
+                    }
+                    Err(e) => {
+                        log::warn!("HDR parse failed ({e})");
+                        IblContext::new_default(&context.device, &context.queue)
+                    }
                 }
-            },
+            }
             Err(_) => IblContext::new_default(&context.device, &context.queue),
         };
+        let t_env = std::time::Instant::now();
         let env_bind_group = build_env_bind_group(
             &context.device,
             &render_state.ibl_bg_layout,
             &ibl_context,
             &shadow_pass,
         );
+        let hdr_env_bind_ms = t_env.elapsed().as_secs_f64() * 1e3;
+        if hdr_ok {
+            let total = hdr_parse_ms + hdr_ibl_ms + hdr_env_bind_ms;
+            eprintln!(
+                "HDR (natif) parse={:.1}ms ibl={:.1}ms env_bind={:.1}ms total={:.1}ms ({})",
+                hdr_parse_ms,
+                hdr_ibl_ms,
+                hdr_env_bind_ms,
+                total,
+                hdr_path.display()
+            );
+            log::info!(
+                "HDR (natif) parse={:.1}ms ibl={:.1}ms env_bind={:.1}ms total={:.1}ms ({})",
+                hdr_parse_ms,
+                hdr_ibl_ms,
+                hdr_env_bind_ms,
+                total,
+                hdr_path.display()
+            );
+        }
 
         // ── Hi-Z + cull passes ────────────────────────────────────────────────
         let mut hiz_pass = HizPass::new(
@@ -340,8 +399,8 @@ impl State {
                 _pad1: 0.0,
             },
             TonemapParams {
-                exposure: 1.0,
-                bloom_strength: 0.0,
+                exposure: tonemap_exposure,
+                bloom_strength: tonemap_bloom,
                 flags: TonemapParams::FLAG_SKIP_FXAA,
                 _pad1: 0.0,
             },
@@ -361,6 +420,7 @@ impl State {
             window,
             context,
             render_state,
+            phase_a_viewer,
             asset_registry,
             ibl_context,
             shadow_pass,
@@ -494,6 +554,46 @@ impl State {
                     )
                 }),
                 clearcoat_roughness: prim.clearcoat_roughness_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                transmission: prim.transmission_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                specular: prim.specular_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                specular_color: prim.specular_color_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        true,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                thickness: prim.thickness_image.as_ref().map(|img| {
                     self.asset_registry.upload_texture_rgba8(
                         &img.data,
                         img.width,
@@ -671,7 +771,11 @@ impl State {
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
-            bytemuck::bytes_of(&build_frame_uniforms(&self.world, self.total_time)),
+            bytemuck::bytes_of(&build_frame_uniforms(
+                &self.world,
+                self.total_time,
+                &self.phase_a_viewer,
+            )),
         );
         self.shadow_pass
             .update_light(&self.context.queue, &build_light_uniforms());
@@ -907,7 +1011,11 @@ fn build_light_uniforms() -> LightUniforms {
     }
 }
 
-fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
+fn build_frame_uniforms(
+    world: &World,
+    total_time: f32,
+    phase_a: &PhaseAViewerConfig,
+) -> FrameUniforms {
     let (view, projection, cam_pos) = world
         .query_entities::<CameraComponent>()
         .into_iter()
@@ -943,7 +1051,7 @@ fn build_frame_uniforms(world: &World, total_time: f32) -> FrameUniforms {
         light_view_proj: light.view_proj,
         shadow_bias: light.shadow_bias,
         ibl_flags: 0,
-        ibl_diffuse_scale: 1.0,
+        ibl_diffuse_scale: phase_a.ibl_diffuse_scale(),
         _pad3: 0.0,
     }
 }

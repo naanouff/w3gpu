@@ -18,7 +18,7 @@
 **Règle projet** : tout code **Rust** et **TypeScript** qui entre dans le dépôt (hors fichiers de config purement déclaratifs, ex. `vite.config.ts` sans logique) doit être **exercé par des tests** de façon que **chaque ligne** de ce code soit atteinte au moins une fois lors de l’exécution de la suite (objectif **couverture ligne / branche** sur le code nouveau ou modifié ; en revue de PR, refuser les chemins non couverts).
 
 - **Rust** : tests unitaires et d’intégration dans les crates (`#[cfg(test)]`, `tests/*.rs`), `cargo llvm-cov` ou `cargo tarpaulin` recommandés pour mesurer la couverture sur les crates applicables.
-- **TypeScript** (`www/`, outillage TS) : tests avec **Vitest** (recommandé, à ajouter au `package.json` si absent) ou framework TS équivalent, avec la même exigence sur les chemins modifiés.
+- **TypeScript** (`www/`, outillage TS) : exécution **`cd www && npm test`** (Vitest). E2E navigateur optionnelle : **`cd www && npm run test:e2e`** (Playwright) — ex. scène HDR réelle (`www/e2e/`), le plus souvent en **`--headed`** quand `navigator.gpu` n’est pas disponible en headless. Même exigence de couverture des chemins modifiés.
 
 Les **bindings WASM** comptent comme Rust **et** surface TS : les deux côtés doivent avoir des tests (Rust côté `w3drs-wasm`, TS côté `www/`).
 

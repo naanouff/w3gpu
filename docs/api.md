@@ -31,7 +31,14 @@ engine.upload_material(r, g, b, a, metallic, roughness, er, eg, eb): number   //
 engine.load_gltf(bytes: Uint8Array): number[]
 
 // Assets — IBL (appeler avant load_gltf pour meilleur rendu)
-engine.load_hdr(bytes: Uint8Array): void
+// Renvoie HdrLoadStats (parse + IBL + env_bind, en ms) ; appeler .free() sur l’objet côté JS.
+engine.load_hdr(bytes: Uint8Array): HdrLoadStats
+HdrLoadStats.parse_ms(): number
+HdrLoadStats.ibl_ms(): number
+HdrLoadStats.env_bind_ms(): number
+HdrLoadStats.total_ms(): number
+HdrLoadStats.free(): void
+// Mesures fetch + détail : module `www/src/hdrLoadTimings.ts` (`loadHdrWithTimings`) — testé par `cd www && npm test`.
 
 // Boucle de rendu
 engine.tick(delta_time: number): void   // dt en secondes
@@ -45,8 +52,9 @@ await init();
 const engine = await W3drsEngine.create('my-canvas');
 
 // IBL optionnel
-const hdr = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());
-engine.load_hdr(hdr);
+const buf = new Uint8Array(await (await fetch('/env.hdr')).arrayBuffer());
+const hdrStats = engine.load_hdr(buf);
+hdrStats.free();
 
 // GLB
 const glb = new Uint8Array(await (await fetch('/model.glb')).arrayBuffer());

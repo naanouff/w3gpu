@@ -187,6 +187,6 @@ impl CullPass {
         cp.set_pipeline(&self.pipeline);
         cp.set_bind_group(0, &self.cull_bg, &[]);
         cp.set_bind_group(1, hiz_bg, &[]);
-        cp.dispatch_workgroups((entity_count + 63) / 64, 1, 1);
+        cp.dispatch_workgroups(entity_count.div_ceil(64), 1, 1);
     }
 }

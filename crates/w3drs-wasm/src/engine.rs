@@ -1,5 +1,8 @@
 use glam::{Mat4, Quat, Vec3, Vec4};
-use w3drs_assets::{load_from_bytes, load_hdr_from_bytes, primitives, Material};
+use w3drs_assets::{
+    load_from_bytes, load_hdr_from_bytes, parse_phase_a_viewer_config_str_or_default, primitives,
+    Material, PhaseAVariant, PhaseAViewerConfig,
+};
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
@@ -8,9 +11,46 @@ use w3drs_renderer::{
     build_entity_list, camera_system, derive_shadow_batches, frustum_culling_system,
     transform_system, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
     DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass, IblContext,
-    LightUniforms, MaterialTextures, PostProcessPass, RenderState, ShadowPass, TonemapParams,
+    IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass, RenderState, ShadowPass,
+    TonemapParams,
 };
+use instant::Instant;
 use wasm_bindgen::prelude::*;
+
+/// Temps côté WASM le long du chemin `load_hdr` (millisecondes).
+#[wasm_bindgen]
+pub struct HdrLoadStats {
+    parse_ms: f64,
+    ibl_ms: f64,
+    env_bind_ms: f64,
+}
+
+#[wasm_bindgen]
+impl HdrLoadStats {
+    /// Décode fichier Radiance (`.hdr`) en pixels linéaires (`image`).
+    pub fn parse_ms(&self) -> f64 {
+        self.parse_ms
+    }
+
+    /// Génération irradiance + pré-filtre + (interne IBL) sur le GPU/CPU côté renderer.
+    pub fn ibl_ms(&self) -> f64 {
+        self.ibl_ms
+    }
+
+    /// Reconstruction `env_bind_group` (textures IBL lues par le PBR + ombres).
+    pub fn env_bind_ms(&self) -> f64 {
+        self.env_bind_ms
+    }
+
+    /// Somme des étapes `parse` + `ibl` + `env_bind` (hors `fetch` réseau / copie côté JS).
+    pub fn total_ms(&self) -> f64 {
+        self.parse_ms + self.ibl_ms + self.env_bind_ms
+    }
+}
+
+fn elapsed_ms(t0: Instant) -> f64 {
+    t0.elapsed().as_secs_f64() * 1000.0
+}
 
 #[wasm_bindgen]
 pub struct W3drsEngine {
@@ -28,9 +68,11 @@ pub struct W3drsEngine {
     post_process: PostProcessPass,
     cull_enabled: bool,
     total_time: f32,
+    phase_a_viewer: PhaseAViewerConfig,
 }
 
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)] // flat scalars for JS interop
 impl W3drsEngine {
     pub async fn create(canvas_id: &str) -> Result<W3drsEngine, JsValue> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -77,6 +119,7 @@ impl W3drsEngine {
         let mut cull_pass = CullPass::new(&context.device);
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
+        let phase_a_viewer = PhaseAViewerConfig::default();
         let hdr_target = HdrTarget::new(&context.device, width, height);
         let post_process = PostProcessPass::new(
             &context.device,
@@ -90,12 +133,7 @@ impl W3drsEngine {
                 _pad0: 0.0,
                 _pad1: 0.0,
             },
-            TonemapParams {
-                exposure: 1.0,
-                bloom_strength: 0.04,
-                flags: 0,
-                _pad1: 0.0,
-            },
+            tonemap_params_for_phase_a_variant(&phase_a_viewer.active_settings()),
         );
 
         let mut scheduler = Scheduler::new();
@@ -119,7 +157,18 @@ impl W3drsEngine {
             post_process,
             cull_enabled: true,
             total_time: 0.0,
+            phase_a_viewer,
         })
+    }
+
+    /// Applique le même JSON que `fixtures/phases/phase-a/materials/*.json` (variante + `ibl_diffuse_scale` + `tonemap`).
+    #[wasm_bindgen(js_name = applyPhaseAViewerConfigJson)]
+    pub fn apply_phase_a_viewer_config_json(&mut self, json: &str) {
+        self.phase_a_viewer = parse_phase_a_viewer_config_str_or_default(json);
+        self.post_process.update_tonemap_params(
+            &self.context.queue,
+            tonemap_params_for_phase_a_variant(&self.phase_a_viewer.active_settings()),
+        );
     }
 
     // ── entity API ────────────────────────────────────────────────────────────
@@ -282,6 +331,46 @@ impl W3drsEngine {
                         &self.context.queue,
                     )
                 }),
+                transmission: prim.transmission_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                specular: prim.specular_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                specular_color: prim.specular_color_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        true,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                thickness: prim.thickness_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
             };
             let mat_id = self.asset_registry.upload_material(
                 &prim.material,
@@ -295,16 +384,36 @@ impl W3drsEngine {
         Ok(ids)
     }
 
-    pub fn load_hdr(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+    pub fn load_hdr(&mut self, bytes: &[u8]) -> Result<HdrLoadStats, JsValue> {
+        let t_parse = Instant::now();
         let hdr = load_hdr_from_bytes(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        self.ibl_context = IblContext::from_hdr(&hdr, &self.context.device, &self.context.queue);
+        let parse_ms = elapsed_ms(t_parse);
+
+        let t_ibl = Instant::now();
+        let spec = IblGenerationSpec::from_tier_name(
+            &self.phase_a_viewer.active_settings().ibl_tier,
+        );
+        self.ibl_context =
+            IblContext::from_hdr_with_spec(&hdr, &self.context.device, &self.context.queue, &spec);
+        let ibl_ms = elapsed_ms(t_ibl);
+
+        let t_env = Instant::now();
         self.env_bind_group = build_env_bind_group(
             &self.context.device,
             &self.render_state.ibl_bg_layout,
             &self.ibl_context,
             &self.shadow_pass,
         );
-        Ok(())
+        let env_bind_ms = elapsed_ms(t_env);
+        let total = parse_ms + ibl_ms + env_bind_ms;
+        log::info!(
+            "HDR/WASM: parse={parse_ms:.1}ms ibl={ibl_ms:.1}ms env_bind={env_bind_ms:.1}ms total={total:.1}ms"
+        );
+        Ok(HdrLoadStats {
+            parse_ms,
+            ibl_ms,
+            env_bind_ms,
+        })
     }
 
     // ── culling API ───────────────────────────────────────────────────────────
@@ -590,7 +699,7 @@ impl W3drsEngine {
             light_view_proj: light.view_proj,
             shadow_bias: light.shadow_bias,
             ibl_flags: 0,
-            ibl_diffuse_scale: 1.0,
+            ibl_diffuse_scale: self.phase_a_viewer.ibl_diffuse_scale(),
             _pad3: 0.0,
         }
     }
@@ -639,6 +748,17 @@ impl W3drsEngine {
 }
 
 // ── module-level helpers ──────────────────────────────────────────────────────
+
+fn tonemap_params_for_phase_a_variant(v: &PhaseAVariant) -> TonemapParams {
+    let exposure = v.tonemap.as_ref().map(|t| t.exposure).unwrap_or(1.0);
+    let bloom_strength = v.tonemap.as_ref().map(|t| t.bloom_strength).unwrap_or(0.0);
+    TonemapParams {
+        exposure,
+        bloom_strength,
+        flags: 0,
+        _pad1: 0.0,
+    }
+}
 
 fn transform_aabb(mat: &Mat4, local_min: Vec3, local_max: Vec3) -> (Vec3, Vec3) {
     let corners = [

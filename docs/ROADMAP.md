@@ -1,8 +1,24 @@
 # Roadmap w3drs — alignement sur w3dts (version Rust « prod »)
 
-> **Objectif** : porter le **concept fonctionnel** de **w3dts** (moteur WebGPU pédagogique TypeScript) vers **w3drs** : moteur **Rust** ciblant **stabilité**, **performances** et **production** (navigateur WASM + natif), sans recopier ligne pour ligne l’UI React de l’éditeur — mais en couvrant les **mêmes capacités runtime** là où c’est pertinent.
+> **Objectif** : porter le **monorepo de référence w3dts** (moteur WebGPU, packages autour) vers **w3drs** de façon **1:1** au sens **produit** : chaque **domaine** que w3dts couvre (moteur, chargement, graphes, animation, outillage, plateforme, etc.) doit trouver un **équivalent w3drs** avec le **même comportement observable** (mêmes scènes de test / gates de validation possibles), l’implémentation étant en **Rust** (WASM + natif), **multithread** où c’est permis, et **data-driven** par défaut.
 
-**Référence** : périmètre et jalons w3dts documentés dans le dépôt voisin `w3dts/` (readme, `work in progress/roadmap.md`, plans par domaine : hybrid renderer, audio, input, animation, GPROC, etc.). Les formats de scène **SceneDD** / **scenepak** de w3dts ne sont **pas** repris tels quels : voir **format `.w3db`** ci-dessous.
+> Ce qu’un port **1:1** n’exige **pas** : recopie **ligne à ligne** du TypeScript, ni le même **framework UI** (React) pour l’éditeur. Ce qu’il exige : **équivalence fonctionnelle** domaine par domaine ; les exceptions d’**implémentation** (fichier sur disque, stack UI) restent explicites ci-dessous pour éviter toute ambiguïté avec w3dts.
+
+**Référence** : périmètre et jalons w3dts documentés dans le dépôt voisin `w3dts/` (readme, `work in progress/roadmap.md`, plans par domaine : hybrid renderer, audio, input, animation, GPROC, etc.).
+
+## Port 1:1 — définition et exceptions acceptables
+
+Cette section **fige l’intention produit** ; les tickets de phase (A–L) et le [README tickets](tickets/README.md) s’y alignent.
+
+| Sujet | Règle 1:1 | Exception ou traduction w3drs |
+|-------|-----------|----------------------------------|
+| **Moteur runtime** (PBR, ECS, render graph, loaders, etc.) | Comportement aligné w3dts sur les mêmes jeux d’essai / checklists (ex. [Phase A checklist](tickets/phase-a-pbr-checklist-w3dts.md)) | API Rust / `wgpu` / ECS SoA : non comparables en syntaxe, **oui** en résultat |
+| **Format projet / scène packagée** | Même *rôle* : un artefact de projet prêt exécution, streaming, validation | **`.w3db`** (binaire versionné) remplace **SceneDD** / **scenepak** *on-wire* : **équivalent de rôle** (1:1 fonctionnel, pas 1:1 octets) — voir [Phase D](#phase-d--format-w3db--streaming-remplace-scenedd--scenepak) |
+| **Viewer / éditeur** | Même *flux* auteur : ouvrir projet, éditer, lancer, déboguer, extensions | **Éditeur natif** + **workspace** + shell **`www/`** allégé (pas *clone* de l’UI React) — exigence de **même couverture de tâches** cible, pas *mêmes écrans pixel pour pixel* — [Phase K](#phase-k--éditeur-natif-workspaces-extensions--dx-développeur) |
+| **Multithreading** | w3drs doit exploiter le parallélisme (ECS, jobs) là où w3dts restait souvent **mono-thread** JS | Considéré comme **dépassement** (axe *bonus* dans la barre de progression), **pas** comme entorse au 1:1 fonctionnel |
+| **Périmètre** | Par défaut : l’**ensemble** des plans / packages w3dts pertinents pour le produit, sauf renoncement explicite ailleurs (README, priorisation) | Découpage par **phases A–L** (sections ci-dessous) : clôture **mesurable** (DOD) par domaine |
+
+En cas de conflit entre une note ancienne et cette section, **cette section prévaut** pour l’**intention** ; les phases restent la feuille de route d’**exécution**.
 
 ---
 
@@ -70,7 +86,7 @@ Référence : [README.md](../README.md), [journal.md](journal.md).
 | Domaine | w3drs (état) | Écart vs concept w3dts |
 |--------|----------------|-------------------------|
 | ECS SoA + scheduling | ✅ Solide (archetypes, Rayon) | w3dts : ECS dynamique TS — **parité conceptuelle** à maintenir côté ergonomie API |
-| Rendu PBR + IBL + ombres + post | ✅ | w3dts : extensions glTF avancées (anisotropie, IOR, etc.), **Shader Graph** — **gros écart** |
+| Rendu PBR + IBL + ombres + post | ✅ (PBR/IBL **alignés w3dts** 2026-04) | Reste : `KHR_specular`, transmission, AO, **Shader Graph** / matériaux 100 % data-driven |
 | Pipeline GPU-driven (indirect, Hi-Z) | ✅ | w3dts : RenderGraph déclaratif JSON + compute passes génériques — **écart d’architecture** |
 | Loader glTF / textures de base | ✅ Partiel | w3dts : loader riche + matériaux étendus + skinning/morph — **écart majeur** |
 | Format projet / streaming (`.w3db`) | ❌ | Remplace **SceneDD / scenepak** côté w3drs — **binaire** encapsulant les données projet ; spec + runtime à produire |
@@ -83,14 +99,18 @@ Référence : [README.md](../README.md), [journal.md](journal.md).
 
 **But** : égaler le **niveau de fidélité** des assets PBR que w3dts vise avec ses gates de validation (ex. intégration glTF → matériau → pipeline).
 
-- [ ] **Extensions glTF** alignées sur la feuille de route w3dts : `KHR_materials_*` (anisotropie, IOR, clearcoat / transmission en option selon priorité produit), transforms de textures, emissive strength, etc.
-- [ ] **Matériaux** : pipeline de matériaux versionné (layouts WGSL stables, cache de pipelines, variantes par macro ou par shader key — alternative au Shader Graph TS).
-- [ ] **Shader authoring** : choix de stratégie documenté :
-  - **A1** — WGSL à la main + bibliothèque de fonctions partagées (plus proche « moteur jeu » classique), ou
-  - **A2** — **Shader graph** (IR JSON + compilateur Rust → WGSL) pour parité fonctionnelle w3dts.
-- [ ] **Tests de régression** : jeux d’assets Khronos ciblés (comme les projets gate w3dts), captures golden quand l’infra le permet.
+**État (2026-04)** : le fragment PBR et l’IBL sont **alignés sur w3dts** (`pbr_functions` + `pbr_master_node` : GGX + `GeometrySmith4` en direct, TBN / anisotropie, IBL avec bent normal + `MAX_REFLECTION_LOD = 4`, LUT BRDF 1024 échantillons). Voir [`docs/journal.md`](journal.md) (Phase A). Exemple **`hdr-ibl-skybox`** pour debug IBL / HDR.
 
-**Critère de sortie** : une shortlist d’assets glTF Sample Models rendus **sans artefact bloquant** sur la même checklist que w3dts pour le périmètre PBR retenu.
+**Exemples client** : `khronos-pbr-sample` (natif) et `w3drs-wasm` + `www/` (WASM) partagent le **même** moteur de rendu et la spec **JSON** viewer Phase A — barème de revue et parité *démo* vs *moteur* : [checklist PBR, *Alignement…*](tickets/phase-a-pbr-checklist-w3dts.md).
+
+- [x] **Noyau PBR + IBL** : parité formules w3dts sur le chemin **natif + WASM** ; `FrameUniforms` (flags IBL, scale diffuse).
+- [x] **Lecture** `KHR_materials_*` ciblés (p.ex. *specular*, *transmission*, *volume*, *emissive strength*) : données → GPU ; la **transmission** reste une **approximation** monopasse (IBL) jusqu’au graphe *moyen terme* (voir [ticket Phase A — *Moyen terme*](tickets/phase-A-pbr-materiaux-gltf.md)).
+- [ ] **Poursuites** : AO texture, autres KHR, ou **finition** transmission (opaque derrière, réfraction, tri alpha) — idem ticket **Moyen terme** ; sheen / iridescence si `gltf` + pipeline — ticket.
+- [ ] **Matériaux** : pipeline **versionné / data-driven** (tables RON/JSON, clés de variante) au-delà de `default.json` — [phase-A-pbr-materiaux-gltf.md](tickets/phase-A-pbr-materiaux-gltf.md).
+- [ ] **Shader authoring** : **A1** (WGSL + bibliothèque partagée) **en production** pour l’instant ; **A2** (shader graph) — spec + prototype si parité w3dts requise.
+- [x] **Tests de régression** (périmètre Phase A checklist) : shortlist Khronos via fixture + tests `phase_a_fixture` / crates assets & renderer ; **checklist visuelle** fermée — [phase-a-gates-record.md](tickets/phase-a-gates-record.md) (2026-04-20). Captures golden **optionnelles** (SSIM) si CI GPU : toujours hors obligation.
+
+**Critère de sortie** : une shortlist d’assets glTF Sample Models rendus **sans artefact bloquant** sur la même checklist que w3dts pour le périmètre PBR retenu — **atteint** pour le périmètre figé (checklist + gates) ; voir **Poursuites** ci-dessus pour l’écart restant vs w3dts « plein prod ».
 
 ---
 
@@ -98,7 +118,7 @@ Référence : [README.md](../README.md), [journal.md](journal.md).
 
 **But** : même **flexibilité** que le RenderGraph w3dts : passes raster + compute, ressources buffers/textures, dispatch direct/indirect, reconfiguration contrôlée.
 
-- [ ] **Description déclarative** du graphe (format versionné, ex. JSON ou RON + schéma) — inspiré des types `ComputePassConfig` / ressources w3dts.
+- [x] **Description déclarative** du graphe (**v0 JSON** + [`docs/schemas/render-graph-v0.md`](schemas/render-graph-v0.md) + fixture [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/) + crate **`w3drs-render-graph`** parse/validation) — exécuteur `wgpu` **v0** (`run_graph_v0_checksum`, natif) : fait ; [suite](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) (registre, WASM, viewer).
 - [ ] **Registre de ressources** (lifetime, resize, transitions de barrières).
 - [ ] **Exécuteurs** : raster mesh, fullscreen, compute — réutiliser les briques déjà présentes dans w3drs et les **generaliser**.
 - [ ] **Intégration ECS** : attacher des systèmes à des nœuds du graphe (séparation data / exécution).
@@ -242,20 +262,20 @@ Cette section est une **vue documentaire** (pour humains et agents), pas une mes
 **Barres globales** *(snapshot à maintenir ; chiffres indicatifs **2026-04**)* :
 
 ```
-Parité w3dts    [████░░░░░░░░░░░░░░░░]  ~32 %
+Parité w3dts    [█████░░░░░░░░░░░░░░░]  ~38 %
 Bonus w3drs     [████░░░░░░░░░░░░░░░░]  ~22 %
 ─────────────────────────────────────────────────
-Indice total    [██████░░░░░░░░░░░░░░]  ~54 %  sur ciel max illustré ~150 % (100 % parité + 50 % bonus)
+Indice total    [███████░░░░░░░░░░░░░]  ~60 %  sur ciel max illustré ~150 % (100 % parité + 50 % bonus)
 ```
 
-*(Représentation : chaque « █ » ≈ 5 points sur l’échelle du segment ; ajuster les compteurs à chaque revue.)*
+*(Représentation : chaque « █ » ≈ 5 points sur l’échelle du segment ; ajuster les compteurs à chaque revue — révision 2026-04-20, Phase A PBR ; **2026-04-24** : section *Port 1:1* + tickets / gates / plan Phase B documentés — **pas** de recalcul chiffré de parité sur cette seule mise à jour doc.)*
 
 ### Détail par domaine *(parité seule, 0–100 % par ligne)*
 
 | Domaine | Parité w3drs → w3dts *(estim.)* | Commentaire rapide |
 |---------|----------------------------------|----------------------|
-| Rendu PBR + IBL + ombres + post | ~75 % | Base solide w3drs ; extensions glTF / graphes moins complètes que w3dts. |
-| glTF / matériaux avancés / shader graph | ~15 % | w3dts : Shader Graph + gates PBR ; w3drs : pipeline plutôt code-first aujourd’hui. |
+| Rendu PBR + IBL + ombres + post | ~88 % | PBR/IBL calqués w3dts (2026-04) ; reste : specular ext., transmission, AO, gates checklist. |
+| glTF / matériaux avancés / shader graph | ~28 % | Extensions lues (aniso, IOR, clearcoat, texture_transform) ; data-driven + specular/transmission + shader graph à cadrer. |
 | Render graph déclaratif + compute | ~30 % | w3dts : JSON + exécuteurs ; w3drs : pipeline puissant mais moins « data-only ». |
 | ECS & scheduling | ~70 % | Modèles différents ; force w3drs côté perf / SoA. |
 | Animation / skinning / morph | ~10 % | Chantier majeur des deux côtés ; alignement à suivre. |
@@ -282,4 +302,4 @@ Exemples de postes **bonus** (déjà partiellement couverts ou cibles w3drs) :
 
 ---
 
-Dernière révision : **2026-04** — alignement w3dts + principes **multithreading**, **`.w3db`**, **workspace éditeur natif**, **data-driven**, **barre de progression**, cadencement **[tickets/](tickets/README.md)** (voir aussi [Goals.md](Goals.md)).
+Dernière révision : **2026-04-24** — *Port 1:1* (définition + exceptions) intégré en tête de document ; [journal.md](journal.md) (même date) : alignement doc, gates Phase A, plan exécuteur Phase B. Révision chiffrée précédente : **2026-04-20** (Phase A PBR). Voir aussi [tickets/](tickets/README.md), [Goals.md](Goals.md).

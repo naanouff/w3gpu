@@ -305,7 +305,7 @@ impl HizPass {
             });
             cp.set_pipeline(&self.init_pipeline);
             cp.set_bind_group(0, &self.init_bg, &[]);
-            cp.dispatch_workgroups(div_ceil(self.width, 8), div_ceil(self.height, 8), 1);
+            cp.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
         }
 
         // ── Hi-Z downsample chain ─────────────────────────────────────────────
@@ -320,7 +320,7 @@ impl HizPass {
             });
             cp.set_pipeline(&self.down_pipeline);
             cp.set_bind_group(0, bg, &[]);
-            cp.dispatch_workgroups(div_ceil(w, 8), div_ceil(h, 8), 1);
+            cp.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
         }
     }
 
@@ -425,9 +425,4 @@ impl HizPass {
 
         (zp_view, hiz_full_view, mip_count, init_bg, down_bgs)
     }
-}
-
-#[inline]
-fn div_ceil(a: u32, b: u32) -> u32 {
-    (a + b - 1) / b
 }

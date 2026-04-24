@@ -32,7 +32,7 @@ cargo run -p khronos-pbr-sample --release
 cargo xtask www
 ```
 
-Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.glb` (même asset que la gate Phase A).
+Ouvrir `http://localhost:5173` ; le viewer charge le modèle décrit par [`www/public/phase-a/viewer-manifest.json`](../../www/public/phase-a/viewer-manifest.json) (`id` = gate **DamagedHelmet** par défaut, aligné sémantiquement sur le premier enregistrement de ce [`manifest.json`](manifest.json) ; `?m=1`, **←/→** si d’autres URL sont listées). Les GLB lourds restent sous `glb/` ici : pour les servir côté Vite, copier (ou LFS) vers `www/public/…` et **ajouter** une entrée au manifeste web.
 
 ## Tests automatisés
 
@@ -44,7 +44,8 @@ Ouvrir `http://localhost:5173` ; le viewer charge `/damaged_helmet_source_glb.gl
 |---------|------|
 | [`manifest.json`](manifest.json) | Liste ordonnée des GLB + empreintes (DamagedHelmet + modèles **bencehari** sous `glb/` : anisotropie, clearcoat ×2, IOR, **MetalRoughSpheres** + **TextureTransformTest** Khronos pour `KHR_texture_transform`). |
 | [`glb/README.md`](glb/README.md) | Convention pour copier / vendre des binaires sous `glb/` (CI autonome). |
-| [`materials/default.json`](materials/default.json) | Placeholder de paramètres / variantes **data-driven** (étendu au fil des PR). |
+| [`materials/default.json`](materials/default.json) | **Viewer** Phase A : variantes, `ibl_diffuse_scale`, bloc `tonemap` — `khronos-pbr-sample` via `load_phase_a_viewer_config_or_default` ; **WASM** : copie sous `www/public/phase-a/materials/default.json` + `parse_phase_a_viewer_config_str_or_default` / `applyPhaseAViewerConfigJson`. |
+| (web seulement) [`www/public/phase-a/viewer-manifest.json`](../../www/public/phase-a/viewer-manifest.json) | Même `id` que le manifeste ici, chemins servis par Vite ; premier modèle = gate, extensions listées dès qu’un `.glb` est **copié** sous `public/`. |
 | [`expected.md`](expected.md) | Critères mesurables de la scène v0. |
 
 ## Checklist visuelle rapide (DamagedHelmet)

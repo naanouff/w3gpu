@@ -8,10 +8,16 @@
     "dev": "npm run build:wasm && vite",
     "vite": "vite",
     "build": "npm run build:wasm && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
     "vite": "^6.0.0",
-    "typescript": "^5.0.0"
+    "vitest": "^3.0.0"
   }
 }

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "comment": "Chemins URL pour le viewer Vite (www/). Aligné sémantiquement sur fixtures/phases/phase-a/manifest.json (ids). Ajouter un modèle = copier le .glb sous public/ (ex. phase-a/glb/…) + entrée ici. Query ?m=<index> pour choisir l’index (0-based).",
+  "models": [
+    {
+      "id": "damaged_helmet_gate",
+      "url": "/damaged_helmet_source_glb.glb"
+    },
+    {
+      "id": "texture_transform_test",
+      "url": "/phase-a/glb/TextureTransformTest.glb"
+    }
+  ]
+}

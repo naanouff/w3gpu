@@ -1,0 +1,15 @@
+[package]
+name = "hdr-ibl-bench"
+edition.workspace = true
+version.workspace = true
+description = "Mesures reproductibles load_hdr (parse + IBL) sans surface — même code que moteur."
+
+[[bin]]
+name = "hdr-ibl-bench"
+path = "src/main.rs"
+
+[dependencies]
+w3drs-assets = { path = "../../crates/w3drs-assets" }
+w3drs-renderer = { path = "../../crates/w3drs-renderer" }
+wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+pollster = "0.4"

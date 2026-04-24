@@ -1,25 +1,13 @@
 use std::f32::consts::PI;
 use w3drs_assets::HdrImage;
 
-/// Diffuse IBL (convolution cos-weighted hemisphere). 32×32 donnait un filtrage trop grossier
-/// (banding / fuites de couleur) ; 128×128 reste raisonnable en VRAM vs qualité perçue.
-const IRRADIANCE_SIZE: u32 = 128;
-const IRRADIANCE_SAMPLES: u32 = 1024;
-/// Face size of the specular prefiltered env cubemap (mip0). Higher = sharper mirror IBL
-/// at the cost of CPU bake time and VRAM (~6 × size² × rgba16 × ~1.33 mips).
-const PREFILTERED_SIZE: u32 = 512;
-const PREFILTERED_SAMPLES: u32 = 384;
-const BRDF_LUT_SIZE: u32 = 256;
-/// Aligné sur `w3dts/.../ibl/brdf.frag.wgsl` (`SAMPLE_COUNT = 1024`).
-const BRDF_LUT_SAMPLES: u32 = 1024;
-/// Full mip chain for `PREFILTERED_SIZE` (power of two).
-const PREFILTERED_MIPS: u32 = PREFILTERED_SIZE.trailing_zeros() + 1;
+use crate::ibl_spec::{prefiltered_mip_level_count, IblGenerationSpec};
 
 /// Monte Carlo sample count for a prefilter mip: fewer on small mips (faster bake, sufficient variance).
 #[inline]
-fn prefiltered_samples_for_mip(mip_size: u32) -> u32 {
-    let base = PREFILTERED_SAMPLES;
-    let rel = mip_size as f32 / PREFILTERED_SIZE as f32;
+fn prefiltered_samples_for_mip(mip_size: u32, spec: &IblGenerationSpec) -> u32 {
+    let base = spec.prefiltered_base_samples;
+    let rel = mip_size as f32 / spec.prefiltered_size as f32;
     let scaled = (base as f32 * rel * rel).max(24.0).round() as u32;
     scaled.clamp(24, base)
 }
@@ -56,68 +44,78 @@ impl IblContext {
             upload_cubemap_layer(queue, &pre_tex, face, 0, 1, 1, &grey_bytes);
         }
 
-        let brdf_data = compute_brdf_lut(BRDF_LUT_SIZE, BRDF_LUT_SAMPLES);
-        let brdf_tex = create_brdf_lut_texture(device, BRDF_LUT_SIZE);
-        upload_brdf_lut(queue, &brdf_tex, &brdf_data, BRDF_LUT_SIZE);
+        let s = IblGenerationSpec::default();
+        let brdf_data = compute_brdf_lut(s.brdf_lut_size, s.brdf_integral_samples);
+        let brdf_tex = create_brdf_lut_texture(device, s.brdf_lut_size);
+        upload_brdf_lut(queue, &brdf_tex, &brdf_data, s.brdf_lut_size);
 
         build_context(device, irr_tex, pre_tex, brdf_tex, 1)
     }
 
-    /// Full IBL from an equirectangular HDR image.
+    /// Full IBL from an equirectangular HDR image — qualité **max** (défaut).
     pub fn from_hdr(hdr: &HdrImage, device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        log::info!(
-            "IBL: computing irradiance map ({}×{}×6)…",
-            IRRADIANCE_SIZE,
-            IRRADIANCE_SIZE
-        );
-        let irr_tex = create_cubemap(device, IRRADIANCE_SIZE, IRRADIANCE_SIZE, 1);
+        Self::from_hdr_with_spec(hdr, device, queue, &IblGenerationSpec::default())
+    }
+
+    /// IBL complet avec préréglage de résolution / échantillons ([`IblGenerationSpec`], p.ex. `ibl_tier` JSON).
+    pub fn from_hdr_with_spec(
+        hdr: &HdrImage,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        spec: &IblGenerationSpec,
+    ) -> Self {
+        let irr = spec.irradiance_size;
+        let p0 = spec.prefiltered_size;
+        let mips = prefiltered_mip_level_count(p0);
+        let bl0 = spec.brdf_lut_size;
+        log::info!( "IBL: spec: irr {irr}², pre {p0}² ×{mips} mips, LUT {bl0}²");
+        log::info!("IBL: computing irradiance map ({}×{}×6)…", irr, irr);
+        let irr_tex = create_cubemap(device, irr, irr, 1);
+        let irr_samples = spec.irradiance_samples;
         #[cfg(not(target_arch = "wasm32"))]
         {
             use rayon::prelude::*;
             let faces: Vec<Vec<u8>> = (0..6usize)
                 .into_par_iter()
-                .map(|face| compute_irradiance_face(hdr, face, IRRADIANCE_SIZE, IRRADIANCE_SAMPLES))
+                .map(|face| compute_irradiance_face(hdr, face, irr, irr_samples))
                 .collect();
-            for face in 0..6usize {
+            for (face, face_data) in faces.iter().enumerate() {
                 upload_cubemap_layer(
                     queue,
                     &irr_tex,
                     face as u32,
                     0,
-                    IRRADIANCE_SIZE,
-                    IRRADIANCE_SIZE,
-                    &faces[face],
+                    irr,
+                    irr,
+                    face_data,
                 );
             }
         }
         #[cfg(target_arch = "wasm32")]
         {
             for face in 0..6usize {
-                let face_data =
-                    compute_irradiance_face(hdr, face, IRRADIANCE_SIZE, IRRADIANCE_SAMPLES);
+                let face_data = compute_irradiance_face(hdr, face, irr, irr_samples);
                 upload_cubemap_layer(
                     queue,
                     &irr_tex,
                     face as u32,
                     0,
-                    IRRADIANCE_SIZE,
-                    IRRADIANCE_SIZE,
+                    irr,
+                    irr,
                     &face_data,
                 );
             }
         }
 
         log::info!(
-            "IBL: computing prefiltered env map ({}×{}×6×{} mips)…",
-            PREFILTERED_SIZE,
-            PREFILTERED_SIZE,
-            PREFILTERED_MIPS
+            "IBL: computing prefiltered env map ({}×{}×6, {} mips)…",
+            p0, p0, mips
         );
-        let pre_tex = create_cubemap(device, PREFILTERED_SIZE, PREFILTERED_SIZE, PREFILTERED_MIPS);
-        for mip in 0..PREFILTERED_MIPS {
-            let roughness = mip as f32 / (PREFILTERED_MIPS - 1).max(1) as f32;
-            let mip_size = (PREFILTERED_SIZE >> mip).max(1);
-            let mip_samples = prefiltered_samples_for_mip(mip_size);
+        let pre_tex = create_cubemap(device, p0, p0, mips);
+        for mip in 0..mips {
+            let roughness = mip as f32 / (mips - 1).max(1) as f32;
+            let mip_size = (p0 >> mip).max(1);
+            let mip_samples = prefiltered_samples_for_mip(mip_size, spec);
             #[cfg(not(target_arch = "wasm32"))]
             {
                 use rayon::prelude::*;
@@ -127,7 +125,7 @@ impl IblContext {
                         compute_prefiltered_face(hdr, face, mip_size, roughness, mip_samples)
                     })
                     .collect();
-                for face in 0..6usize {
+                for (face, face_data) in faces.iter().enumerate() {
                     upload_cubemap_layer(
                         queue,
                         &pre_tex,
@@ -135,7 +133,7 @@ impl IblContext {
                         mip,
                         mip_size,
                         mip_size,
-                        &faces[face],
+                        face_data,
                     );
                 }
             }
@@ -157,17 +155,14 @@ impl IblContext {
             }
         }
 
-        log::info!(
-            "IBL: computing BRDF LUT ({}×{})…",
-            BRDF_LUT_SIZE,
-            BRDF_LUT_SIZE
-        );
-        let brdf_data = compute_brdf_lut(BRDF_LUT_SIZE, BRDF_LUT_SAMPLES);
-        let brdf_tex = create_brdf_lut_texture(device, BRDF_LUT_SIZE);
-        upload_brdf_lut(queue, &brdf_tex, &brdf_data, BRDF_LUT_SIZE);
+        let bl = spec.brdf_lut_size;
+        log::info!("IBL: computing BRDF LUT ({bl}×{bl})…");
+        let brdf_data = compute_brdf_lut(bl, spec.brdf_integral_samples);
+        let brdf_tex = create_brdf_lut_texture(device, bl);
+        upload_brdf_lut(queue, &brdf_tex, &brdf_data, bl);
 
         log::info!("IBL: done.");
-        build_context(device, irr_tex, pre_tex, brdf_tex, IRRADIANCE_SIZE)
+        build_context(device, irr_tex, pre_tex, brdf_tex, irr)
     }
 }
 
@@ -604,10 +599,8 @@ fn sample_equirect(hdr: &HdrImage, dir: [f32; 3]) -> [f32; 3] {
 #[inline]
 fn v_smith_ggx_correlated(ndot_v: f32, ndot_l: f32, perceptual_roughness: f32) -> f32 {
     let alpha = perceptual_roughness * perceptual_roughness;
-    let lambda_v =
-        ndot_l * ((ndot_v - alpha * ndot_v) * ndot_v + alpha).max(0.0).sqrt();
-    let lambda_l =
-        ndot_v * ((ndot_l - alpha * ndot_l) * ndot_l + alpha).max(0.0).sqrt();
+    let lambda_v = ndot_l * ((ndot_v - alpha * ndot_v) * ndot_v + alpha).max(0.0).sqrt();
+    let lambda_l = ndot_v * ((ndot_l - alpha * ndot_l) * ndot_l + alpha).max(0.0).sqrt();
     0.5 / (lambda_v + lambda_l + 1e-7)
 }
 

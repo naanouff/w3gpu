@@ -285,13 +285,13 @@ impl World {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn parallel_for_each<T: Send + Sync, F: Fn(&mut T) + Sync + Send>(data: &mut Vec<T>, f: &F) {
+    fn parallel_for_each<T: Send + Sync, F: Fn(&mut T) + Sync + Send>(data: &mut [T], f: &F) {
         use rayon::prelude::*;
         data.par_iter_mut().for_each(f);
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn parallel_for_each<T, F: Fn(&mut T)>(data: &mut Vec<T>, f: &F) {
+    fn parallel_for_each<T, F: Fn(&mut T)>(data: &mut [T], f: &F) {
         data.iter_mut().for_each(f);
     }
 

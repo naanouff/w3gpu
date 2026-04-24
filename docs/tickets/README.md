@@ -2,6 +2,8 @@
 
 Ce dossier matérialise le **cadencement** de la [Roadmap](../ROADMAP.md) : **au minimum un fichier Markdown par phase** (A → L), avec **DOR** / **DOD** fondés sur des critères **répétables**, **reproductibles** et **mesurables** (tests, outils, seuils chiffrés).
 
+**Port 1:1 w3dts → w3drs** : l’intention produit (équivalence **fonctionnelle** domaine par domaine, exceptions d’implémentation explicites) est définie dans le [ROADMAP — *Port 1:1*](../ROADMAP.md#port-11--définition-et-exceptions-acceptables). Chaque ticket doit rester cohérent avec cette section lorsqu’il parle d’*écart* ou de *parité*.
+
 ## Priorités transverses (toutes phases)
 
 Toute livraison doit être évaluée sous ces trois axes (voir aussi [phase-transverses.md](phase-transverses.md)) :

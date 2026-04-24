@@ -1,4 +1,5 @@
-import init, { W3drsEngine } from '../pkg/w3drs_wasm.js';
+import init, { W3drsEngine, w3drsValidateRenderGraphV0 } from '../pkg/w3drs_wasm.js';
+import { loadHdrWithTimings } from './hdrLoadTimings.js';
 
 const status = document.getElementById('status')!;
 
@@ -9,30 +10,121 @@ const S = Math.SQRT1_2;
 
 let cullEnabled = true;
 
+type ViewerModel = { id: string; url: string };
+type ViewerManifest = { version: number; models: ViewerModel[] };
+
+const FALLBACK_URL = '/damaged_helmet_source_glb.glb';
+const FALLBACK_ID  = 'damaged_helmet_gate';
+
+function readModelIndexOrZero(n: number): number {
+  const p = new URLSearchParams(window.location.search);
+  const m = p.get('m');
+  if (m === null) {
+    return 0;
+  }
+  const i = parseInt(m, 10);
+  if (Number.isNaN(i)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(n - 1, i));
+}
+
+function goAdjacentModel(nModels: number, delta: number): void {
+  if (nModels < 2) {
+    return;
+  }
+  const cur   = readModelIndexOrZero(nModels);
+  const next  = (cur + delta + nModels) % nModels;
+  const u     = new URL(window.location.href);
+  u.searchParams.set('m', String(next));
+  window.location.assign(u.toString());
+}
+
 async function main(): Promise<void> {
   await init();
+
+  // Phase B — même validation que le natif (parse + validate_exec_v0) ; exécuteur GPU graphe : à venir
+  try {
+    const rg = await fetch('/phase-b/render_graph.json');
+    if (rg.ok) {
+      w3drsValidateRenderGraphV0(await rg.text(), 'hdr_color');
+      console.info(
+        '[w3drs] Phase B render graph: validate OK (w3drsValidateRenderGraphV0, readback=hdr_color)',
+      );
+    } else {
+      console.warn(`[w3drs] Phase B: /phase-b/render_graph.json HTTP ${String(rg.status)}`);
+    }
+  } catch (e) {
+    console.warn('[w3drs] Phase B: graph validate skipped (optional):', e);
+  }
 
   status.textContent = 'Creating engine...';
   const engine = await W3drsEngine.create('w3drs-canvas');
 
-  // IBL
+  try {
+    const cfg = await fetch('/phase-a/materials/default.json');
+    if (cfg.ok) {
+      engine.applyPhaseAViewerConfigJson(await cfg.text());
+    }
+  } catch (e) {
+    console.warn('Phase A viewer config not applied (optional):', e);
+  }
+
+  // IBL — mesures : tests fonctionnels dans `hdrLoadTimings.test.ts` ; E2E `e2e/hdr-timings.spec.ts`
   status.textContent = 'Loading environment...';
   try {
-    const hdrRes = await fetch('/studio_small_03_2k.hdr');
-    if (hdrRes.ok) engine.load_hdr(new Uint8Array(await hdrRes.arrayBuffer()));
+    const hdrResult = await loadHdrWithTimings(
+      engine,
+      '/studio_small_03_2k.hdr',
+    );
+    if (hdrResult.ok) {
+      window.w3drsHdrLoadTimings = hdrResult;
+      console.info('[w3drs] HDR timing', {
+        clientFetchAndBufferMs: hdrResult.clientFetchAndBufferMs,
+        clientWasmCallWallMs: hdrResult.clientWasmCallWallMs,
+        clientBytes: hdrResult.clientBytes,
+        wasm: hdrResult.wasm,
+      });
+    } else {
+      console.warn('HDR load failed:', hdrResult.reason, hdrResult.message ?? '');
+    }
   } catch (e) {
     console.warn('HDR load failed, using default IBL:', e);
   }
 
-  // GLB
-  status.textContent = 'Loading model...';
-  const response = await fetch('/damaged_helmet_source_glb.glb');
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const ids = engine.load_gltf(new Uint8Array(await response.arrayBuffer()));
-  if (ids.length < 2) throw new Error('No primitives in GLB');
+  // GLB — aligné sur fixtures/…/manifest (ids) via viewer-manifest.json (URL publiques)
+  let modelUrl  = FALLBACK_URL;
+  let modelId   = FALLBACK_ID;
+  let nModels   = 1;
+  let modelIndex = 0;
+  try {
+    const mRes = await fetch('/phase-a/viewer-manifest.json');
+    if (mRes.ok) {
+      const man: ViewerManifest = (await mRes.json()) as ViewerManifest;
+      if (Array.isArray(man.models) && man.models.length > 0) {
+        nModels    = man.models.length;
+        modelIndex = readModelIndexOrZero(nModels);
+        const m    = man.models[modelIndex] ?? man.models[0]!;
+        modelUrl   = m.url;
+        modelId    = m.id;
+      }
+    }
+  } catch (e) {
+    console.warn('viewer-manifest.json: fallback to DamagedHelmet', e);
+  }
 
-  const meshId = ids[0];
-  const matId  = ids[1];
+  status.textContent = 'Loading model...';
+  const response = await fetch(modelUrl);
+  if (!response.ok) {
+    throw new Error(`Model HTTP ${response.status} (${modelId})`);
+  }
+  const ids = engine.load_gltf(new Uint8Array(await response.arrayBuffer()));
+  if (ids.length < 2) {
+    throw new Error('No primitives in GLB');
+  }
+
+  const meshId = ids[0]!;
+  const matId  = ids[1]!;
 
   // Camera
   const cam = engine.create_entity();
@@ -45,7 +137,7 @@ async function main(): Promise<void> {
     1, 1, 1,
   );
 
-  // 5×5 helmet grid — all same mesh → 1 draw call via batching
+  // 5×5 grid — all same mesh → batching
   const entities = new Array<number>();
   const phases   = new Array<number>();
   for (let row = 0; row < GRID; row++) {
@@ -61,34 +153,47 @@ async function main(): Promise<void> {
     }
   }
 
-  // Occluder wall — red metallic slab that blocks rear helmet rows
-  // Position Z=-1.2, between camera and rear rows (Z=-2.4, -4.8)
+  // Occluder wall
   const wallMesh = engine.upload_cube_mesh();
   const wallMat  = engine.upload_material(0.8, 0.05, 0.05, 1.0, 0.9, 0.2, 0, 0, 0);
   const wall     = engine.create_entity();
   engine.set_mesh_renderer(wall, wallMesh, wallMat);
   engine.set_transform(wall, 0, 0.8, -1.2,  0, 0, 0, 1,  7, 3, 0.25);
 
-  // Ground plane
+  // Ground
   const floorMesh = engine.upload_cube_mesh();
   const floorMat  = engine.upload_material(0.35, 0.35, 0.35, 1.0, 0.0, 0.9, 0, 0, 0);
   const floor     = engine.create_entity();
   engine.set_mesh_renderer(floor, floorMesh, floorMat);
   engine.set_transform(floor, 0, -1.2, 0,  0, 0, 0, 1,  14, 0.05, 14);
 
+  const modelHint = nModels > 1
+    ? `  ${modelId}  [m=${String(modelIndex + 1)}/${String(nModels)}]  ←/→  `
+    : `  ${modelId}  `;
+
   const updateStatus = (): void => {
-    const s = cullEnabled ? 'ON' : 'OFF';
+    const c = cullEnabled ? 'ON' : 'OFF';
     status.textContent =
-      `w3drs v${W3drsEngine.version()} — GPU Hi-Z: ${s}  [SPACE to toggle]`;
+      `w3drs v${W3drsEngine.version()}` + modelHint +
+      `— GPU Hi-Z: ${c}  [SPACE]  `;
   };
   updateStatus();
 
-  // Space bar toggles GPU Hi-Z culling
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
       cullEnabled = !cullEnabled;
       engine.set_cull_enabled(cullEnabled);
       updateStatus();
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'ArrowLeft') {
+      goAdjacentModel(nModels, -1);
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'ArrowRight') {
+      goAdjacentModel(nModels, 1);
       e.preventDefault();
     }
   });
@@ -102,9 +207,8 @@ async function main(): Promise<void> {
     prev = now;
     totalTime += dt;
 
-    // Per-entity staggered Y-spin
     for (let i = 0; i < entities.length; i++) {
-      const angle = totalTime * 0.4 + phases[i];
+      const angle = totalTime * 0.4 + phases[i]!;
       const ha  = angle / 2;
       const qx  =  S * Math.cos(ha);
       const qy  =  S * Math.sin(ha);
@@ -112,7 +216,7 @@ async function main(): Promise<void> {
       const qw  =  S * Math.cos(ha);
       const x   = ((i % GRID) - Math.floor(GRID / 2)) * SPACING;
       const z   = (Math.floor(i / GRID) - Math.floor(GRID / 2)) * SPACING;
-      engine.set_transform(entities[i], x, 0, z,  qx, qy, qz, qw,  1, 1, 1);
+      engine.set_transform(entities[i]!, x, 0, z,  qx, qy, qz, qw,  1, 1, 1);
     }
 
     engine.tick(dt);

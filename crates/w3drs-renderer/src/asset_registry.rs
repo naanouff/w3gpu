@@ -39,6 +39,14 @@ pub struct MaterialTextures {
     pub clearcoat: Option<u32>,
     /// `KHR_materials_clearcoat` roughness (G); defaults to G=1 when `None`.
     pub clearcoat_roughness: Option<u32>,
+    /// KHR `transmissionTexture` (R).
+    pub transmission: Option<u32>,
+    /// KHR `specularTexture` (A).
+    pub specular: Option<u32>,
+    /// KHR `specularColorTexture` sRGB.
+    pub specular_color: Option<u32>,
+    /// KHR `thicknessTexture` (G).
+    pub thickness: Option<u32>,
 }
 
 pub struct AssetRegistry {
@@ -59,6 +67,14 @@ pub struct AssetRegistry {
     pub default_aniso_view: wgpu::TextureView,
     /// Clearcoat roughness multiplier when no texture: G = 1.0 (`Rgba8Unorm` (0,255,0,255)).
     pub default_clearcoat_rough_view: wgpu::TextureView,
+    /// Transmission R=1, transmission factor × texture.
+    pub default_transmission_view: wgpu::TextureView,
+    /// Specular A=1.
+    pub default_specular_view: wgpu::TextureView,
+    /// Specular color blanc sRGB.
+    pub default_specular_color_view: wgpu::TextureView,
+    /// Thickness G=1.
+    pub default_thickness_view: wgpu::TextureView,
 }
 
 impl AssetRegistry {
@@ -79,6 +95,10 @@ impl AssetRegistry {
         let black_view = upload_1x1(device, queue, [0, 0, 0, 255], false);
         let default_aniso_view = upload_1x1(device, queue, [255, 128, 255, 255], false);
         let default_clearcoat_rough_view = upload_1x1(device, queue, [0, 255, 0, 255], false);
+        let default_transmission_view = upload_1x1(device, queue, [255, 0, 0, 255], false);
+        let default_specular_view = upload_1x1(device, queue, [0, 0, 0, 255], false);
+        let default_specular_color_view = upload_1x1(device, queue, [255, 255, 255, 255], true);
+        let default_thickness_view = upload_1x1(device, queue, [0, 255, 0, 255], false);
 
         Self {
             meshes: HashMap::new(),
@@ -94,6 +114,10 @@ impl AssetRegistry {
             black_view,
             default_aniso_view,
             default_clearcoat_rough_view,
+            default_transmission_view,
+            default_specular_view,
+            default_specular_color_view,
+            default_thickness_view,
         }
     }
 
@@ -169,6 +193,17 @@ impl AssetRegistry {
             textures.clearcoat_roughness,
             &self.default_clearcoat_rough_view as *const _,
         );
+        let trans_view = self.tex_view(
+            textures.transmission,
+            &self.default_transmission_view as *const _,
+        );
+        let spec_view = self.tex_view(textures.specular, &self.default_specular_view as *const _);
+        let sc_view = self.tex_view(
+            textures.specular_color,
+            &self.default_specular_color_view as *const _,
+        );
+        let thick_view =
+            self.tex_view(textures.thickness, &self.default_thickness_view as *const _);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("material bind group"),
@@ -209,6 +244,22 @@ impl AssetRegistry {
                 wgpu::BindGroupEntry {
                     binding: 8,
                     resource: wgpu::BindingResource::Sampler(&self.default_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::TextureView(trans_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(spec_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(sc_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(thick_view),
                 },
             ],
         });

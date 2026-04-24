@@ -5,6 +5,6 @@ alwaysApply: true
 
 # w3drs — migration depuis w3dts
 
-- Le développement de **w3drs** est une **migration** du projet **w3dts**.
+- Le développement de **w3drs** est une **migration** du projet **w3dts** visant une **équivalence fonctionnelle 1:1** (même capacités / gates par domaine), sauf **exceptions** explicitées dans le ROADMAP (fichier `.w3db`, éditeur natif + workspace, pas recopie UI React) — voir `docs/ROADMAP.md` section *Port 1:1*.
 - Dépôt de référence (code et historique à comparer / porter) : `C:\Local\Travail\Web\W3Drs\w3dts`.
 - Lors d’implémentations ou de choix d’architecture, privilégier l’alignement avec w3dts quand c’est pertinent, tout en respectant les conventions w3drs (data-driven, ROADMAP, etc.).

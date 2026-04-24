@@ -5,7 +5,8 @@ use crate::{
     material::{
         AlphaMode, Material, ShadingModel, TextureUvTransform, TEX_UV_ALBEDO, TEX_UV_ANISOTROPY,
         TEX_UV_CLEARCOAT, TEX_UV_CLEARCOAT_ROUGHNESS, TEX_UV_EMISSIVE, TEX_UV_METALLIC_ROUGHNESS,
-        TEX_UV_NORMAL,
+        TEX_UV_NORMAL, TEX_UV_SPECULAR, TEX_UV_SPECULAR_COLOR, TEX_UV_THICKNESS,
+        TEX_UV_TRANSMISSION,
     },
     mesh::Mesh,
     vertex::Vertex,
@@ -44,6 +45,14 @@ pub struct GltfPrimitive {
     pub clearcoat_image: Option<RgbaImage>,
     /// `KHR_materials_clearcoat` — rugosité (canal **G**).
     pub clearcoat_roughness_image: Option<RgbaImage>,
+    /// `KHR_materials_transmission` (canal **R**).
+    pub transmission_image: Option<RgbaImage>,
+    /// `KHR_materials_specular` (canal **A**).
+    pub specular_image: Option<RgbaImage>,
+    /// `KHR_materials_specular` teinte F0 sRGB.
+    pub specular_color_image: Option<RgbaImage>,
+    /// `KHR_materials_volume` épaisseur (canal **G**).
+    pub thickness_image: Option<RgbaImage>,
 }
 
 /// Load all mesh primitives from a GLB/glTF byte slice.
@@ -252,6 +261,27 @@ fn push_primitive(
     let clearcoat_image = image_for_idx(cc_img_idx, images);
     let clearcoat_roughness_image = image_for_idx(cr_img_idx, images);
 
+    let trans_idx = mat
+        .transmission()
+        .and_then(|tr| tr.transmission_texture())
+        .and_then(|info| image_index_for_gltf_texture_index(document, info.texture().index()));
+    let transmission_image = image_for_idx(trans_idx, images);
+    let specular_idx = mat
+        .specular()
+        .and_then(|sp| sp.specular_texture())
+        .and_then(|info| image_index_for_gltf_texture_index(document, info.texture().index()));
+    let specular_image = image_for_idx(specular_idx, images);
+    let specular_color_idx = mat
+        .specular()
+        .and_then(|sp| sp.specular_color_texture())
+        .and_then(|info| image_index_for_gltf_texture_index(document, info.texture().index()));
+    let specular_color_image = image_for_idx(specular_color_idx, images);
+    let thick_idx = mat
+        .volume()
+        .and_then(|v| v.thickness_texture())
+        .and_then(|info| image_index_for_gltf_texture_index(document, info.texture().index()));
+    let thickness_image = image_for_idx(thick_idx, images);
+
     out.push(GltfPrimitive {
         mesh: Mesh::new(vertices, indices),
         material: convert_material(&mat, &aniso, &clearcoat),
@@ -262,6 +292,10 @@ fn push_primitive(
         anisotropy_image,
         clearcoat_image,
         clearcoat_roughness_image,
+        transmission_image,
+        specular_image,
+        specular_color_image,
+        thickness_image,
     });
     Ok(())
 }
@@ -807,6 +841,7 @@ fn convert_material(
     let pbr = mat.pbr_metallic_roughness();
     let base = pbr.base_color_factor();
     let emissive = mat.emissive_factor();
+    let emissive_strength = mat.emissive_strength().unwrap_or(1.0);
     let alpha_mode = match mat.alpha_mode() {
         gltf::material::AlphaMode::Opaque => AlphaMode::Opaque,
         gltf::material::AlphaMode::Mask => AlphaMode::Mask,
@@ -814,7 +849,7 @@ fn convert_material(
     };
     let ior = mat.ior().unwrap_or(1.5).clamp(1.0001, 256.0);
 
-    let mut texture_transforms = [TextureUvTransform::default(); 7];
+    let mut texture_transforms = [TextureUvTransform::default(); 11];
     texture_transforms[TEX_UV_ALBEDO] = pbr
         .base_color_texture()
         .map(|t| uv_transform_from_gltf_info(&t))
@@ -835,6 +870,47 @@ fn convert_material(
     texture_transforms[TEX_UV_CLEARCOAT] = clearcoat.clearcoat_uv;
     texture_transforms[TEX_UV_CLEARCOAT_ROUGHNESS] = clearcoat.rough_uv;
 
+    let mut khr_flags: u32 = 0;
+    let mut transmission_factor = 0.0f32;
+    let mut specular_factor = 1.0f32;
+    let mut specular_color_factor = [1.0f32, 1.0, 1.0];
+    let mut thickness_factor = 0.0f32;
+    let mut attenuation_distance = 1.0e10f32;
+    let mut attenuation_color = [1.0f32, 1.0, 1.0];
+
+    if let Some(tr) = mat.transmission() {
+        khr_flags |= 2;
+        transmission_factor = tr.transmission_factor().clamp(0.0, 1.0);
+        if let Some(info) = tr.transmission_texture() {
+            texture_transforms[TEX_UV_TRANSMISSION] = uv_transform_from_gltf_info(&info);
+        }
+    }
+
+    if let Some(sp) = mat.specular() {
+        khr_flags |= 1;
+        specular_factor = sp.specular_factor();
+        specular_color_factor = sp.specular_color_factor();
+        if let Some(info) = sp.specular_texture() {
+            texture_transforms[TEX_UV_SPECULAR] = uv_transform_from_gltf_info(&info);
+        }
+        if let Some(info) = sp.specular_color_texture() {
+            texture_transforms[TEX_UV_SPECULAR_COLOR] = uv_transform_from_gltf_info(&info);
+        }
+    }
+
+    if let Some(vol) = mat.volume() {
+        khr_flags |= 4;
+        thickness_factor = vol.thickness_factor().max(0.0);
+        attenuation_distance = vol.attenuation_distance();
+        if attenuation_distance < 1e-6 {
+            attenuation_distance = 1.0e10;
+        }
+        attenuation_color = vol.attenuation_color();
+        if let Some(info) = vol.thickness_texture() {
+            texture_transforms[TEX_UV_THICKNESS] = uv_transform_from_gltf_info(&info);
+        }
+    }
+
     Material {
         name: mat.name().unwrap_or("").to_string(),
         shading_model: ShadingModel::Pbr,
@@ -850,6 +926,14 @@ fn convert_material(
         ior,
         clearcoat_factor: clearcoat.factor,
         clearcoat_roughness: clearcoat.roughness,
+        emissive_strength: emissive_strength.max(0.0),
+        transmission_factor,
+        specular_factor,
+        specular_color_factor,
+        thickness_factor,
+        attenuation_distance,
+        attenuation_color,
+        khr_flags,
         texture_transforms,
     }
 }

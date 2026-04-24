@@ -22,6 +22,6 @@ pub struct FrameUniforms {
     pub shadow_bias: f32,               // offset 320
     pub ibl_flags: u32,                 // offset 324 — voir [`IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE`]
     /// Atténuation du **diffuse IBL** (carte d’irradiance × `albedo` × `kd_ibl`). `1` = neutre.
-    pub ibl_diffuse_scale: f32,          // offset 328
+    pub ibl_diffuse_scale: f32, // offset 328
     pub _pad3: f32,                     // offset 332
 } // total: 336 bytes

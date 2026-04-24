@@ -35,6 +35,17 @@ pub const TEX_UV_EMISSIVE: usize = 3;
 pub const TEX_UV_ANISOTROPY: usize = 4;
 pub const TEX_UV_CLEARCOAT: usize = 5;
 pub const TEX_UV_CLEARCOAT_ROUGHNESS: usize = 6;
+/// `KHR_materials_transmission` (canal R).
+pub const TEX_UV_TRANSMISSION: usize = 7;
+/// `KHR_materials_specular` (canal A = force spéculaire).
+pub const TEX_UV_SPECULAR: usize = 8;
+/// `KHR_materials_specular` `specularColorTexture` (sRGB en asset — upload SRGB côté GPU).
+pub const TEX_UV_SPECULAR_COLOR: usize = 9;
+/// `KHR_materials_volume` `thicknessTexture` (canal G).
+pub const TEX_UV_THICKNESS: usize = 10;
+
+/// Nombre d’emplacements `texture_transforms` (0..=10).
+pub const MATERIAL_TEX_SLOT_COUNT: usize = 11;
 
 #[derive(Clone, Debug)]
 pub struct Material {
@@ -57,8 +68,24 @@ pub struct Material {
     pub clearcoat_factor: f32,
     /// `KHR_materials_clearcoat` — rugosité de la couche ; multipliée par le canal **G** de la texture roughness si présente.
     pub clearcoat_roughness: f32,
+    /// `KHR_materials_emissive_strength` — facteur sur l’émissif (défaut 1.0).
+    pub emissive_strength: f32,
+    /// `KHR_materials_transmission` (facteur, multiplié par R de la texture si présente).
+    pub transmission_factor: f32,
+    /// `KHR_materials_specular` — poids (× texture A).
+    pub specular_factor: f32,
+    /// `KHR_materials_specular` — F0 entrant diélectrique, linéaire RGB.
+    pub specular_color_factor: [f32; 3],
+    /// `KHR_materials_volume` — épaisseur de base (× texture G).
+    pub thickness_factor: f32,
+    /// `KHR_materials_volume` — distance moyenne d’atténuation.
+    pub attenuation_distance: f32,
+    /// `KHR_materials_volume` — couleur d’atténuation.
+    pub attenuation_color: [f32; 3],
+    /// Drapeaux : bit 0 = KHR specular, 1 = transmission, 2 = volume (attenuation / épaisseur).
+    pub khr_flags: u32,
     /// `KHR_texture_transform` + `texCoord` par slot texture (ordre [`TEX_UV_*`](crate::material)).
-    pub texture_transforms: [TextureUvTransform; 7],
+    pub texture_transforms: [TextureUvTransform; MATERIAL_TEX_SLOT_COUNT],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -86,7 +113,15 @@ impl Default for Material {
             ior: 1.5,
             clearcoat_factor: 0.0,
             clearcoat_roughness: 0.0,
-            texture_transforms: [TextureUvTransform::default(); 7],
+            emissive_strength: 1.0,
+            transmission_factor: 0.0,
+            specular_factor: 1.0,
+            specular_color_factor: [1.0, 1.0, 1.0],
+            thickness_factor: 0.0,
+            attenuation_distance: 1.0e10,
+            attenuation_color: [1.0, 1.0, 1.0],
+            khr_flags: 0,
+            texture_transforms: [TextureUvTransform::default(); MATERIAL_TEX_SLOT_COUNT],
         }
     }
 }
@@ -109,6 +144,9 @@ mod tests {
         assert!((m.ior - 1.5).abs() < 1e-6);
         assert_eq!(m.clearcoat_factor, 0.0);
         assert_eq!(m.clearcoat_roughness, 0.0);
+        assert!((m.emissive_strength - 1.0).abs() < 1e-5);
+        assert_eq!(m.transmission_factor, 0.0);
+        assert!((m.specular_factor - 1.0).abs() < 1e-5);
         for t in m.texture_transforms {
             assert_eq!(t, TextureUvTransform::default());
         }

@@ -1,0 +1,10 @@
+[package]
+name = "w3drs-render-graph"
+edition.workspace = true
+version.workspace = true
+description = "Parse and validate declarative render graph documents (Phase B)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

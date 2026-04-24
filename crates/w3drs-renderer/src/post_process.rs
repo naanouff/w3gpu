@@ -285,6 +285,7 @@ impl PostProcessPass {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn make_bind_groups(
         device: &wgpu::Device,
         pf_bgl: &wgpu::BindGroupLayout,

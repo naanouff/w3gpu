@@ -1,6 +1,9 @@
 //! Visualise la **même** HDR deux façons : fond équirectangulaire (skybox) + IBL sur une sphère
 //! métallique très réfléchissante — utile pour comparer couleurs / orientation / fireflies entre
-//! l’échantillonnage direct du fichier et la cubemap préfiltrée CPU (`IblContext::from_hdr`).
+//! l’échantillonnage direct du fichier et la cubemap préfiltrée CPU (`IblContext::from_hdr_with_spec`).
+//!
+//! **Args** (comme `hdr-ibl-bench`) : `[--tier=max|high|medium|low|min] [chemin.hdr]` — HDR par défaut
+//! `www/public/studio_small_03_2k.hdr` (racine workspace).
 //!
 //! **Debug** : **← / →** changent la vue plein écran (HDR caméra, faces préfiltre, faces
 //! irradiance) ; **`[` / `]`** ajustent le mip affiché pour les vues préfiltre (1–6).
@@ -18,9 +21,9 @@ use w3drs_ecs::{
 use w3drs_renderer::{
     build_entity_list, camera_system, derive_shadow_batches, transform_system, AssetRegistry,
     BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms,
+    GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures,
+    PostProcessPass, RenderState, ShadowPass, TonemapParams, DEPTH_FORMAT, HDR_FORMAT,
     IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE,
-    GpuContext, HdrTarget, HizPass, IblContext, LightUniforms, MaterialTextures, PostProcessPass,
-    RenderState, ShadowPass, TonemapParams, DEPTH_FORMAT, HDR_FORMAT,
 };
 use winit::{
     application::ApplicationHandler,
@@ -51,26 +54,37 @@ fn debug_view_line(mode: u32, lod: f32) -> String {
 
 fn main() {
     env_logger::init();
+    let (ibl_spec, ibl_tier_display, hdr_path) = parse_skybox_cli();
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::default();
+    let mut app = App {
+        state: None,
+        ibl_spec,
+        ibl_tier_display,
+        hdr_path,
+    };
     event_loop.run_app(&mut app).unwrap();
 }
 
-#[derive(Default)]
 struct App {
     state: Option<State>,
+    ibl_spec: IblGenerationSpec,
+    ibl_tier_display: String,
+    hdr_path: PathBuf,
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let title = format!(
+            "hdr-ibl-skybox — HDR sky + chrome sphere [ibl_tier={}]",
+            self.ibl_tier_display
+        );
         let window = event_loop
-            .create_window(
-                Window::default_attributes()
-                    .with_title("hdr-ibl-skybox — HDR sky + chrome sphere (IBL same file)"),
-            )
+            .create_window(Window::default_attributes().with_title(title))
             .unwrap();
-        self.state = Some(State::new(window).block_on());
+        self.state = Some(
+            State::new(window, self.ibl_spec, self.hdr_path.clone()).block_on(),
+        );
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -177,6 +191,40 @@ fn workspace_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+/// Même convention que `hdr-ibl-bench` : `-t` / `--tier` / `--tier=name` puis chemin `.hdr` optionnel.
+fn parse_skybox_cli() -> (IblGenerationSpec, String, PathBuf) {
+    let default_hdr = workspace_root().join("www/public/studio_small_03_2k.hdr");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut tier_raw = "max".to_string();
+    let mut path_opt: Option<PathBuf> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "-t" || a == "--tier" {
+            i += 1;
+            if i < args.len() {
+                tier_raw = args[i].clone();
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(t) = a.strip_prefix("--tier=") {
+            tier_raw = t.to_string();
+            i += 1;
+            continue;
+        }
+        if path_opt.is_none() && !a.starts_with('-') {
+            path_opt = Some(PathBuf::from(a));
+        }
+        i += 1;
+    }
+    let path = path_opt.unwrap_or(default_hdr);
+    let tier_trim = tier_raw.trim();
+    let spec = IblGenerationSpec::from_tier_name(tier_trim);
+    let display = tier_trim.to_ascii_lowercase();
+    (spec, display, path)
 }
 
 // ── Orbit camera ───────────────────────────────────────────────────────────────
@@ -512,7 +560,7 @@ struct State {
 }
 
 impl State {
-    async fn new(window: Window) -> Self {
+    async fn new(window: Window, ibl_spec: IblGenerationSpec, hdr_path: PathBuf) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -542,8 +590,6 @@ impl State {
 
         let shadow_pass = ShadowPass::new(&context.device, &render_state.instance_bg_layout);
 
-        let workspace = workspace_root();
-        let hdr_path = workspace.join("www/public/studio_small_03_2k.hdr");
         let hdr_bytes = std::fs::read(&hdr_path).unwrap_or_else(|e| {
             panic!("Lecture HDR {} : {e}", hdr_path.display());
         });
@@ -553,7 +599,15 @@ impl State {
         let (hdr_equirect_tex, hdr_equirect_view) =
             upload_hdr_equirect_rgba16f(&context.device, &context.queue, &hdr_image);
 
-        let ibl_context = IblContext::from_hdr(&hdr_image, &context.device, &context.queue);
+        log::info!(
+            "IBL bake spec: irr={} pre0={} lut={} (file {})",
+            ibl_spec.irradiance_size,
+            ibl_spec.prefiltered_size,
+            ibl_spec.brdf_lut_size,
+            hdr_path.display()
+        );
+        let ibl_context =
+            IblContext::from_hdr_with_spec(&hdr_image, &context.device, &context.queue, &ibl_spec);
         let sky_pass = SkyPass::new(&context.device, &hdr_equirect_view, &ibl_context);
         let env_bind_group = build_env_bind_group(
             &context.device,

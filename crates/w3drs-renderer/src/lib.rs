@@ -6,6 +6,7 @@ pub mod gpu_context;
 pub mod hdr_target;
 pub mod hiz_pass;
 pub mod ibl;
+pub mod ibl_spec;
 pub mod light_uniforms;
 pub mod material_uniforms;
 pub mod plugin;
@@ -16,6 +17,19 @@ pub mod shadow_pass;
 pub mod systems;
 pub mod vertex_layout;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod render_graph_exec;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use render_graph_exec::{
+    run_graph_v0_checksum, run_graph_v0_checksum_with_registry, validate_render_graph_exec_v0,
+    RenderGraphExecError, RenderGraphGpuRegistry, Texture2dGpu,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use w3drs_render_graph::{
+    parse_render_graph_json, pass_ids_in_order_v0, validate_exec_v0, RenderGraphValidateError,
+};
+
 pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh, GpuTexture, MaterialTextures};
 pub use cull_pass::{CullPass, CullUniforms, MAX_CULL_ENTITIES};
 pub use error::EngineError;
@@ -24,6 +38,7 @@ pub use gpu_context::{GpuContext, DEPTH_FORMAT};
 pub use hdr_target::{HdrTarget, HDR_FORMAT};
 pub use hiz_pass::HizPass;
 pub use ibl::IblContext;
+pub use ibl_spec::{from_tier_name_silent, IblGenerationSpec, prefiltered_mip_level_count};
 pub use light_uniforms::LightUniforms;
 pub use material_uniforms::MaterialUniforms;
 pub use plugin::{App, Plugin};

@@ -4,14 +4,18 @@ members = [
     "crates/w3drs-math",
     "crates/w3drs-ecs",
     "crates/w3drs-renderer",
+    "crates/w3drs-render-graph",
     "crates/w3drs-assets",
     "crates/w3drs-wasm",
     "examples/khronos-pbr-sample",
     "examples/hdr-ibl-skybox",
+    "examples/hdr-ibl-bench",
+    "examples/phase-b-graph",
     "xtask",
 ]
 
 [workspace.dependencies]
+instant = "0.1"
 glam = { version = "0.29", features = ["bytemuck"] }
 bytemuck = { version = "1.16", features = ["derive"] }
 log = "0.4"

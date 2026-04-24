@@ -14,10 +14,12 @@ thiserror.workspace = true
 
 [dev-dependencies]
 pollster = "0.4"
+w3drs-render-graph = { path = "../w3drs-render-graph" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
 rayon = "1"
+w3drs-render-graph = { path = "../w3drs-render-graph" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { workspace = true, features = ["wgsl", "webgpu"] }

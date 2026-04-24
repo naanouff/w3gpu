@@ -17,6 +17,7 @@ Les identifiants `<id>` suivent les tickets (`phase-a`, `phase-b`, … `phase-l`
 | Phase | Dossier | État |
 |-------|---------|------|
 | A | [`phase-a/`](phase-a/) | DOR : README + manifeste + chemins documentés |
+| B | [`phase-b/`](phase-b/) | Jalon v0 : [`render_graph.json`](phase-b/render_graph.json) + shaders + parseur `w3drs-render-graph` |
 
 ## Rôle
 

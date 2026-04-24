@@ -1,0 +1,46 @@
+{
+  "schema": "w3drs.render_graph",
+  "version": 1,
+  "resources": [
+    {
+      "kind": "texture_2d",
+      "id": "hdr_color",
+      "format": "Rgba16Float",
+      "width": 1280,
+      "height": 720,
+      "usage": ["texture_binding", "render_attachment"]
+    },
+    {
+      "kind": "texture_2d",
+      "id": "scene_depth",
+      "format": "Depth32Float",
+      "width": 1280,
+      "height": 720,
+      "usage": ["render_attachment"]
+    },
+    {
+      "kind": "buffer",
+      "id": "indirect_args",
+      "size": 4096,
+      "usage": ["storage", "copy_dst"]
+    }
+  ],
+  "passes": [
+    {
+      "kind": "compute",
+      "id": "warmup_dispatch",
+      "shader": "shaders/trivial_dispatch.wgsl",
+      "entry_point": "cs_main",
+      "dispatch": { "x": 4, "y": 4, "z": 1 }
+    },
+    {
+      "kind": "raster_mesh",
+      "id": "fullscreen_triangle_probe",
+      "shader": "shaders/minimal_raster.wgsl",
+      "vertex_entry": "vs_main",
+      "fragment_entry": "fs_main",
+      "color_targets": ["hdr_color"],
+      "depth_target": "scene_depth"
+    }
+  ]
+}
