@@ -48,6 +48,7 @@ describe('loadHdrWithTimings (fonctionnel, mocks fetch + moteur)', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.clientBytes).toBe(4);
+      expect(r.sourceBytes.length).toBe(4);
       expect(r.clientFetchAndBufferMs).toBe(0.4);
       expect(r.clientWasmCallWallMs).toBe(4.6);
       expect(r.wasm).toEqual({

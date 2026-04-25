@@ -46,16 +46,23 @@ fn default_one_f32() -> f32 {
 }
 
 fn default_ibl_tier() -> String {
-    "max".to_string()
+    "min".to_string()
 }
 
-/// Tonemapping / post (échantillon Khronos natif : exposure + bloom).
+fn default_fxaa_true() -> bool {
+    true
+}
+
+/// Tonemapping / post (échantillon Khronos natif : exposure + bloom + FXAA).
 #[derive(Debug, Clone, Deserialize)]
 pub struct PhaseATonemap {
     #[serde(default = "default_one_f32")]
     pub exposure: f32,
     #[serde(default)]
     pub bloom_strength: f32,
+    /// Si faux : tonemap ACES sans passe FXAA (drapeau skip-FXAA du post-process).
+    #[serde(default = "default_fxaa_true")]
+    pub fxaa: bool,
 }
 
 impl Default for PhaseAVariant {
@@ -138,7 +145,8 @@ mod tests {
         assert_eq!(c.version, 1);
         let v = c.active_settings();
         assert!((v.ibl_diffuse_scale - 1.0).abs() < 1e-5, "{v:?}");
-        assert_eq!(v.ibl_tier, "max");
+        assert_eq!(v.ibl_tier, "min");
+        assert!(v.tonemap.as_ref().is_some_and(|t| t.fxaa));
     }
 
     #[test]
@@ -153,5 +161,19 @@ mod tests {
             from_str.active_settings().ibl_diffuse_scale,
             from_path.ibl_diffuse_scale()
         );
+    }
+
+    #[test]
+    fn tonemap_fxaa_defaults_true_when_omitted() {
+        let j = r#"{"version":1,"active_variant":"x","variants":{"x":{"tonemap":{"exposure":1.0,"bloom_strength":0.0}}}}"#;
+        let c = parse_phase_a_viewer_config_str_or_default(j);
+        assert!(c.active_settings().tonemap.as_ref().unwrap().fxaa);
+    }
+
+    #[test]
+    fn tonemap_fxaa_can_be_false() {
+        let j = r#"{"version":1,"active_variant":"x","variants":{"x":{"tonemap":{"exposure":1.0,"bloom_strength":0.0,"fxaa":false}}}}"#;
+        let c = parse_phase_a_viewer_config_str_or_default(j);
+        assert!(!c.active_settings().tonemap.as_ref().unwrap().fxaa);
     }
 }

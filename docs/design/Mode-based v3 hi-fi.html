@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>w3d editor — Mode-based v2</title>
+<title>w3d editor — Mode-based v3 (hi-fi)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;700&family=Kalam:wght@300;400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --paper: #f6f3ec;
@@ -606,6 +606,7 @@
   body.compact .rcell p{font-size:14px;}
   body.compact .rcell{padding: 10px 12px;}
 </style>
+<link rel="stylesheet" href="v3-hifi.css">
 </head>
 <body>
 
@@ -763,31 +764,112 @@
           <span class="chip dashed">⌘K search</span>
         </div>
         <div class="workspace">
-          <!-- outliner -->
-          <div class="outliner">
-            <div class="panel" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
-              <div class="panel-title">Scene</div>
-              <span class="label">hierarchy · 7 items</span>
-              <div class="dense" style="margin-top:6px; flex:1">
-                <div class="row"><span class="tri">▾</span><span class="dot"></span>Main Scene</div>
-                <div class="row" style="padding-left:16px"><span class="tri">▾</span>Environment</div>
-                <div class="row" style="padding-left:32px">Ground</div>
-                <div class="row" style="padding-left:32px">Sky</div>
-                <div class="row" style="padding-left:16px"><span class="tri">▸</span>Lights (2)</div>
-                <div class="row sel" style="padding-left:16px">◆ Player</div>
-                <div class="row" style="padding-left:16px">Platforms (3)</div>
-                <div class="row" style="padding-left:16px"><span style="opacity:.5">+ add...</span></div>
+          <!-- left: outliner (top) + library (bottom) -->
+          <div class="outliner left-stack">
+            <!-- OUTLINER (top, compact) -->
+            <div class="panel scene-panel">
+              <div class="panel-head">
+                <span class="panel-title">Scene</span>
+                <span class="badge">7</span>
+                <span class="spacer"></span>
+                <button class="iconbtn" title="filter">⌕</button>
+                <button class="iconbtn" title="add">+</button>
+              </div>
+              <div class="dense scene-tree">
+                <div class="row"><span class="tri">▾</span><span class="rdot blue"></span>Main Scene</div>
+                <div class="row" style="padding-left:18px"><span class="tri">▾</span><span class="rdot green"></span>Environment</div>
+                <div class="row" style="padding-left:34px"><span class="rdot grey"></span>Ground</div>
+                <div class="row" style="padding-left:34px"><span class="rdot grey"></span>Sky</div>
+                <div class="row" style="padding-left:18px"><span class="tri">▸</span><span class="rdot amber"></span>Lights<span class="rcount">2</span></div>
+                <div class="row sel" style="padding-left:18px"><span class="rdot brand"></span>Player</div>
+                <div class="row" style="padding-left:18px"><span class="rdot grey"></span>Platforms<span class="rcount">3</span></div>
               </div>
             </div>
-            <div class="panel dashed" style="padding:10px">
-              <span class="label">primitives · drag ↗</span>
-              <div class="primitives" style="margin-top:6px">
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/></svg>cube</div>
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8"/></svg>sphere</div>
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="12" cy="6" rx="8" ry="2"/><ellipse cx="12" cy="18" rx="8" ry="2"/><path d="M4 6 V18 M20 6 V18"/></svg>cyl</div>
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 4 L20 20 L4 20 Z"/></svg>cone</div>
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="10" width="18" height="4"/></svg>plane</div>
-                <div class="prim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12 H20 M12 4 V20"/></svg>+</div>
+
+            <!-- LIBRARY (bottom, big) -->
+            <div class="panel library-panel">
+              <div class="panel-head lib-head">
+                <span class="panel-title">Library</span>
+                <span class="spacer"></span>
+                <div class="seg-toggle" id="libView">
+                  <button class="on" data-view="grid" title="Grid">▦</button>
+                  <button data-view="list" title="List">≡</button>
+                </div>
+              </div>
+
+              <!-- TABS -->
+              <div class="lib-tabs" id="libTabs">
+                <button class="lib-tab on" data-tab="prim">Primitives</button>
+                <button class="lib-tab" data-tab="mesh">Meshes</button>
+                <button class="lib-tab" data-tab="mat">Materials</button>
+                <button class="lib-tab" data-tab="tex">Textures</button>
+                <button class="lib-tab" data-tab="audio">Audio</button>
+                <button class="lib-tab" data-tab="script">Scripts</button>
+              </div>
+
+              <!-- SEARCH + FILTERS -->
+              <div class="lib-search">
+                <span class="s-icon">⌕</span>
+                <input type="text" placeholder="Search primitives…" />
+                <span class="kbd">⌘ K</span>
+              </div>
+              <div class="lib-filters">
+                <button class="filt on">All <span class="c">12</span></button>
+                <button class="filt">Built-in <span class="c">6</span></button>
+                <button class="filt">Project <span class="c">4</span></button>
+                <button class="filt">Marketplace <span class="c">2</span></button>
+              </div>
+
+              <!-- GRID -->
+              <div class="lib-grid" id="libGrid">
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 8 L12 4 L20 8 L20 16 L12 20 L4 16 Z M4 8 L12 12 L20 8 M12 12 V20"/></svg></div>
+                  <div class="meta"><span class="t">Cube</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="8" ry="3"/><path d="M12 4 V20"/></svg></div>
+                  <div class="meta"><span class="t">Sphere</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="12" cy="6" rx="7" ry="2"/><ellipse cx="12" cy="18" rx="7" ry="2"/><path d="M5 6 V18 M19 6 V18"/></svg></div>
+                  <div class="meta"><span class="t">Cylinder</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 4 L20 20 L4 20 Z"/><ellipse cx="12" cy="20" rx="8" ry="2"/></svg></div>
+                  <div class="meta"><span class="t">Cone</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 14 L12 9 L21 14 L12 19 Z"/></svg></div>
+                  <div class="meta"><span class="t">Plane</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8"/><path d="M4 12 H20 M12 4 Q19 12 12 20 Q5 12 12 4"/></svg></div>
+                  <div class="meta"><span class="t">Torus</span><span class="d">primitive</span></div>
+                </div>
+                <div class="lib-tile project">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 9 L12 5 L19 9 L19 17 L12 21 L5 17 Z"/><circle cx="12" cy="13" r="2.5"/></svg><span class="origin">P</span></div>
+                  <div class="meta"><span class="t">player.glb</span><span class="d">project · mesh</span></div>
+                </div>
+                <div class="lib-tile project">
+                  <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 18 L8 12 L12 15 L17 9 L21 14 L21 18 Z"/></svg><span class="origin">P</span></div>
+                  <div class="meta"><span class="t">terrain_a</span><span class="d">project · mesh</span></div>
+                </div>
+              </div>
+
+              <!-- LIST (hidden by default) -->
+              <div class="lib-list" id="libList" hidden>
+                <div class="lrow"><span class="li">▦</span><span class="ln">Cube</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">●</span><span class="ln">Sphere</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">⬤</span><span class="ln">Cylinder</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">▲</span><span class="ln">Cone</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">▱</span><span class="ln">Plane</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">◯</span><span class="ln">Torus</span><span class="lt">primitive</span></div>
+                <div class="lrow"><span class="li">⬢</span><span class="ln">player.glb</span><span class="lt">project · mesh</span></div>
+                <div class="lrow"><span class="li">⛰</span><span class="ln">terrain_a</span><span class="lt">project · mesh</span></div>
+              </div>
+
+              <div class="lib-foot">
+                <span class="hint">Drag to viewport · double-click to spawn</span>
               </div>
             </div>
           </div>
@@ -809,7 +891,7 @@
               <div class="panel-title">Player</div>
               <span class="label">◆ inspector</span>
 
-              <div class="inspector-section" style="margin-top:8px">
+              <div class="inspector-section" style="margin-top: 8px">
                 <span class="label">transform</span>
                 <div class="prop"><span>POS</span><div class="val"><span>0.00 0.50 0.00</span><span style="color:var(--ink-soft)">⇔</span></div></div>
                 <div class="prop"><span>ROT</span><div class="val"><span>0  0  0</span><span style="color:var(--ink-soft)">⇔</span></div></div>
@@ -916,45 +998,137 @@
             </div>
           </div>
 
-          <!-- paint panels -->
-          <div class="paint-col">
-            <div class="panel">
-              <div class="panel-title">Swatches</div>
-              <span class="label">click to pick · drag to viewport</span>
-              <div class="swatches" style="margin-top:8px">
-                <div class="sw sel" style="background:#8fc76b"></div>
-                <div class="sw" style="background:#e0c27a"></div>
-                <div class="sw" style="background:#6b9cc7"></div>
-                <div class="sw" style="background:#c26b6b"></div>
-                <div class="sw" style="background:#4a4a4a"></div>
-                <div class="sw" style="background:#d8d0bf"></div>
-                <div class="sw" style="background:#3b5b3b"></div>
-                <div class="sw" style="background:#e8b56b"></div>
-                <div class="sw" style="background:#9b7fc7"></div>
-                <div class="sw" style="background: var(--paper); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px">+</div>
+          <!-- paint right column: brush ribbon + library -->
+          <div class="paint-col paint-right">
+
+            <!-- BRUSH RIBBON -->
+            <div class="brush-ribbon">
+              <div class="br-row">
+                <span class="br-label">tool</span>
+                <div class="br-tools">
+                  <button class="br-tool on" title="Brush"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 4 L20 10 L11 19 L5 19 L5 13 Z"/><path d="M14 4 L11 7"/></svg></button>
+                  <button class="br-tool" title="Fill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 13 L12 6 L18 12 L11 19 Z"/><path d="M19 14 Q22 17 21 19 Q19 21 18 19 Q18 17 19 14 Z"/></svg></button>
+                  <button class="br-tool" title="Eyedropper"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 4 L20 10 M16 6 L9 13 L5 14 L4 19 L9 18 L10 14 L17 7"/></svg></button>
+                  <button class="br-tool" title="Erase"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 16 L13 8 L20 15 L13 22 L8 22 L5 19 Z"/><path d="M9 12 L16 19"/></svg></button>
+                  <button class="br-tool" title="Smudge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 13 Q9 5 13 13 Q17 21 21 13"/></svg></button>
+                </div>
+              </div>
+              <div class="br-row">
+                <label class="br-field"><span>size</span><div class="br-slider"><div class="br-track"><div class="br-fill" style="width:42%"></div><div class="br-thumb" style="left:42%"></div></div><span class="br-val">0.80<i>m</i></span></div></label>
+                <label class="br-field"><span>hardness</span><div class="br-slider"><div class="br-track"><div class="br-fill" style="width:30%"></div><div class="br-thumb" style="left:30%"></div></div><span class="br-val">30<i>%</i></span></div></label>
+              </div>
+              <div class="br-row">
+                <label class="br-field"><span>flow</span><div class="br-slider"><div class="br-track"><div class="br-fill" style="width:80%"></div><div class="br-thumb" style="left:80%"></div></div><span class="br-val">80<i>%</i></span></div></label>
+                <label class="br-field"><span>blend</span>
+                  <select class="br-select">
+                    <option>Replace</option>
+                    <option>Multiply</option>
+                    <option>Overlay</option>
+                    <option>Soft light</option>
+                  </select>
+                </label>
               </div>
             </div>
 
-            <div class="panel">
-              <div class="panel-title">Materials</div>
-              <span class="label">from library · drag to surface</span>
-              <div class="mats" style="margin-top:8px">
-                <div class="mat" style="background: linear-gradient(135deg, #8fc76b, #5a8f40)">grass</div>
-                <div class="mat" style="background: linear-gradient(135deg, #c9b38a, #8a6b40)">wood</div>
-                <div class="mat" style="background: linear-gradient(135deg, #8a8a8a, #4a4a4a); color:#fff">stone</div>
-                <div class="mat" style="background: linear-gradient(135deg, #d9c7a8, #a38860)">sand</div>
-                <div class="mat" style="background: linear-gradient(135deg, #6ab3d9, #2a6a99); color:#fff">water</div>
-                <div class="mat" style="background: color-mix(in oklab, var(--accent) 30%, var(--paper)); color: var(--ink)">✦ gen</div>
+            <!-- LIBRARY (paint context) -->
+            <div class="panel library-panel paint-library">
+              <div class="panel-head lib-head">
+                <span class="panel-title">Library</span>
+                <span class="lib-count" id="libCountP">128 items</span>
+                <span class="spacer"></span>
+                <div class="lib-view" id="libViewP">
+                  <button class="on" data-view="grid" title="Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg></button>
+                  <button data-view="list" title="List"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7 H20 M4 12 H20 M4 17 H20"/></svg></button>
+                </div>
               </div>
-            </div>
 
-            <div class="panel dashed">
-              <span class="label">brush · also on scroll</span>
-              <div class="dense" style="margin-top:6px; gap:2px">
-                <div class="row">size <span style="margin-left:auto">0.80m</span></div>
-                <div class="row">edge <span style="margin-left:auto">soft</span></div>
-                <div class="row">scatter <span style="margin-left:auto">12%</span></div>
-                <div class="row">mode <span style="margin-left:auto">replace</span></div>
+              <!-- ACTIVE RESOURCE banner -->
+              <div class="active-res">
+                <div class="ar-thumb" style="background:linear-gradient(135deg,#5a8f40,#8fc76b);"></div>
+                <div class="ar-meta">
+                  <div class="ar-name">Moss Ground</div>
+                  <div class="ar-sub">material · tiled · 2.5m</div>
+                </div>
+                <button class="ar-pin" title="Pinned"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4 L15 4 L13 10 L17 12 L13 14 L13 21 L11 21 L11 14 L7 12 L11 10 Z"/></svg></button>
+              </div>
+
+              <!-- TABS (paint-specific 5) -->
+              <div class="lib-tabs" id="libTabsP">
+                <button class="lib-tab on" data-tab="materials">Materials</button>
+                <button class="lib-tab" data-tab="textures">Textures</button>
+                <button class="lib-tab" data-tab="swatches">Swatches</button>
+                <button class="lib-tab" data-tab="brushes">Brushes</button>
+                <button class="lib-tab" data-tab="stamps">Stamps</button>
+              </div>
+
+              <!-- SEARCH + FILTERS -->
+              <div class="lib-search">
+                <span class="s-icon">⌕</span>
+                <input type="text" placeholder="Search materials…" />
+                <span class="kbd">⌘ K</span>
+              </div>
+              <div class="lib-filters">
+                <button class="filt on">All <span class="c">42</span></button>
+                <button class="filt">Built-in <span class="c">28</span></button>
+                <button class="filt">Project <span class="c">9</span></button>
+                <button class="filt">AI <span class="c">5</span></button>
+                <button class="filt accent">✦ generate</button>
+              </div>
+
+              <!-- GRID -->
+              <div class="lib-grid" id="libGridP">
+                <div class="lib-tile sel">
+                  <div class="thumb mat-thumb" style="background: radial-gradient(circle at 30% 30%, #9bd078 0 18%, transparent 19%), radial-gradient(circle at 70% 60%, #5a8f40 0 14%, transparent 15%), linear-gradient(135deg,#7ab056,#4a7a32)"></div>
+                  <div class="meta"><span class="t">Moss Ground</span><span class="d">material · 2.5m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#c9b38a,#8a6b40); background-image: linear-gradient(135deg,#c9b38a,#8a6b40), repeating-linear-gradient(90deg, transparent 0 4px, rgba(0,0,0,.15) 4px 5px); background-blend-mode: multiply"></div>
+                  <div class="meta"><span class="t">Oak Plank</span><span class="d">material · 1.2m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#8a8a8a,#4a4a4a); background-image: linear-gradient(135deg,#8a8a8a,#4a4a4a), radial-gradient(circle at 20% 30%, #5a5a5a 0 8%, transparent 9%), radial-gradient(circle at 70% 60%, #6a6a6a 0 6%, transparent 7%); background-blend-mode: multiply;"></div>
+                  <div class="meta"><span class="t">Cobblestone</span><span class="d">material · 1.5m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#d9c7a8,#a38860)"></div>
+                  <div class="meta"><span class="t">Desert Sand</span><span class="d">material · 0.8m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#6ab3d9,#2a6a99)"></div>
+                  <div class="meta"><span class="t">Pond Water</span><span class="d">material · animated</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#e8d6b3,#b89a6e); background-image: linear-gradient(135deg,#e8d6b3,#b89a6e), repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.12) 6px 7px); background-blend-mode: multiply;"></div>
+                  <div class="meta"><span class="t">Thatched Roof</span><span class="d">material · 1.8m</span></div>
+                </div>
+                <div class="lib-tile project">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#5a4a3a,#2a1f15)"><span class="origin">P</span></div>
+                  <div class="meta"><span class="t">dark_bark</span><span class="d">project · 1.0m</span></div>
+                </div>
+                <div class="lib-tile project">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#a87850,#6a4830)"><span class="origin">P</span></div>
+                  <div class="meta"><span class="t">rust_metal</span><span class="d">project · 0.6m</span></div>
+                </div>
+                <div class="lib-tile ai">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 60%, #5a8f40), color-mix(in oklab, var(--accent) 30%, #2a4a20));"><span class="origin">✦</span></div>
+                  <div class="meta"><span class="t">moss_glow</span><span class="d">ai · generated</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#3a3a3a,#1a1a1a)"></div>
+                  <div class="meta"><span class="t">Asphalt</span><span class="d">material · 2.0m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#e0e0e0,#a0a0a0)"></div>
+                  <div class="meta"><span class="t">Marble</span><span class="d">material · 3.0m</span></div>
+                </div>
+                <div class="lib-tile">
+                  <div class="thumb mat-thumb" style="background: linear-gradient(135deg,#7ab056,#3a5a25); background-image: linear-gradient(135deg,#7ab056,#3a5a25), repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.18) 3px 4px); background-blend-mode: multiply;"></div>
+                  <div class="meta"><span class="t">Tall Grass</span><span class="d">material · 0.4m</span></div>
+                </div>
+              </div>
+
+              <div class="lib-foot">
+                <span class="hint">Drag to surface · click to pick · ⌥ drag to scatter</span>
               </div>
             </div>
           </div>
@@ -1469,6 +1643,80 @@
       }, 180);
     });
   });
+
+  // ---- Library: tab + view toggle ----
+  (function libraryInit(){
+    const tabs = document.getElementById('libTabs');
+    const view = document.getElementById('libView');
+    const grid = document.getElementById('libGrid');
+    const list = document.getElementById('libList');
+    const search = document.querySelector('.lib-search input');
+    if (!tabs || !view) return;
+
+    const tabPlaceholders = {
+      prim: 'Search primitives…',
+      mesh: 'Search meshes…',
+      mat: 'Search materials…',
+      tex: 'Search textures…',
+      audio: 'Search audio…',
+      script: 'Search scripts…',
+    };
+
+    tabs.addEventListener('click', e => {
+      const b = e.target.closest('.lib-tab'); if (!b) return;
+      tabs.querySelectorAll('.lib-tab').forEach(x => x.classList.toggle('on', x === b));
+      const k = b.dataset.tab;
+      if (search && tabPlaceholders[k]) search.placeholder = tabPlaceholders[k];
+    });
+
+    view.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      view.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      const v = b.dataset.view;
+      if (grid) grid.hidden = (v !== 'grid');
+      if (list) list.hidden = (v !== 'list');
+    });
+
+    document.querySelectorAll('.lib-filters .filt').forEach(b => {
+      b.addEventListener('click', () => {
+        b.parentElement.querySelectorAll('.filt').forEach(x => x.classList.toggle('on', x === b));
+      });
+    });
+  })();
+
+  // ---- Paint Library: tab + view toggle ----
+  (function paintLibraryInit(){
+    const tabs = document.getElementById('libTabsP');
+    const view = document.getElementById('libViewP');
+    const grid = document.getElementById('libGridP');
+    if (!tabs) return;
+    const search = tabs.parentElement.querySelector('.lib-search input');
+    const placeholders = {
+      materials: 'Search materials…',
+      textures: 'Search textures…',
+      swatches: 'Search swatches…',
+      brushes: 'Search brushes…',
+      stamps: 'Search stamps…',
+    };
+    tabs.addEventListener('click', e => {
+      const b = e.target.closest('.lib-tab'); if (!b) return;
+      tabs.querySelectorAll('.lib-tab').forEach(x => x.classList.toggle('on', x === b));
+      if (search) search.placeholder = placeholders[b.dataset.tab] || 'Search…';
+    });
+    if (view){
+      view.addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        view.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      });
+    }
+    // brush tools toggle
+    document.querySelectorAll('.brush-ribbon .br-tools').forEach(group => {
+      group.addEventListener('click', e => {
+        const b = e.target.closest('.br-tool'); if (!b) return;
+        group.querySelectorAll('.br-tool').forEach(x => x.classList.toggle('on', x === b));
+      });
+    });
+  })();
 </script>
 
 </body>

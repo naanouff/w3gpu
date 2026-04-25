@@ -291,9 +291,7 @@ fn validate(doc: &RenderGraphDocument) -> Result<(), RenderGraphError> {
             Pass::RasterMesh { id, .. }
             | Pass::Fullscreen { id, .. }
             | Pass::Blit { id, .. }
-            | Pass::RasterDepthMesh { id, .. } => {
-                id.as_str()
-            }
+            | Pass::RasterDepthMesh { id, .. } => id.as_str(),
         };
         if !seen_pass.insert(id) {
             return Err(RenderGraphError::DuplicatePassId(id.to_string()));

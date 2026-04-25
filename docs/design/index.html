@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>w3d editor — wireframe exploration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;700&family=Kalam:wght@300;400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #f6f3ec;
+    --ink: #1a1a1a;
+    --ink-2: #3a3a3a;
+    --ink-soft: #6b6b6b;
+    --rule: #2a2a2a;
+    --accent: #ffe14b; /* highlighter */
+    --accent-2: #ff6b4a;
+    --panel-fill: rgba(0,0,0,0.025);
+  }
+  html.dark{
+    --paper: #1c1d1f;
+    --ink: #f1ede3;
+    --ink-2: #d7d2c6;
+    --ink-soft: #8a8680;
+    --rule: #d7d2c6;
+    --accent: #ffd84b;
+    --accent-2: #ff6b4a;
+    --panel-fill: rgba(255,255,255,0.03);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Kalam',system-ui,sans-serif;}
+  body{
+    /* paper texture */
+    background-image:
+      radial-gradient(rgba(0,0,0,0.015) 1px, transparent 1px),
+      radial-gradient(rgba(0,0,0,0.01) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+  }
+  html.dark body{
+    background-image:
+      radial-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      radial-gradient(rgba(255,255,255,0.012) 1px, transparent 1px);
+  }
+
+  /* ========== header ========== */
+  header.topbar{
+    position:sticky; top:0; z-index:30;
+    backdrop-filter: blur(8px);
+    background: color-mix(in oklab, var(--paper) 88%, transparent);
+    border-bottom: 1px dashed var(--rule);
+    padding: 14px 28px 12px;
+    display:flex; align-items:baseline; gap:24px; flex-wrap:wrap;
+  }
+  .brand{
+    font-family:'Caveat',cursive;
+    font-size: 30px;
+    font-weight:700;
+    line-height:1;
+    letter-spacing:-.5px;
+  }
+  .brand .dot{
+    display:inline-block; width:10px; height:10px; border-radius:50%;
+    background: var(--ink); margin-right:6px; transform:translateY(-4px);
+  }
+  .brand em{
+    font-style:normal;
+    background: linear-gradient(transparent 55%, var(--accent) 55%, var(--accent) 90%, transparent 90%);
+    padding: 0 4px;
+  }
+  .subtitle{
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing:.02em;
+    text-transform:uppercase;
+  }
+  .header-spacer{flex:1}
+  .tweaks-toggle{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color: var(--ink-soft);
+    padding: 6px 10px;
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    cursor:pointer;
+    background: transparent;
+    text-transform: uppercase;
+    letter-spacing:.05em;
+  }
+  .tweaks-toggle:hover{ color: var(--ink); border-style:solid; }
+
+  /* ========== intro ========== */
+  .intro{
+    max-width: 1200px;
+    margin: 30px auto 10px;
+    padding: 0 32px;
+  }
+  .intro h1{
+    font-family:'Caveat',cursive;
+    font-weight:700;
+    font-size: clamp(42px, 5vw, 64px);
+    line-height:1;
+    margin: 0 0 12px;
+  }
+  .intro h1 .marker{
+    background: linear-gradient(transparent 58%, var(--accent) 58%, var(--accent) 92%, transparent 92%);
+    padding: 0 8px;
+  }
+  .intro .lead{
+    font-family:'Kalam',cursive;
+    font-size: 19px;
+    line-height:1.5;
+    max-width: 780px;
+    color: var(--ink-2);
+  }
+  .intro .meta{
+    margin-top: 14px;
+    display:flex; gap:18px; flex-wrap:wrap;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:.05em;
+  }
+  .intro .meta span b{color:var(--ink); font-weight:500;}
+
+  /* ========== system panel ========== */
+  .system{
+    max-width: 1200px;
+    margin: 28px auto 10px;
+    padding: 22px 32px;
+    border: 1.5px solid var(--rule);
+    border-radius: 14px;
+    position: relative;
+    background: var(--panel-fill);
+  }
+  .system::before{
+    content:"design system";
+    position:absolute; top:-10px; left:18px;
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    background: var(--paper);
+    padding: 2px 8px; letter-spacing:.12em; text-transform:uppercase;
+    color: var(--ink-soft);
+  }
+  .system-grid{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 900px){ .system-grid{grid-template-columns:repeat(2,1fr)} }
+  .syscell{
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .sys-k{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+    color: var(--ink-soft);
+  }
+  .sys-v{
+    font-family:'Caveat',cursive;
+    font-size: 22px; line-height:1.1;
+  }
+  .sys-v.mono{ font-family:'IBM Plex Mono',monospace; font-size:13px;}
+  .swatches{display:flex; gap:6px; margin-top:2px;}
+  .sw{width:22px;height:22px;border-radius:50%; border:1px solid var(--rule);}
+
+  /* ========== nav tabs ========== */
+  nav.variants{
+    position: sticky; top: 64px; z-index: 20;
+    max-width: 1200px; margin: 28px auto 0; padding: 0 32px;
+    display:flex; gap: 8px; flex-wrap:wrap;
+    background: color-mix(in oklab, var(--paper) 92%, transparent);
+    backdrop-filter: blur(6px);
+    padding-top: 10px; padding-bottom: 10px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .tab{
+    font-family:'Kalam',cursive;
+    font-size: 17px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    cursor:pointer;
+    border: 1.5px solid var(--rule);
+    background: transparent;
+    color: var(--ink-2);
+    display:inline-flex; gap:8px; align-items:baseline;
+    transition: background .15s;
+  }
+  .tab .num{
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 10px;
+    color: var(--ink-soft);
+  }
+  .tab:hover{ background: var(--panel-fill); }
+  .tab[aria-selected="true"]{
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .tab[aria-selected="true"] .num{ color: var(--paper); opacity:.7; }
+
+  /* ========== variant canvas ========== */
+  main.variants-area{
+    max-width: 1200px;
+    margin: 24px auto 96px;
+    padding: 0 32px;
+  }
+
+  section.variant{
+    display:none;
+    animation: fadein .25s ease;
+  }
+  section.variant.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform: translateY(4px)} to{opacity:1; transform:none} }
+
+  .variant-head{
+    display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;
+    padding-bottom: 16px;
+    border-bottom: 1.5px dashed var(--rule);
+  }
+  .variant-head h2{
+    font-family:'Caveat',cursive; font-weight:700;
+    font-size: 44px; margin:0 0 0 0; line-height:1;
+  }
+  .variant-head .tag{
+    font-family:'IBM Plex Mono',monospace; font-size: 11px;
+    letter-spacing:.08em; text-transform:uppercase;
+    color: var(--ink-soft);
+    padding: 3px 8px; border: 1px dashed var(--rule); border-radius: 4px;
+  }
+  .variant-head .desc{
+    font-family:'Kalam',cursive;
+    font-size: 18px; color: var(--ink-2);
+    max-width: 720px;
+    margin-top: 6px;
+  }
+
+  /* sketch frame (the editor mock) */
+  .sketch-frame{
+    margin-top: 22px;
+    position: relative;
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    background: var(--paper);
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    box-shadow: 6px 6px 0 0 color-mix(in oklab, var(--ink) 12%, transparent);
+  }
+  .sketch-frame.compact{aspect-ratio: 16 / 9;}
+
+  /* all boxes are sketchy dashed/solid */
+  .box{
+    position:absolute;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    background: var(--paper);
+  }
+  .box.dashed{ border-style: dashed; }
+  .box.soft{ background: var(--panel-fill); }
+  .box.hl{ background: color-mix(in oklab, var(--accent) 45%, transparent); border-color: var(--ink); }
+  .box.ghost{ background: transparent; border-color: var(--ink-soft); border-style:dashed; }
+
+  .label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 10px;
+    letter-spacing:.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .kalam{ font-family:'Kalam',cursive; color: var(--ink-2); }
+  .caveat{ font-family:'Caveat',cursive; }
+
+  .chip{
+    display:inline-flex; align-items:center; gap:4px;
+    padding: 2px 6px;
+    border: 1px solid var(--ink); border-radius: 3px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 9px;
+    background: var(--paper);
+  }
+  .chip.fill{ background: var(--ink); color: var(--paper); }
+
+  /* placeholder shapes for viewport (cube/sphere wireframe) */
+  .ph-cube{
+    width:100%; height:100%;
+    background-image:
+      linear-gradient(45deg, transparent 49%, var(--ink-soft) 49%, var(--ink-soft) 51%, transparent 51%),
+      linear-gradient(-45deg, transparent 49%, var(--ink-soft) 49%, var(--ink-soft) 51%, transparent 51%);
+    background-size: 28px 28px;
+    opacity:.35;
+  }
+
+  /* annotation pin */
+  .note{
+    position:absolute;
+    font-family:'Caveat',cursive;
+    font-size: 18px;
+    color: var(--ink);
+    line-height: 1;
+    max-width: 220px;
+    z-index: 5;
+  }
+  .note::before{
+    content:""; position:absolute;
+    width: var(--lw, 40px); height: 1px;
+    background: var(--ink);
+    top: var(--ly, 50%); left: var(--lx, -44px);
+    transform: rotate(var(--lr, 0deg));
+    transform-origin: right center;
+  }
+  .note.hide{ display:none; }
+  .note.right{text-align:left}
+  .note.left{text-align:right}
+  .note .arrow{
+    display:inline-block;
+    font-weight: 700;
+  }
+  body.no-annotations .note{display:none;}
+
+  /* floating gizmo on viewport */
+  .gizmo{
+    position:absolute;
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    color: var(--ink);
+    padding: 4px 6px;
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    border-radius: 3px;
+  }
+
+  /* list rows inside panels */
+  .row{
+    display:flex; align-items:center; gap:6px;
+    font-family:'IBM Plex Mono',monospace; font-size: 11px;
+    padding: 4px 6px; border-radius: 4px;
+    color: var(--ink-2);
+  }
+  .row.sel{ background: color-mix(in oklab, var(--accent) 40%, transparent); color: var(--ink);}
+  .row .tri{opacity:.55}
+  .row .dot{display:inline-block; width:6px;height:6px; border-radius:50%; background:var(--ink-soft);}
+
+  .dense{display:flex; flex-direction:column; gap:2px;}
+
+  /* prompt bar reusable */
+  .prompt{
+    display:flex; align-items:center; gap:10px;
+    background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px;
+    padding: 10px 16px;
+    font-family:'Kalam',cursive; font-size: 16px;
+    color: var(--ink-2);
+    box-shadow: 3px 3px 0 0 var(--ink);
+  }
+  .prompt .spark{
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    border:1px solid var(--ink); padding:2px 5px; border-radius:3px;
+    letter-spacing:.08em;
+  }
+  .prompt .caret{
+    display:inline-block; width:1px; height:18px;
+    background: var(--ink);
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+
+  /* rationale block below each sketch */
+  .rationale{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap:18px;
+    margin-top: 22px;
+  }
+  @media (max-width: 900px){ .rationale{grid-template-columns:1fr} }
+  .rcell{
+    padding: 14px 16px;
+    border: 1px dashed var(--rule);
+    border-radius: 10px;
+  }
+  .rcell h4{
+    margin:0 0 6px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 10px; text-transform:uppercase; letter-spacing:.1em;
+    color: var(--ink-soft);
+  }
+  .rcell p{
+    margin: 0;
+    font-family:'Kalam',cursive;
+    font-size: 16px;
+    line-height: 1.35;
+    color: var(--ink);
+  }
+
+  /* tweaks panel */
+  .tweaks-panel{
+    position: fixed;
+    right: 24px; bottom: 24px;
+    width: 280px;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: 6px 6px 0 0 var(--ink);
+    z-index: 60;
+    transform: translateY(16px) scale(.98);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    font-family:'Kalam',cursive;
+  }
+  .tweaks-panel.open{
+    opacity:1; pointer-events: auto; transform:none;
+  }
+  .tweaks-panel h3{
+    margin:0; padding: 14px 16px 4px;
+    font-family:'Caveat',cursive; font-weight:700; font-size: 28px;
+    letter-spacing:-.5px;
+  }
+  .tweaks-panel .hint{
+    padding: 0 16px 10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing:.08em;
+    color: var(--ink-soft);
+  }
+  .tweaks-panel section{
+    padding: 10px 16px;
+    border-top: 1px dashed var(--rule);
+  }
+  .tweaks-panel section label{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size: 16px; color: var(--ink);
+    padding: 4px 0;
+    cursor: pointer;
+  }
+  .tweaks-panel .seg{
+    display:flex; gap:4px; margin-top:6px;
+  }
+  .tweaks-panel .seg button{
+    flex:1; font-family:'IBM Plex Mono',monospace; font-size:10px;
+    padding: 5px 0; border: 1px solid var(--rule); background: transparent; color: var(--ink-2);
+    border-radius: 4px; cursor:pointer; text-transform:uppercase; letter-spacing:.05em;
+  }
+  .tweaks-panel .seg button.on{ background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .switch{
+    position:relative; width:34px; height:18px; border:1.5px solid var(--ink); border-radius:999px; background:transparent;
+  }
+  .switch::after{
+    content:""; position:absolute; top:1px; left:1px;
+    width:12px; height:12px; border-radius:50%;
+    background: var(--ink); transition: transform .15s;
+  }
+  input[type="checkbox"]{display:none;}
+  input[type="checkbox"]:checked + .switch{background: var(--accent);}
+  input[type="checkbox"]:checked + .switch::after{transform: translateX(16px);}
+
+  /* dotted grid on sketch canvas */
+  .sketch-frame::before{
+    content:""; position:absolute; inset:0;
+    background-image: radial-gradient(var(--ink-soft) .7px, transparent .8px);
+    background-size: 18px 18px;
+    opacity: .2;
+    pointer-events:none;
+  }
+
+  /* ===== variant 1: prompt-first ===== */
+  .v1 .viewport{
+    position:absolute; inset: 10px 10px 96px 10px;
+    border: 1.8px solid var(--ink); border-radius: 10px;
+    overflow:hidden;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+  }
+  .v1 .hud-top{
+    position:absolute; top: 22px; left: 22px;
+    display:flex; gap:6px; align-items:center;
+  }
+  .v1 .hud-right{
+    position:absolute; top: 22px; right: 22px;
+    display:flex; gap:6px;
+  }
+  .v1 .hud-gizmo{
+    position:absolute; bottom: 112px; right: 28px;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color: var(--ink-soft);
+    text-align:center;
+  }
+  .v1 .prompt-bar{
+    position:absolute; left:50%; bottom: 22px;
+    transform: translateX(-50%);
+    width: min(620px, 80%);
+  }
+  .v1 .ph-obj{
+    position:absolute; inset: 15% 25% 22% 20%;
+    border: 1.8px solid var(--ink-soft);
+    border-radius: 8px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size: 11px; color: var(--ink-soft);
+  }
+  .v1 .ph-obj::before{
+    content:""; position:absolute; inset: 14%;
+    background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--ink-soft) 60%, transparent) 6px 7px);
+    opacity:.25;
+  }
+  .v1 .suggestions{
+    position:absolute; left:50%; bottom: 78px;
+    transform: translateX(-50%);
+    display:flex; gap:8px;
+  }
+  .v1 .suggestions .chip{ padding: 5px 10px; background: var(--paper); }
+
+  /* ===== variant 2: conversational sidebar ===== */
+  .v2 .chat{
+    position:absolute; top:10px; bottom:10px; left:10px;
+    width: 34%;
+    border: 1.8px solid var(--ink); border-radius: 10px;
+    padding: 14px; display:flex; flex-direction:column; gap:10px;
+    background: var(--paper);
+  }
+  .v2 .chat h5{
+    margin:0;
+    font-family:'Caveat',cursive; font-size:22px; font-weight:700;
+    display:flex; align-items:center; gap:8px;
+  }
+  .v2 .chat h5 .dot{width:8px;height:8px; border-radius:50%; background: var(--accent-2); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-2) 40%, transparent);}
+  .v2 .msg{
+    font-family:'Kalam',cursive; font-size:14px; color: var(--ink);
+    padding: 8px 10px; border-radius: 10px;
+    border: 1px solid var(--rule);
+    max-width: 92%;
+  }
+  .v2 .msg.you{ align-self:flex-end; background: var(--panel-fill); border-style: dashed; }
+  .v2 .msg.ai{ align-self:flex-start; background: color-mix(in oklab, var(--accent) 25%, var(--paper)); }
+  .v2 .msg .small{font-family:'IBM Plex Mono',monospace; font-size:10px; color: var(--ink-soft); display:block; margin-bottom:2px;}
+  .v2 .ai-actions{
+    display:flex; gap:4px; flex-wrap:wrap; margin-top:6px;
+  }
+  .v2 .chat-input{
+    margin-top:auto;
+  }
+  .v2 .canvas{
+    position:absolute; top:10px; bottom:10px; right:10px;
+    left: calc(34% + 20px);
+    border: 1.8px solid var(--ink); border-radius: 10px;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+    overflow: hidden;
+  }
+  .v2 .canvas .ph-cube{position:absolute; inset:0;}
+  .v2 .toolbar{
+    position:absolute; top: 22px; left: 50%; transform: translateX(-50%);
+    display:flex; gap:6px;
+  }
+  .v2 .canvas .minipanel{
+    position:absolute; right: 18px; top: 22px;
+    border:1.5px solid var(--ink); border-radius: 8px; background: var(--paper);
+    padding: 10px 12px; width: 180px;
+  }
+
+  /* ===== variant 3: classic reimagined ===== */
+  .v3 .appbar{
+    position:absolute; left:10px; right:10px; top:10px; height:42px;
+    border: 1.8px solid var(--ink); border-radius: 8px; background: var(--paper);
+    display:flex; align-items:center; padding: 0 12px; gap: 14px;
+  }
+  .v3 .appbar .play{
+    display:flex; gap: 6px; margin-left:auto; margin-right:auto;
+  }
+  .v3 .appbar .play .chip.fill{ padding: 3px 10px; }
+  .v3 .left{
+    position:absolute; left:10px; top: 62px; bottom: 10px; width: 19%;
+    border: 1.8px solid var(--ink); border-radius: 8px; background: var(--paper);
+    padding: 12px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .v3 .center{
+    position:absolute; top: 62px; bottom: calc(30% + 18px);
+    left: calc(19% + 18px); right: calc(22% + 18px);
+    border: 1.8px solid var(--ink); border-radius: 8px;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+    overflow:hidden;
+  }
+  .v3 .right{
+    position:absolute; top: 62px; bottom:10px; right: 10px; width: 22%;
+    border: 1.8px solid var(--ink); border-radius: 8px; background: var(--paper);
+    padding: 12px;
+    display:flex; flex-direction:column; gap: 10px;
+  }
+  .v3 .bottom{
+    position:absolute; bottom: 10px;
+    left: calc(19% + 18px); right: calc(22% + 18px);
+    height: 30%;
+    border: 1.8px solid var(--ink); border-radius: 8px; background: var(--paper);
+    padding: 10px 12px;
+  }
+  .v3 .panel-title{
+    font-family:'Caveat',cursive; font-size:22px; font-weight:700;
+    line-height:1; margin-bottom:2px;
+  }
+  .v3 .inspector .prop{
+    display:grid; grid-template-columns: 52px 1fr; align-items:center; gap:6px;
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    padding: 4px 0;
+    border-bottom: 1px dashed color-mix(in oklab, var(--ink) 20%, transparent);
+  }
+  .v3 .inspector .val{
+    border: 1px solid var(--rule); border-radius:4px;
+    padding: 2px 6px; background: var(--paper);
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    display:flex; justify-content:space-between; gap:6px;
+  }
+  .v3 .inspector .val .drag{color: var(--ink-soft);}
+  .v3 .assets-grid{
+    display:grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+  }
+  .v3 .asset{
+    aspect-ratio: 1; border:1px solid var(--ink); border-radius: 6px;
+    background: var(--panel-fill);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size: 9px;
+    color: var(--ink-soft);
+  }
+  .v3 .ai-strip{
+    margin-top: auto;
+  }
+
+  /* ===== variant 4: mode-based ===== */
+  .v4 .railleft{
+    position:absolute; left: 10px; top:10px; bottom:10px; width: 56px;
+    border:1.8px solid var(--ink); border-radius: 10px;
+    background: var(--paper);
+    display:flex; flex-direction:column; gap:4px; padding: 10px 6px;
+    align-items:center;
+  }
+  .v4 .mode{
+    width:42px; padding: 10px 0;
+    font-family:'IBM Plex Mono',monospace; font-size: 10px;
+    text-align:center; border:1px dashed var(--rule);
+    border-radius:6px; color: var(--ink-2);
+    writing-mode: horizontal-tb;
+    text-transform:uppercase; letter-spacing:.05em;
+    line-height:1.1;
+  }
+  .v4 .mode.on{ background: var(--ink); color: var(--paper); border-style:solid; border-color: var(--ink);}
+  .v4 .stage{
+    position:absolute; left: 78px; right: 10px; top: 10px; bottom: 10px;
+    border:1.8px solid var(--ink); border-radius: 10px;
+    background: var(--paper);
+    overflow: hidden;
+  }
+  .v4 .stage-head{
+    display:flex; align-items:baseline; gap:10px; padding: 14px 18px 6px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .v4 .stage-head h5{
+    margin:0; font-family:'Caveat',cursive; font-size:30px; font-weight:700; line-height:1;
+  }
+  .v4 .workspace{
+    position:absolute; top: 58px; left:0; right:0; bottom:0;
+    display:grid; grid-template-columns: 1fr 260px; gap:12px;
+    padding: 12px;
+  }
+  .v4 .viewport{
+    border:1.8px solid var(--ink); border-radius: 8px;
+    background: color-mix(in oklab, var(--paper) 98%, var(--ink));
+    position:relative;
+    overflow:hidden;
+  }
+  .v4 .inspector-col{
+    display:flex; flex-direction:column; gap: 12px;
+  }
+  .v4 .pal{
+    border:1.5px solid var(--ink); border-radius: 8px;
+    padding: 10px; background: var(--paper);
+  }
+  .v4 .primitives{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  }
+  .v4 .prim{
+    aspect-ratio:1; border: 1px solid var(--rule); border-radius: 6px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    font-family:'IBM Plex Mono',monospace; font-size: 9px; color: var(--ink-2);
+  }
+  .v4 .prim.hl{background: color-mix(in oklab, var(--accent) 40%, transparent);}
+  .v4 .prim svg{width: 22px; height: 22px;}
+
+  /* ===== variant 5: floating glass ===== */
+  .v5 .bg{
+    position:absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 60%, color-mix(in oklab, var(--ink) 8%, transparent), transparent 60%),
+      radial-gradient(ellipse at 80% 20%, color-mix(in oklab, var(--accent-2) 14%, transparent), transparent 50%),
+      color-mix(in oklab, var(--paper) 95%, var(--ink));
+  }
+  .v5 .bg::before{
+    content:""; position:absolute; inset:0;
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--ink) 10%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--ink) 10%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    opacity:.5;
+    mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+  }
+  .v5 .floating{
+    position:absolute;
+    border: 1.5px solid var(--ink);
+    border-radius: 12px;
+    background: color-mix(in oklab, var(--paper) 82%, transparent);
+    backdrop-filter: blur(6px);
+    box-shadow: 3px 3px 0 var(--ink);
+    padding: 10px 12px;
+  }
+  .v5 .floating .title{
+    font-family:'Caveat',cursive; font-size: 20px; font-weight:700; line-height:1;
+  }
+  .v5 .ftop{ top: 18px; left: 18px; width: 200px; }
+  .v5 .ftop-right{ top: 18px; right: 18px; display:flex; gap:8px; }
+  .v5 .finsp{ top: 60px; right: 18px; width: 220px;}
+  .v5 .fbottom{ bottom: 18px; left:50%; transform: translateX(-50%); width: min(540px, 70%); padding: 12px 16px; }
+  .v5 .fassets{ bottom: 18px; right: 18px; width: 220px;}
+  .v5 .fselection{ bottom: 100px; left: 50%; transform: translateX(-50%);
+     border: 1.5px dashed var(--accent-2); background: color-mix(in oklab, var(--paper) 88%, transparent);
+     padding: 4px 10px; font-family:'IBM Plex Mono',monospace; font-size: 10px; border-radius: 3px;
+     color: var(--ink); }
+  .v5 .obj{
+    position:absolute; top: 40%; left: 45%;
+    width: 130px; height: 130px;
+    border: 2px solid var(--ink); border-radius: 4px;
+    transform: rotate(-4deg) skewX(-6deg);
+    background:
+      repeating-linear-gradient(45deg, transparent 0 9px, color-mix(in oklab, var(--ink) 35%, transparent) 9px 10px);
+  }
+  .v5 .gizmo-xyz{
+    position:absolute; top: 35%; left: 50%;
+    width: 70px; height: 70px;
+    transform: translate(-50%,-50%);
+  }
+  .v5 .gizmo-xyz line{ stroke: var(--ink); stroke-width: 2;}
+  .v5 .gizmo-xyz .x{stroke: #c23f3f;}
+  .v5 .gizmo-xyz .y{stroke: #2f8e4e;}
+  .v5 .gizmo-xyz .z{stroke: #2f6ac2;}
+
+  /* footer */
+  footer.foot{
+    max-width:1200px; margin: 0 auto; padding: 12px 32px 60px;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color: var(--ink-soft);
+    text-transform:uppercase; letter-spacing:.08em;
+    border-top: 1px dashed var(--rule);
+  }
+
+  /* density compact */
+  body.compact .rationale{grid-template-columns: repeat(3, 1fr); gap: 10px;}
+  body.compact .intro{margin-top: 14px;}
+  body.compact .intro .lead{font-size: 16px;}
+  body.compact .system{padding: 14px 18px;}
+  body.compact .variant-head h2{font-size: 34px;}
+  body.compact .rcell p{font-size:14px;}
+  body.compact .rcell{padding: 10px 12px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>w3d · <em>editor</em></div>
+  <div class="subtitle">WIREFRAME EXPLORATION · R01</div>
+  <div class="header-spacer"></div>
+  <button class="tweaks-toggle" id="tweaksBtn">TWEAKS</button>
+</header>
+
+<div class="intro">
+  <h1>A 3D editor for people who've <span class="marker">never opened Unity</span>.</h1>
+  <p class="lead">
+    Web-native, WebGPU-powered, AI-assisted. Before we pick colors and components, we need to pick a <i>shape</i>. Five wireframes, each answering the same question differently:
+    <b>where does the AI live, and what does the user actually look at?</b>
+  </p>
+  <div class="meta">
+    <span><b>Target</b> · absolute beginners</span>
+    <span><b>Use</b> · rapid prototypes, game jams</span>
+    <span><b>Engine</b> · w3d (Rust + WebGPU + WASM)</span>
+    <span><b>Stage</b> · lo-fi wireframes</span>
+  </div>
+</div>
+
+<div class="system">
+  <div class="system-grid">
+    <div class="syscell">
+      <span class="sys-k">Type</span>
+      <span class="sys-v">Caveat + Kalam</span>
+      <span class="sys-v mono">IBM Plex Mono · labels</span>
+    </div>
+    <div class="syscell">
+      <span class="sys-k">Palette</span>
+      <div class="swatches">
+        <span class="sw" style="background:var(--paper)"></span>
+        <span class="sw" style="background:var(--ink)"></span>
+        <span class="sw" style="background:var(--accent)"></span>
+        <span class="sw" style="background:var(--accent-2)"></span>
+      </div>
+      <span class="sys-v mono">paper · ink · marker · alert</span>
+    </div>
+    <div class="syscell">
+      <span class="sys-k">Fidelity</span>
+      <span class="sys-v">Low-fi · no pixel polish</span>
+      <span class="sys-v mono">focus on structure &amp; flow</span>
+    </div>
+    <div class="syscell">
+      <span class="sys-k">Annotations</span>
+      <span class="sys-v">Marginal notes, hand-drawn</span>
+      <span class="sys-v mono">toggle via Tweaks panel</span>
+    </div>
+  </div>
+</div>
+
+<nav class="variants" role="tablist" id="tabs">
+  <button class="tab" role="tab" data-v="1" aria-selected="true"><span class="num">01</span> Prompt-first</button>
+  <button class="tab" role="tab" data-v="2"><span class="num">02</span> Conversational sidebar</button>
+  <button class="tab" role="tab" data-v="3"><span class="num">03</span> Classic, reimagined</button>
+  <button class="tab" role="tab" data-v="4"><span class="num">04</span> Mode-based workspaces</button>
+  <button class="tab" role="tab" data-v="5"><span class="num">05</span> Floating glass</button>
+</nav>
+
+<main class="variants-area">
+
+  <!-- ========== V1: PROMPT FIRST ========== -->
+  <section class="variant active v1" data-v="1">
+    <div class="variant-head">
+      <h2>01 · Prompt-first</h2>
+      <span class="tag">ai central · zero panels</span>
+    </div>
+    <p class="desc">
+      The entire editor is a viewport. The only permanent UI is a command bar at the bottom — the user tells w3d what to do in natural language, and panels <i>only</i> appear when relevant. Radical for beginners: no menus to discover, no panels to misclick.
+    </p>
+
+    <div class="sketch-frame">
+      <!-- viewport -->
+      <div class="viewport">
+        <div class="ph-cube"></div>
+        <div class="ph-obj">[ player.glb — selected ]</div>
+
+        <!-- HUD: top-left, scene breadcrumb -->
+        <div class="hud-top">
+          <span class="chip">my-jam-001</span>
+          <span class="label">›</span>
+          <span class="chip fill">Main Scene</span>
+        </div>
+        <!-- HUD: top-right, tiny utilities -->
+        <div class="hud-right">
+          <span class="chip">▶ play</span>
+          <span class="chip">⤴ share</span>
+          <span class="chip">⋯</span>
+        </div>
+
+        <!-- gizmo indicator -->
+        <div class="hud-gizmo">
+          <div>x / y / z</div>
+        </div>
+      </div>
+
+      <!-- suggestions above prompt -->
+      <div class="suggestions">
+        <span class="chip">+ add a floor</span>
+        <span class="chip">🎲 random level</span>
+        <span class="chip">make it night</span>
+        <span class="chip">undo</span>
+      </div>
+
+      <!-- prompt bar -->
+      <div class="prompt v1 prompt-bar">
+        <span class="spark">✦ ask</span>
+        <span>add a rolling ball that follows the player<span class="caret"></span></span>
+      </div>
+
+      <!-- annotations -->
+      <div class="note" style="top: 14%; left: 8%; --lw:44px; --lr:18deg;">
+        No sidebar at rest.<br/>Panels <span class="arrow">→</span> appear on demand.
+      </div>
+      <div class="note right" style="bottom: 14%; right: 6%; --lx:-50px; --lw:48px; --lr:-12deg;">
+        One prompt bar to rule them all.<br/>Always at the same place.
+      </div>
+      <div class="note" style="top: 50%; left: 3%; --lw:36px; --lr:0deg;">
+        Viewport is ~95%<br/>of the screen.
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rcell">
+        <h4>Why it works</h4>
+        <p>Zero learning curve. A kid can type "make a platformer level" and see something. No panels to fear.</p>
+      </div>
+      <div class="rcell">
+        <h4>What's risky</h4>
+        <p>Fine-tuning feels clunky. "Move X by 0.3" is harder to say than to drag. Needs an "advanced" escape hatch.</p>
+      </div>
+      <div class="rcell">
+        <h4>Open questions</h4>
+        <p>Do panels slide in from edges, or overlay as modals? Can the user pin one open? Voice input too?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== V2: CONVERSATIONAL SIDEBAR ========== -->
+  <section class="variant v2" data-v="2">
+    <div class="variant-head">
+      <h2>02 · Conversational sidebar</h2>
+      <span class="tag">ai · permanent · chat-left</span>
+    </div>
+    <p class="desc">
+      A persistent AI chat occupies the left third, the canvas fills the rest. Every action — from spawning a cube to wiring a material — can be done by asking. The chat becomes a history, undo log, and tutorial rolled into one.
+    </p>
+
+    <div class="sketch-frame">
+      <!-- left chat -->
+      <div class="chat">
+        <h5><span class="dot"></span> Chat with w3d</h5>
+        <div class="msg you"><span class="small">YOU · 2:03pm</span>make a simple platformer scene</div>
+        <div class="msg ai">
+          <span class="small">w3d ✦</span>
+          added <b>ground</b>, <b>player</b> &amp; 3 platforms.<br/>want gravity on?
+          <div class="ai-actions">
+            <span class="chip">yes</span><span class="chip">add enemies</span><span class="chip">undo</span>
+          </div>
+        </div>
+        <div class="msg you"><span class="small">YOU</span>yes, and paint the ground green</div>
+        <div class="msg ai">
+          <span class="small">w3d ✦</span>
+          done. selected: <b>Ground.mat</b>
+          <div class="ai-actions">
+            <span class="chip">tweak color</span><span class="chip">add texture</span>
+          </div>
+        </div>
+        <div class="prompt chat-input">
+          <span class="spark">✦</span>
+          <span>ask or describe...<span class="caret"></span></span>
+        </div>
+      </div>
+
+      <!-- canvas -->
+      <div class="canvas">
+        <div class="ph-cube"></div>
+        <!-- toolbar -->
+        <div class="toolbar">
+          <span class="chip">select</span>
+          <span class="chip fill">move</span>
+          <span class="chip">rotate</span>
+          <span class="chip">scale</span>
+          <span class="label" style="margin: 0 6px">|</span>
+          <span class="chip">▶ play</span>
+        </div>
+
+        <!-- mini inspector (only shown when selected) -->
+        <div class="minipanel">
+          <div class="label">SELECTED · Ground.mat</div>
+          <div class="dense" style="margin-top:8px">
+            <div class="row">color <span style="margin-left:auto" class="chip">#8fc76b</span></div>
+            <div class="row">roughness <span style="margin-left:auto">0.62</span></div>
+            <div class="row">metalness <span style="margin-left:auto">0.00</span></div>
+          </div>
+          <div style="border-top: 1px dashed var(--rule); margin-top:8px; padding-top:6px;">
+            <span class="label">suggested by AI</span>
+            <div class="dense" style="margin-top:4px">
+              <span class="chip">+ grass texture</span>
+              <span class="chip">+ normal bump</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note" style="top:6%; left: 15%; --lw:40px; --lr:12deg;">
+        Chat is <b>context</b> — also an undo log.
+      </div>
+      <div class="note right" style="top: 10%; right: 6%; --lx:-46px; --lw:44px; --lr:-8deg;">
+        Inspector auto-appears<br/>when something is selected.
+      </div>
+      <div class="note" style="bottom: 24%; left: 11%; --lw:34px; --lr:-14deg;">
+        Suggestions are clickable chips<br/>— no typing required.
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rcell">
+        <h4>Why it works</h4>
+        <p>The AI is not a feature — it's the room. Beginners have a forgiving conversation partner always present.</p>
+      </div>
+      <div class="rcell">
+        <h4>What's risky</h4>
+        <p>A third of the screen is gone, always. On laptop screens the viewport feels cramped. Collapsible?</p>
+      </div>
+      <div class="rcell">
+        <h4>Open questions</h4>
+        <p>Should the chat be resizable? Should it support voice? Can users "rewind" to a chat message and branch?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== V3: CLASSIC REIMAGINED ========== -->
+  <section class="variant v3" data-v="3">
+    <div class="variant-head">
+      <h2>03 · Classic, reimagined</h2>
+      <span class="tag">safe · familiar · ai-strip</span>
+    </div>
+    <p class="desc">
+      The traditional four-panel layout — outliner, viewport, inspector, assets — but with aggressive defaults: panels are smaller, labels softer, and a persistent AI strip sits beside the inspector. Familiar for anyone who's seen a tutorial on YouTube.
+    </p>
+
+    <div class="sketch-frame">
+      <!-- top app bar -->
+      <div class="appbar">
+        <span class="caveat" style="font-size:20px; font-weight:700">my-jam-001</span>
+        <span class="label">/ scenes / Main</span>
+        <div class="play">
+          <span class="chip">◼ stop</span>
+          <span class="chip fill">▶ play</span>
+          <span class="chip">⏸ pause</span>
+        </div>
+        <span class="label">WebGPU · 144fps</span>
+        <span class="chip">share</span>
+      </div>
+
+      <!-- left: outliner -->
+      <div class="left">
+        <div class="panel-title">Scene</div>
+        <span class="label">hierarchy</span>
+        <div class="dense" style="margin-top:4px">
+          <div class="row"><span class="tri">▾</span><span class="dot"></span>Main Scene</div>
+          <div class="row" style="padding-left:16px"><span class="tri">▾</span>Environment</div>
+          <div class="row" style="padding-left:32px">Ground</div>
+          <div class="row" style="padding-left:32px">Sky</div>
+          <div class="row" style="padding-left:16px"><span class="tri">▸</span>Lights (2)</div>
+          <div class="row sel" style="padding-left:16px">● Player</div>
+          <div class="row" style="padding-left:16px">Enemies (0)</div>
+          <div class="row" style="padding-left:16px">Platforms (3)</div>
+        </div>
+        <div class="ai-strip" style="border-top:1px dashed var(--rule); padding-top:10px;">
+          <span class="label">w3d ✦ suggests</span>
+          <div class="dense" style="margin-top:4px">
+            <span class="chip">+ add a camera follow</span>
+            <span class="chip">group platforms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- center: viewport -->
+      <div class="center">
+        <div class="ph-cube"></div>
+        <div class="gizmo" style="top:10px; left:10px;">select · move · rot · scale</div>
+        <div class="gizmo" style="top:10px; right:10px;">persp · ortho · top</div>
+        <div class="gizmo" style="bottom:10px; left:10px;">grid · snap · gizmos</div>
+        <div class="gizmo" style="bottom:10px; right:10px;">x+ y+ z+</div>
+      </div>
+
+      <!-- right: inspector -->
+      <div class="right inspector">
+        <div>
+          <div class="panel-title">Player</div>
+          <span class="label">transform · mesh · collider</span>
+        </div>
+        <div>
+          <span class="label">transform</span>
+          <div class="prop"><span>POS</span><div class="val"><span>0.00 0.50 0.00</span><span class="drag">⇔</span></div></div>
+          <div class="prop"><span>ROT</span><div class="val"><span>0  0  0</span><span class="drag">⇔</span></div></div>
+          <div class="prop"><span>SCL</span><div class="val"><span>1.0 1.0 1.0</span><span class="drag">⇔</span></div></div>
+        </div>
+        <div>
+          <span class="label">mesh</span>
+          <div class="prop"><span>SRC</span><div class="val"><span>player.glb</span><span class="drag">↪</span></div></div>
+          <div class="prop"><span>CAST</span><div class="val"><span>shadows · on</span><span class="drag">⏺</span></div></div>
+        </div>
+        <div class="ai-strip">
+          <span class="label">✦ ask about this object</span>
+          <div class="prompt" style="padding:6px 10px; font-size:13px; box-shadow: 2px 2px 0 var(--ink);">
+            <span>make it jump higher<span class="caret"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- bottom: assets + console tabs -->
+      <div class="bottom">
+        <div style="display:flex; gap:12px; align-items:baseline; margin-bottom:8px">
+          <span class="caveat" style="font-size:22px; font-weight:700">Assets</span>
+          <span class="chip">Library</span><span class="chip fill">Project</span><span class="chip">Console (2)</span>
+          <span style="margin-left:auto" class="label">drag into viewport ↗</span>
+        </div>
+        <div class="assets-grid">
+          <div class="asset">cube</div>
+          <div class="asset">sphere</div>
+          <div class="asset">plane</div>
+          <div class="asset">pillar</div>
+          <div class="asset">player.glb</div>
+          <div class="asset">tree.glb</div>
+          <div class="asset">grass.mat</div>
+          <div class="asset">stone.mat</div>
+          <div class="asset">sky.hdr</div>
+          <div class="asset">+ import</div>
+          <div class="asset" style="background: color-mix(in oklab, var(--accent) 40%, transparent);">✦ generate</div>
+          <div class="asset">···</div>
+        </div>
+      </div>
+
+      <!-- notes -->
+      <div class="note" style="top:8%; left:28%; --lw:28px; --lr:-15deg;">
+        AI lives <i>inside</i> each panel,<br/>not as its own panel.
+      </div>
+      <div class="note right" style="bottom:28%; right:1%; --lx:-42px; --lw:40px; --lr:0deg;">
+        Inline "ask" next to the selection.
+      </div>
+      <div class="note" style="bottom:8%; left: 12%; --lw:32px; --lr:10deg;">
+        Console tucked as<br/>a sibling tab, not a panel.
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rcell">
+        <h4>Why it works</h4>
+        <p>Zero surprise — tutorials generalize. Users switching from other tools feel at home instantly.</p>
+      </div>
+      <div class="rcell">
+        <h4>What's risky</h4>
+        <p>The "too complex for beginners" trap. Four panels at once is a lot. Default must hide what's empty.</p>
+      </div>
+      <div class="rcell">
+        <h4>Open questions</h4>
+        <p>Can beginners start with a simplified 2-panel view that "unlocks" extra panels as they need them?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== V4: MODE-BASED ========== -->
+  <section class="variant v4" data-v="4">
+    <div class="variant-head">
+      <h2>04 · Mode-based workspaces</h2>
+      <span class="tag">one thing at a time</span>
+    </div>
+    <p class="desc">
+      The editor has <b>one job at a time</b>. A narrow left rail switches between modes: Build, Paint, Logic, Test. Each mode only shows relevant UI. No "figure out which tab you're on" — the screen literally changes.
+    </p>
+
+    <div class="sketch-frame">
+      <!-- left rail -->
+      <div class="railleft">
+        <div class="mode">Build</div>
+        <div class="mode on">Paint</div>
+        <div class="mode">Logic</div>
+        <div class="mode">Play</div>
+        <div style="flex:1"></div>
+        <div class="mode" style="border-style:dashed">✦ ask</div>
+        <div class="mode" style="border:none">⚙</div>
+      </div>
+
+      <!-- stage -->
+      <div class="stage">
+        <div class="stage-head">
+          <h5>Paint</h5>
+          <span class="label">drop materials · drag colors · pick textures</span>
+          <span style="margin-left:auto" class="chip">exit mode · ESC</span>
+        </div>
+
+        <div class="workspace">
+          <!-- viewport -->
+          <div class="viewport">
+            <div class="ph-cube"></div>
+            <div class="gizmo" style="top:10px; left:10px">cursor: brush · R=0.8</div>
+            <div class="gizmo" style="top:10px; right:10px">↻ undo · ↺ redo</div>
+            <div class="gizmo" style="bottom:10px; left:10px">targets: ground · walls</div>
+            <!-- painting overlay -->
+            <div style="position:absolute; top:40%; left:40%; width:80px; height:80px; border: 2px dashed var(--accent-2); border-radius:50%;"></div>
+          </div>
+          <!-- right column: palette + inspector -->
+          <div class="inspector-col">
+            <div class="pal">
+              <div class="caveat" style="font-size:22px; font-weight:700; line-height:1">Palette</div>
+              <span class="label">only colors &amp; materials</span>
+              <div class="primitives" style="margin-top:8px; grid-template-columns:repeat(4,1fr)">
+                <div class="prim" style="background:#8fc76b"></div>
+                <div class="prim" style="background:#e0c27a"></div>
+                <div class="prim" style="background:#6b9cc7"></div>
+                <div class="prim hl" style="background:#c26b6b"></div>
+                <div class="prim" style="background:#4a4a4a"></div>
+                <div class="prim" style="background:#d8d0bf"></div>
+                <div class="prim" style="background:#3b5b3b"></div>
+                <div class="prim">+</div>
+              </div>
+            </div>
+            <div class="pal">
+              <div class="caveat" style="font-size:22px; font-weight:700; line-height:1">Brush</div>
+              <div class="dense" style="margin-top:6px;">
+                <div class="row">size <span style="margin-left:auto">0.80m</span></div>
+                <div class="row">edge <span style="margin-left:auto">soft</span></div>
+                <div class="row">scatter <span style="margin-left:auto">12%</span></div>
+              </div>
+            </div>
+            <div class="pal" style="border-style: dashed;">
+              <span class="label">✦ w3d tip</span>
+              <p class="kalam" style="margin:6px 0 0; font-size:14px">Try <i>"add moss on rocks"</i> — the AI will paint for you.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- notes -->
+      <div class="note" style="top:15%; left: 6.5%; --lw:36px; --lr:10deg;">
+        Only 4 modes. A kid can pick.
+      </div>
+      <div class="note right" style="top: 42%; right: 3%; --lx:-50px; --lw:48px; --lr:0deg;">
+        Each mode is a focused<br/>micro-app. No feature creep.
+      </div>
+      <div class="note" style="bottom: 12%; left: 25%; --lw:24px; --lr:-10deg;">
+        Painting overlay — <br/>all gestures stay in viewport.
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rcell">
+        <h4>Why it works</h4>
+        <p>Cognitive load splits by task. A beginner in Paint never sees scripting — it simply doesn't exist yet.</p>
+      </div>
+      <div class="rcell">
+        <h4>What's risky</h4>
+        <p>Pros hate context-switching. Needs a "multi-mode" expert view, or lose them forever to Blender/Unity.</p>
+      </div>
+      <div class="rcell">
+        <h4>Open questions</h4>
+        <p>How does the AI behave across modes? Same prompt bar everywhere, or mode-specific suggestions?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== V5: FLOATING GLASS ========== -->
+  <section class="variant v5" data-v="5">
+    <div class="variant-head">
+      <h2>05 · Floating glass</h2>
+      <span class="tag">canvas-first · bezel-free</span>
+    </div>
+    <p class="desc">
+      Full-bleed 3D viewport. All panels are small, draggable, translucent floaters. The user arranges their own workspace — or lets smart defaults do it. Minimum chrome, maximum canvas. Inspired by Figma/Rive canvases, not traditional DCCs.
+    </p>
+
+    <div class="sketch-frame">
+      <div class="bg"></div>
+
+      <!-- floating object in the 3D -->
+      <div class="obj"></div>
+      <svg class="gizmo-xyz" viewBox="0 0 70 70">
+        <line class="x" x1="35" y1="35" x2="65" y2="35" />
+        <line class="y" x1="35" y1="35" x2="35" y2="5" />
+        <line class="z" x1="35" y1="35" x2="12" y2="58" />
+        <text x="66" y="38" font-family="IBM Plex Mono" font-size="9" fill="#c23f3f">x</text>
+        <text x="28" y="6"  font-family="IBM Plex Mono" font-size="9" fill="#2f8e4e">y</text>
+        <text x="4"  y="62" font-family="IBM Plex Mono" font-size="9" fill="#2f6ac2">z</text>
+      </svg>
+
+      <!-- top-left: scene breadcrumb -->
+      <div class="floating ftop">
+        <span class="label">project</span>
+        <div class="title">my-jam-001</div>
+        <div class="dense" style="margin-top:6px;">
+          <div class="row sel">● Player</div>
+          <div class="row">Ground</div>
+          <div class="row">Light ·key</div>
+          <div class="row">Platforms (3)</div>
+        </div>
+      </div>
+
+      <!-- top-right: toolbar + play -->
+      <div class="ftop-right">
+        <div class="floating" style="padding:6px 10px; display:flex; gap:6px; align-items:center">
+          <span class="chip">select</span>
+          <span class="chip fill">move</span>
+          <span class="chip">rot</span>
+          <span class="chip">scale</span>
+        </div>
+        <div class="floating" style="padding:6px 10px; display:flex; gap:6px; align-items:center">
+          <span class="chip">◼</span>
+          <span class="chip fill">▶</span>
+          <span class="chip">⏸</span>
+        </div>
+      </div>
+
+      <!-- right: inspector -->
+      <div class="floating finsp">
+        <div class="title">Player</div>
+        <span class="label">properties</span>
+        <div class="dense" style="margin-top:6px;">
+          <div class="row">pos <span style="margin-left:auto">0 0.5 0</span></div>
+          <div class="row">rot <span style="margin-left:auto">0 0 0</span></div>
+          <div class="row">scl <span style="margin-left:auto">1 1 1</span></div>
+          <div class="row">mesh <span style="margin-left:auto">player.glb</span></div>
+          <div class="row">mat <span style="margin-left:auto">default</span></div>
+        </div>
+      </div>
+
+      <!-- selection label -->
+      <div class="fselection">◇ Player · 1 selected</div>
+
+      <!-- bottom: prompt -->
+      <div class="floating fbottom">
+        <span class="label">ask w3d ✦</span>
+        <div class="prompt" style="margin-top:6px;">
+          <span class="spark">✦</span>
+          <span>give this player a jump animation<span class="caret"></span></span>
+        </div>
+        <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+          <span class="chip">+ collider</span>
+          <span class="chip">+ camera follow</span>
+          <span class="chip">+ sound "boing"</span>
+        </div>
+      </div>
+
+      <!-- assets floater -->
+      <div class="floating fassets">
+        <span class="label">library</span>
+        <div class="title" style="line-height:1; margin-bottom:4px">Primitives</div>
+        <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:4px;">
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px;">cube</div>
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px;">sph</div>
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px;">cyl</div>
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px;">cone</div>
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px;">plane</div>
+          <div class="asset" style="aspect-ratio:1; border:1px solid var(--ink); border-radius:5px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:9px; background: color-mix(in oklab, var(--accent) 40%, transparent)">✦</div>
+        </div>
+      </div>
+
+      <!-- notes -->
+      <div class="note" style="top:4%; left:19%; --lw:32px; --lr:-8deg;">
+        Every panel is<br/>draggable &amp; closable.
+      </div>
+      <div class="note right" style="top: 44%; right: 19%; --lx:-50px; --lw:48px; --lr:10deg;">
+        Glass panels so the 3D<br/>always stays visible behind.
+      </div>
+      <div class="note" style="bottom: 6%; left: 6%; --lw:26px; --lr:-10deg;">
+        Prompt floats at the bottom —<br/>feels like Raycast over your world.
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rcell">
+        <h4>Why it works</h4>
+        <p>The 3D world is the hero. The editor feels like a light garment over the scene — modern and uncluttered.</p>
+      </div>
+      <div class="rcell">
+        <h4>What's risky</h4>
+        <p>Panels can get lost behind each other. "Where did my inspector go?" Needs a panel-manager safety net.</p>
+      </div>
+      <div class="rcell">
+        <h4>Open questions</h4>
+        <p>Should new users get a preset layout or a blank canvas with a tour? Do panels snap to edges?</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  W3D EDITOR · WIREFRAMES · ROUND 01 · LO-FI · THESE ARE STRUCTURE STUDIES, NOT FINAL UIS
+</footer>
+
+<!-- tweaks panel -->
+<div class="tweaks-panel" id="tweaks">
+  <h3>Tweaks</h3>
+  <div class="hint">mess with the exploration</div>
+  <section>
+    <label>Theme
+      <div class="seg" id="segTheme">
+        <button data-t="light" class="on">LIGHT</button>
+        <button data-t="dark">DARK</button>
+      </div>
+    </label>
+  </section>
+  <section>
+    <label>Density
+      <div class="seg" id="segDensity">
+        <button data-d="cozy" class="on">COZY</button>
+        <button data-d="compact">COMPACT</button>
+      </div>
+    </label>
+  </section>
+  <section>
+    <label>Designer annotations
+      <input type="checkbox" id="tgAnn" checked />
+      <span class="switch"></span>
+    </label>
+  </section>
+  <section>
+    <label>Jump to variant
+      <div class="seg" id="segJump">
+        <button data-v="1" class="on">01</button>
+        <button data-v="2">02</button>
+        <button data-v="3">03</button>
+        <button data-v="4">04</button>
+        <button data-v="5">05</button>
+      </div>
+    </label>
+  </section>
+</div>
+
+<script>
+  // ----- variant tabs -----
+  const tabs = document.querySelectorAll('#tabs .tab');
+  const sections = document.querySelectorAll('section.variant');
+  function showVariant(n){
+    tabs.forEach(t => t.setAttribute('aria-selected', t.dataset.v === String(n) ? 'true' : 'false'));
+    sections.forEach(s => s.classList.toggle('active', s.dataset.v === String(n)));
+    document.querySelectorAll('#segJump button').forEach(b => b.classList.toggle('on', b.dataset.v === String(n)));
+    localStorage.setItem('w3d:variant', n);
+    window.scrollTo({top: document.querySelector('nav.variants').offsetTop - 10, behavior: 'smooth'});
+  }
+  tabs.forEach(t => t.addEventListener('click', () => showVariant(t.dataset.v)));
+
+  // ----- tweaks panel -----
+  const panel = document.getElementById('tweaks');
+  document.getElementById('tweaksBtn').addEventListener('click', () => panel.classList.toggle('open'));
+  // theme
+  document.getElementById('segTheme').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#segTheme button').forEach(x => x.classList.toggle('on', x === b));
+    document.documentElement.classList.toggle('dark', b.dataset.t === 'dark');
+    localStorage.setItem('w3d:theme', b.dataset.t);
+  });
+  // density
+  document.getElementById('segDensity').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#segDensity button').forEach(x => x.classList.toggle('on', x === b));
+    document.body.classList.toggle('compact', b.dataset.d === 'compact');
+    localStorage.setItem('w3d:density', b.dataset.d);
+  });
+  // annotations
+  document.getElementById('tgAnn').addEventListener('change', e => {
+    document.body.classList.toggle('no-annotations', !e.target.checked);
+    localStorage.setItem('w3d:ann', e.target.checked ? '1' : '0');
+  });
+  // jump
+  document.getElementById('segJump').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    showVariant(b.dataset.v);
+  });
+
+  // ----- restore persisted state -----
+  (function init(){
+    const v = localStorage.getItem('w3d:variant'); if(v) showVariant(v);
+    const t = localStorage.getItem('w3d:theme');
+    if(t === 'dark'){
+      document.documentElement.classList.add('dark');
+      document.querySelectorAll('#segTheme button').forEach(x => x.classList.toggle('on', x.dataset.t === 'dark'));
+    }
+    const d = localStorage.getItem('w3d:density');
+    if(d === 'compact'){
+      document.body.classList.add('compact');
+      document.querySelectorAll('#segDensity button').forEach(x => x.classList.toggle('on', x.dataset.d === 'compact'));
+    }
+    const a = localStorage.getItem('w3d:ann');
+    if(a === '0'){ document.body.classList.add('no-annotations'); document.getElementById('tgAnn').checked = false; }
+  })();
+
+  // keyboard nav
+  window.addEventListener('keydown', e => {
+    if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if(/^[1-5]$/.test(e.key)) showVariant(e.key);
+  });
+</script>
+
+</body>
+</html>

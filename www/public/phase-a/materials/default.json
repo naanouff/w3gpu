@@ -5,11 +5,12 @@
   "variants": {
     "default": {
       "label": "Baseline PBR — alignement gate DamagedHelmet + shortlist Khronos",
-      "ibl_tier": "max",
+      "ibl_tier": "min",
       "ibl_diffuse_scale": 1.0,
       "tonemap": {
         "exposure": 1.0,
-        "bloom_strength": 0.0
+        "bloom_strength": 0.0,
+        "fxaa": true
       }
     }
   }

@@ -5,13 +5,14 @@ pub mod mesh;
 pub mod phase_a_viewer_config;
 pub mod primitives;
 pub mod vertex;
+pub mod viewer_light;
 
 pub use gltf_loader::{load_from_bytes, GltfError, GltfPrimitive, RgbaImage};
 pub use hdr_loader::{load_hdr_from_bytes, HdrError, HdrImage};
 pub use material::{
     AlphaMode, Material, ShadingModel, TextureUvTransform, TEX_UV_ALBEDO, TEX_UV_ANISOTROPY,
     TEX_UV_CLEARCOAT, TEX_UV_CLEARCOAT_ROUGHNESS, TEX_UV_EMISSIVE, TEX_UV_METALLIC_ROUGHNESS,
-    TEX_UV_NORMAL,
+    TEX_UV_NORMAL, TEX_UV_OCCLUSION,
 };
 pub use mesh::Mesh;
 pub use phase_a_viewer_config::{
@@ -19,3 +20,4 @@ pub use phase_a_viewer_config::{
     PhaseATonemap, PhaseAVariant, PhaseAViewerConfig,
 };
 pub use vertex::Vertex;
+pub use viewer_light::ViewerLightState;

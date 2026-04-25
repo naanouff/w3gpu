@@ -43,9 +43,11 @@ pub const TEX_UV_SPECULAR: usize = 8;
 pub const TEX_UV_SPECULAR_COLOR: usize = 9;
 /// `KHR_materials_volume` `thicknessTexture` (canal G).
 pub const TEX_UV_THICKNESS: usize = 10;
+/// `occlusionTexture` glTF (canal **R**, linéaire) — souvent le même fichier que M/R, UV distincts.
+pub const TEX_UV_OCCLUSION: usize = 11;
 
-/// Nombre d’emplacements `texture_transforms` (0..=10).
-pub const MATERIAL_TEX_SLOT_COUNT: usize = 11;
+/// Nombre d’emplacements `texture_transforms` (0..=11).
+pub const MATERIAL_TEX_SLOT_COUNT: usize = 12;
 
 #[derive(Clone, Debug)]
 pub struct Material {
@@ -55,6 +57,8 @@ pub struct Material {
     pub metallic: f32,
     pub roughness: f32,
     pub emissive: [f32; 3],
+    /// glTF `normalTexture.scale` (default 1.0).
+    pub normal_scale: f32,
     pub alpha_mode: AlphaMode,
     pub alpha_cutoff: f32,
     pub double_sided: bool,
@@ -82,6 +86,8 @@ pub struct Material {
     pub attenuation_distance: f32,
     /// `KHR_materials_volume` — couleur d’atténuation.
     pub attenuation_color: [f32; 3],
+    /// `occlusionTexture.strength` glTF (0–1, défaut 1) ; sans texture, la teinte 1×1 (R=1) n’applique pas d’occlusion.
+    pub occlusion_strength: f32,
     /// Drapeaux : bit 0 = KHR specular, 1 = transmission, 2 = volume (attenuation / épaisseur).
     pub khr_flags: u32,
     /// `KHR_texture_transform` + `texCoord` par slot texture (ordre [`TEX_UV_*`](crate::material)).
@@ -105,6 +111,7 @@ impl Default for Material {
             metallic: 0.0,
             roughness: 0.5,
             emissive: [0.0; 3],
+            normal_scale: 1.0,
             alpha_mode: AlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
@@ -120,6 +127,7 @@ impl Default for Material {
             thickness_factor: 0.0,
             attenuation_distance: 1.0e10,
             attenuation_color: [1.0, 1.0, 1.0],
+            occlusion_strength: 1.0,
             khr_flags: 0,
             texture_transforms: [TextureUvTransform::default(); MATERIAL_TEX_SLOT_COUNT],
         }
@@ -137,6 +145,7 @@ mod tests {
         assert_eq!(m.metallic, 0.0);
         assert_eq!(m.roughness, 0.5);
         assert_eq!(m.emissive, [0.0; 3]);
+        assert!((m.normal_scale - 1.0).abs() < 1e-5);
         assert_eq!(m.alpha_cutoff, 0.5);
         assert!(!m.double_sided);
         assert_eq!(m.anisotropy_strength, 0.0);
@@ -147,6 +156,7 @@ mod tests {
         assert!((m.emissive_strength - 1.0).abs() < 1e-5);
         assert_eq!(m.transmission_factor, 0.0);
         assert!((m.specular_factor - 1.0).abs() < 1e-5);
+        assert!((m.occlusion_strength - 1.0).abs() < 1e-5);
         for t in m.texture_transforms {
             assert_eq!(t, TextureUvTransform::default());
         }

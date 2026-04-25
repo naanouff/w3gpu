@@ -15,6 +15,8 @@ export type HdrLoadTimingsOk = {
   clientFetchAndBufferMs: number;
   clientWasmCallWallMs: number;
   clientBytes: number;
+  /** Copie du buffer passé à `load_hdr` (re-générer l’IBL si `ibl_tier` change). */
+  sourceBytes: Uint8Array;
   wasm: HdrWasmTimings;
 };
 
@@ -88,6 +90,7 @@ export async function loadHdrWithTimings(
     clientFetchAndBufferMs,
     clientWasmCallWallMs,
     clientBytes: bytes.byteLength,
+    sourceBytes: bytes,
     wasm,
   };
 }

@@ -3,26 +3,29 @@ use pollster::FutureExt;
 use std::mem::size_of;
 use std::path::PathBuf;
 use w3drs_assets::{
-    load_from_bytes, load_hdr_from_bytes, load_phase_a_viewer_config_or_default, GltfPrimitive,
-    Material, PhaseAViewerConfig,
+    load_from_bytes, load_hdr_from_bytes, load_phase_a_viewer_config_or_default, AlphaMode,
+    GltfPrimitive, Material, PhaseAViewerConfig, ViewerLightState,
 };
+use w3drs_camera_controller::OrbitController;
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
+use w3drs_input::{winit_adapter::input_event_from_winit, InputAccumulator};
 use w3drs_render_graph::RenderGraphDocument;
 use w3drs_renderer::{
-    build_entity_list, camera_system, derive_shadow_batches, encode_render_graph_passes_v0,
-    encode_render_graph_passes_v0_with_wgsl_host, parse_render_graph_json, transform_system,
+    build_entity_list, build_frame_uniforms_for_world, camera_system, derive_shadow_batches,
+    encode_render_graph_passes_v0, encode_render_graph_passes_v0_with_wgsl_host,
+    light_uniforms_from_viewer, parse_render_graph_json, transform_system,
     validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
-    DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass, IblContext,
-    IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass, RenderGraphExecError,
-    RenderGraphGpuRegistry, RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu,
-    TonemapParams, MAX_CULL_ENTITIES, SHADOW_SIZE,
+    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
+    MaterialTextures, PostProcessPass, RenderGraphExecError, RenderGraphGpuRegistry,
+    RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams,
+    MAX_CULL_ENTITIES, SHADOW_SIZE,
 };
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
@@ -56,6 +59,7 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
         state: None,
+        input: InputAccumulator::new(),
         render_graph_json,
         render_graph_readback,
         render_graph_slot,
@@ -100,45 +104,9 @@ fn parse_render_graph_cli() -> (Option<PathBuf>, String, RenderGraphSlot) {
     (json, readback, slot)
 }
 
-// ── Orbit camera ───────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
-struct OrbitCamera {
-    yaw: f32,
-    pitch: f32,
-    distance: f32,
-    target: Vec3,
-}
-
-impl OrbitCamera {
-    fn new(distance: f32, pitch: f32, yaw: f32, target: Vec3) -> Self {
-        Self {
-            yaw,
-            pitch,
-            distance,
-            target,
-        }
-    }
-
-    fn eye(&self) -> Vec3 {
-        let y = self.distance * self.pitch.sin();
-        let xz = self.distance * self.pitch.cos();
-        self.target + Vec3::new(xz * self.yaw.sin(), y, xz * self.yaw.cos())
-    }
-
-    fn drag(&mut self, dx: f32, dy: f32) {
-        self.yaw -= dx * 0.005;
-        self.pitch = (self.pitch + dy * 0.005).clamp(-1.5, 1.5);
-    }
-
-    fn zoom(&mut self, delta: f32) {
-        self.distance = (self.distance - delta).clamp(0.35, 120.0);
-    }
-}
-
 /// Désactive le pré-pass Hi‑Z + cull GPU (les sphères derrière le sol étaient trop souvent occlues).
 const VIEWER_GPU_OCCLUSION: bool = false;
-/// Désactive bloom + flous ; tonemap ACES + sortie (FXAA désactivé via `TonemapParams::flags`).
+/// Désactive bloom + flous ; tonemap ACES + FXAA selon `tonemap.fxaa` dans le JSON Phase A.
 const VIEWER_FULL_BLOOM_POST: bool = false;
 
 /// Sept GLB de référence Phase A / Khronos (chemins relatifs à la racine du workspace).
@@ -195,6 +163,7 @@ fn bounds_from_primitives(primitives: &[GltfPrimitive]) -> (Vec3, f32) {
 
 struct App {
     state: Option<State>,
+    input: InputAccumulator,
     render_graph_json: Option<PathBuf>,
     render_graph_readback: String,
     render_graph_slot: RenderGraphSlot,
@@ -222,6 +191,14 @@ impl ApplicationHandler for App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
+
+        if let Some(input_event) = input_event_from_winit(&event) {
+            self.input.begin_frame();
+            self.input.consume_event(input_event, false);
+            state.orbit.apply_input(&self.input.frame());
+            state.window.request_redraw();
+        }
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
@@ -264,35 +241,6 @@ impl ApplicationHandler for App {
                 KeyCode::ArrowRight if !repeat => state.next_sample(),
                 _ => {}
             },
-
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: btn,
-                ..
-            } => {
-                state.mouse_pressed = btn == ElementState::Pressed;
-                if !state.mouse_pressed {
-                    state.last_cursor = None;
-                }
-            }
-
-            WindowEvent::CursorMoved { position, .. } => {
-                let pos = (position.x as f32, position.y as f32);
-                if state.mouse_pressed {
-                    if let Some(last) = state.last_cursor {
-                        state.orbit.drag(pos.0 - last.0, pos.1 - last.1);
-                    }
-                }
-                state.last_cursor = Some(pos);
-            }
-
-            WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 0.75,
-                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.025,
-                };
-                state.orbit.zoom(scroll);
-            }
 
             WindowEvent::RedrawRequested => {
                 state.tick();
@@ -363,6 +311,8 @@ struct State {
     render_state: RenderState,
     /// `fixtures/phases/phase-a/materials/default.json` (data-driven, Phase A).
     phase_a_viewer: PhaseAViewerConfig,
+    /// Lumière + ombre (défaut = aligné `ViewerLightState::default` / viewer WASM).
+    viewer_light: ViewerLightState,
     asset_registry: AssetRegistry,
     #[allow(dead_code)]
     ibl_context: IblContext,
@@ -375,9 +325,7 @@ struct State {
 
     // Camera
     camera_entity: u32,
-    orbit: OrbitCamera,
-    mouse_pressed: bool,
-    last_cursor: Option<(f32, f32)>,
+    orbit: OrbitController,
 
     sample_idx: usize,
     model_entities: Vec<u32>,
@@ -417,7 +365,11 @@ impl State {
             .await
             .expect("GPU context creation failed");
 
-        let render_state = RenderState::new(&context.device, context.surface_format);
+        let render_state = RenderState::new(
+            &context.device,
+            context.surface_format,
+            context.main_pass_msaa,
+        );
         let asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
         // ── ECS ───────────────────────────────────────────────────────────────
@@ -447,6 +399,7 @@ impl State {
         let ibl_spec = IblGenerationSpec::from_tier_name(ibl_tier.as_str());
         let tonemap_cfg = pav.tonemap.as_ref();
         let tonemap_exposure = tonemap_cfg.map(|t| t.exposure).unwrap_or(1.0);
+        let tonemap_fxaa = tonemap_cfg.map(|t| t.fxaa).unwrap_or(true);
         let tonemap_bloom = if VIEWER_FULL_BLOOM_POST {
             tonemap_cfg.map(|t| t.bloom_strength).unwrap_or(0.0)
         } else {
@@ -525,7 +478,12 @@ impl State {
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
         // ── HDR target + post-process pass ───────────────────────────────────
-        let hdr_target = HdrTarget::new(&context.device, size.width.max(1), size.height.max(1));
+        let hdr_target = HdrTarget::new(
+            &context.device,
+            size.width.max(1),
+            size.height.max(1),
+            context.main_pass_msaa,
+        );
         let post_process = PostProcessPass::new(
             &context.device,
             &hdr_target.view,
@@ -541,7 +499,11 @@ impl State {
             TonemapParams {
                 exposure: tonemap_exposure,
                 bloom_strength: tonemap_bloom,
-                flags: TonemapParams::FLAG_SKIP_FXAA,
+                flags: if tonemap_fxaa {
+                    0
+                } else {
+                    TonemapParams::FLAG_SKIP_FXAA
+                },
                 _pad1: 0.0,
             },
         );
@@ -629,13 +591,14 @@ impl State {
             }
         });
 
-        let orbit = OrbitCamera::new(6.0, 0.22, 0.0, Vec3::ZERO);
+        let orbit = OrbitController::new(6.0, 0.22, 0.0, Vec3::ZERO);
 
         let mut state = Self {
             window,
             context,
             render_state,
             phase_a_viewer,
+            viewer_light: ViewerLightState::default(),
             asset_registry,
             ibl_context,
             shadow_pass,
@@ -646,8 +609,6 @@ impl State {
             post_process,
             camera_entity,
             orbit,
-            mouse_pressed: false,
-            last_cursor: None,
             sample_idx: 0,
             model_entities: Vec::new(),
             readback_buf,
@@ -688,7 +649,8 @@ impl State {
         shadow_batches: &[ShadowBatch],
     ) {
         let mut load = |rel: &str| {
-            std::fs::read_to_string(shadow.shader_root.join(rel)).map_err(RenderGraphExecError::from)
+            std::fs::read_to_string(shadow.shader_root.join(rel))
+                .map_err(RenderGraphExecError::from)
         };
         let mut host = KhronosShadowHost {
             asset_registry: &self.asset_registry,
@@ -741,7 +703,7 @@ impl State {
 
         let (center, radius) = bounds_from_primitives(&primitives);
         let dist = (radius * 2.8).clamp(1.2, 80.0);
-        self.orbit = OrbitCamera::new(dist, 0.22, 0.0, center);
+        self.orbit = OrbitController::new(dist, 0.22, 0.0, center);
 
         for prim in primitives {
             let mesh_id = self.asset_registry.upload_mesh(
@@ -820,6 +782,16 @@ impl State {
                         &self.context.queue,
                     )
                 }),
+                occlusion: prim.occlusion_image.as_ref().map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
                 transmission: prim.transmission_image.as_ref().map(|img| {
                     self.asset_registry.upload_texture_rgba8(
                         &img.data,
@@ -889,18 +861,12 @@ impl State {
     // ── Per-frame update ──────────────────────────────────────────────────────
 
     fn update_orbit_camera(&mut self) {
-        let eye = self.orbit.eye();
-        let target = self.orbit.target;
-        let (_, rot, _) = glam::Mat4::look_at_rh(eye, target, Vec3::Y)
-            .inverse()
-            .to_scale_rotation_translation();
+        let pose = self.orbit.pose();
         if let Some(t) = self
             .world
             .get_component_mut::<TransformComponent>(self.camera_entity)
         {
-            t.position = eye;
-            t.rotation = rot;
-            t.update_local_matrix();
+            pose.write_transform(t);
         }
     }
 
@@ -1010,12 +976,7 @@ impl State {
 
     // ── Render ────────────────────────────────────────────────────────────────
 
-    fn render(
-        &self,
-        entity_count: u32,
-        sorted: &[DrawEntity],
-        shadow_batches: &[ShadowBatch],
-    ) {
+    fn render(&self, entity_count: u32, sorted: &[DrawEntity], shadow_batches: &[ShadowBatch]) {
         let output = match self.context.surface.get_current_texture() {
             Ok(t) => t,
             Err(e) => {
@@ -1028,14 +989,17 @@ impl State {
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
-            bytemuck::bytes_of(&build_frame_uniforms(
+            bytemuck::bytes_of(&build_frame_uniforms_for_world(
                 &self.world,
                 self.total_time,
-                &self.phase_a_viewer,
+                self.phase_a_viewer.ibl_diffuse_scale(),
+                &self.viewer_light,
             )),
         );
-        self.shadow_pass
-            .update_light(&self.context.queue, &build_light_uniforms());
+        self.shadow_pass.update_light(
+            &self.context.queue,
+            &light_uniforms_from_viewer(&self.viewer_light),
+        );
 
         let indirect_stride = size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut enc = self
@@ -1111,23 +1075,18 @@ impl State {
             }
         }
 
-        // 5. PBR main pass (GPU draw_indexed_indirect) → HDR target
+        // 5. PBR main pass (GPU draw_indexed_indirect) → HDR (MSAA + resolve si >1)
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.hdr_target.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.04,
-                            g: 0.04,
-                            b: 0.06,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
+                color_attachments: &[Some(self.hdr_target.main_pass_color_attachment(
+                    wgpu::Color {
+                        r: 0.04,
+                        g: 0.04,
+                        b: 0.06,
+                        a: 1.0,
                     },
-                })],
+                ))],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.context.depth_view,
                     depth_ops: Some(wgpu::Operations {
@@ -1149,6 +1108,30 @@ impl State {
                     .get_material(entity.material_id)
                     .or_else(|| self.asset_registry.get_material(0));
                 let Some(mat) = mat else { continue };
+                if matches!(mat.alpha_mode, AlphaMode::Blend) {
+                    continue;
+                }
+                let Some(mesh) = self.asset_registry.get_mesh(entity.mesh_id) else {
+                    continue;
+                };
+                rp.set_bind_group(2, &mat.bind_group, &[]);
+                rp.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                rp.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed_indirect(
+                    &self.cull_pass.entity_indirect_buf,
+                    idx as u64 * indirect_stride,
+                );
+            }
+            rp.set_pipeline(&self.render_state.transparent_pipeline);
+            for (idx, entity) in sorted.iter().enumerate() {
+                let mat = self
+                    .asset_registry
+                    .get_material(entity.material_id)
+                    .or_else(|| self.asset_registry.get_material(0));
+                let Some(mat) = mat else { continue };
+                if !matches!(mat.alpha_mode, AlphaMode::Blend) {
+                    continue;
+                }
                 let Some(mesh) = self.asset_registry.get_mesh(entity.mesh_id) else {
                     continue;
                 };
@@ -1269,63 +1252,6 @@ fn camera_view_proj(world: &World) -> (glam::Mat4, glam::Mat4) {
             }
         })
         .unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY))
-}
-
-fn build_light_uniforms() -> LightUniforms {
-    let light_dir = Vec3::new(-0.5, -1.0, -0.5).normalize();
-    let light_pos = -light_dir * 30.0;
-    let light_view = glam::Mat4::look_at_rh(light_pos, Vec3::ZERO, Vec3::Y);
-    let light_proj = glam::Mat4::orthographic_rh(-25.0, 25.0, -25.0, 25.0, 0.1, 80.0);
-    LightUniforms {
-        view_proj: (light_proj * light_view).to_cols_array_2d(),
-        shadow_bias: 0.001,
-        _pad: [0.0; 3],
-    }
-}
-
-fn build_frame_uniforms(
-    world: &World,
-    total_time: f32,
-    phase_a: &PhaseAViewerConfig,
-) -> FrameUniforms {
-    let (view, projection, cam_pos) = world
-        .query_entities::<CameraComponent>()
-        .into_iter()
-        .find_map(|e| {
-            let cam = world.get_component::<CameraComponent>(e)?;
-            if !cam.is_active {
-                return None;
-            }
-            let pos = world
-                .get_component::<TransformComponent>(e)
-                .map(|t| {
-                    let w = t.world_matrix.w_axis;
-                    Vec3::new(w.x, w.y, w.z)
-                })
-                .unwrap_or(Vec3::ZERO);
-            Some((cam.view_matrix, cam.projection_matrix, pos))
-        })
-        .unwrap_or((glam::Mat4::IDENTITY, glam::Mat4::IDENTITY, Vec3::ZERO));
-    let inv_vp = (projection * view).inverse();
-    let light = build_light_uniforms();
-    FrameUniforms {
-        projection: projection.to_cols_array_2d(),
-        view: view.to_cols_array_2d(),
-        inv_view_projection: inv_vp.to_cols_array_2d(),
-        camera_position: cam_pos.to_array(),
-        _pad0: 0.0,
-        light_direction: Vec3::new(-0.5, -1.0, -0.5).normalize().to_array(),
-        _pad1: 0.0,
-        light_color: [1.0, 0.95, 0.9],
-        ambient_intensity: 0.12,
-        total_time,
-        _pad2: [0.0; 3],
-        light_view_proj: light.view_proj,
-        shadow_bias: light.shadow_bias,
-        ibl_flags: 0,
-        ibl_diffuse_scale: phase_a.ibl_diffuse_scale(),
-        _pad3: 0.0,
-    }
 }
 
 fn build_env_bind_group(

@@ -16,6 +16,7 @@ pub mod render_state;
 pub mod shadow_pass;
 pub mod systems;
 pub mod vertex_layout;
+pub mod viewer_light_rig;
 
 pub mod render_graph_exec;
 
@@ -27,9 +28,9 @@ pub use render_graph_exec::{
 pub use render_graph_exec::{
     encode_render_graph_passes_v0_with_wgsl, encode_render_graph_passes_v0_with_wgsl_host,
     run_graph_v0_checksum_from_wgsl, run_graph_v0_checksum_with_registry_wgsl,
-    run_graph_v0_checksum_with_registry_wgsl_host,
-    validate_render_graph_exec_v0, NoopRenderGraphV0Host, RenderGraphExecError, RenderGraphGpuRegistry,
-    RenderGraphV0Host, Texture2dGpu,
+    run_graph_v0_checksum_with_registry_wgsl_host, validate_render_graph_exec_v0,
+    NoopRenderGraphV0Host, RenderGraphExecError, RenderGraphGpuRegistry, RenderGraphV0Host,
+    Texture2dGpu,
 };
 pub use w3drs_render_graph::{
     parse_render_graph_json, pass_ids_in_order_v0, validate_exec_v0, RenderGraphValidateError,
@@ -40,9 +41,9 @@ pub use cull_pass::{CullPass, CullUniforms, MAX_CULL_ENTITIES};
 pub use error::EngineError;
 pub use frame_uniforms::{FrameUniforms, IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE};
 pub use gpu_context::{GpuContext, DEPTH_FORMAT};
-pub use hdr_target::{HdrTarget, HDR_FORMAT};
+pub use hdr_target::{pick_hdr_main_pass_msaa, HdrTarget, HDR_FORMAT};
 pub use hiz_pass::HizPass;
-pub use ibl::IblContext;
+pub use ibl::{IblContext, PreparedIbl};
 pub use ibl_spec::{from_tier_name_silent, prefiltered_mip_level_count, IblGenerationSpec};
 pub use light_uniforms::LightUniforms;
 pub use material_uniforms::MaterialUniforms;
@@ -56,3 +57,7 @@ pub use render_state::{RenderState, MAX_INSTANCES};
 pub use shadow_pass::{ShadowPass, SHADOW_SIZE};
 pub use systems::{camera_system, frustum_culling_system, transform_system};
 pub use vertex_layout::VERTEX_BUFFER_LAYOUT;
+pub use viewer_light_rig::{
+    active_camera_vpc, build_frame_uniforms_for_viewer, build_frame_uniforms_for_world,
+    light_uniforms_from_viewer,
+};

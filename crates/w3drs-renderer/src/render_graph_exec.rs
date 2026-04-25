@@ -179,7 +179,10 @@ pub enum RenderGraphExecError {
         offset: u64,
     },
     #[error("pass {pass_id:?} must omit `{field}` or set a non-empty string (B.6 ECS)")]
-    EcsLabelEmpty { pass_id: String, field: &'static str },
+    EcsLabelEmpty {
+        pass_id: String,
+        field: &'static str,
+    },
     #[error("raster_depth_mesh pass {pass_id:?}: {detail}")]
     RasterDepthMeshInvalid { pass_id: String, detail: String },
     #[error("IO: {0}")]
@@ -420,6 +423,11 @@ fn texture_format(s: &str) -> Result<wgpu::TextureFormat, RenderGraphExecError> 
     }
 }
 
+fn pass_requests_transparency(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    id.contains("transparent") || id.contains("transparency") || id.contains("alpha")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn encode_raster_like_pass(
     encoder: &mut wgpu::CommandEncoder,
@@ -456,6 +464,18 @@ fn encode_raster_like_pass(
         bind_group_layouts: &[],
         push_constant_ranges: &[],
     });
+    let transparency = pass_requests_transparency(id);
+    let blend = if transparency {
+        wgpu::BlendState::ALPHA_BLENDING
+    } else {
+        wgpu::BlendState::REPLACE
+    };
+    let color_load = if transparency {
+        wgpu::LoadOp::Load
+    } else {
+        wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+    };
+
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(id),
         layout: Some(&layout),
@@ -471,7 +491,7 @@ fn encode_raster_like_pass(
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: fmt,
-                blend: Some(wgpu::BlendState::REPLACE),
+                blend: Some(blend),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -481,7 +501,7 @@ fn encode_raster_like_pass(
         },
         depth_stencil: depth_fmt.map(|format| wgpu::DepthStencilState {
             format,
-            depth_write_enabled: true,
+            depth_write_enabled: !transparency,
             depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
@@ -507,7 +527,7 @@ fn encode_raster_like_pass(
             view,
             resolve_target: None,
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                load: color_load,
                 store: wgpu::StoreOp::Store,
             },
         })],
@@ -903,12 +923,7 @@ pub fn encode_render_graph_passes_v0_with_wgsl(
 ) -> Result<(), RenderGraphExecError> {
     let mut noop = NoopRenderGraphV0Host;
     encode_render_graph_passes_v0_with_wgsl_host(
-        encoder,
-        device,
-        registry,
-        doc,
-        load_wgsl,
-        &mut noop,
+        encoder, device, registry, doc, load_wgsl, &mut noop,
     )
 }
 

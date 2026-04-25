@@ -11,6 +11,9 @@ pub const MAX_INSTANCES: u64 = 4096;
 /// All GPU resources needed for the PBR render pass.
 pub struct RenderState {
     pub pipeline: wgpu::RenderPipeline,
+    pub double_sided_pipeline: wgpu::RenderPipeline,
+    pub transparent_pipeline: wgpu::RenderPipeline,
+    pub double_sided_transparent_pipeline: wgpu::RenderPipeline,
     pub frame_bg_layout: wgpu::BindGroupLayout,
     /// Group 1: storage buffer of mat4x4 world transforms, indexed by instance_index.
     pub instance_bg_layout: wgpu::BindGroupLayout,
@@ -27,7 +30,16 @@ pub struct RenderState {
 }
 
 impl RenderState {
-    pub fn new(device: &wgpu::Device, _surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        _surface_format: wgpu::TextureFormat,
+        main_pass_msaa: u32,
+    ) -> Self {
+        let ms = wgpu::MultisampleState {
+            count: main_pass_msaa.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        };
         // ── bind group layouts ──────────────────────────────────────────────
 
         let frame_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -63,7 +75,7 @@ impl RenderState {
                 }],
             });
 
-        // Group 2: uniform + 11 textures (… + transmission, specular×2, thickness) + sampler.
+        // Group 2: uniform + textures (M/R, extensions KHR, occlusion) + sampler.
         let tex_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -109,6 +121,7 @@ impl RenderState {
                     tex_entry(10), // KHR specular (A)
                     tex_entry(11), // KHR specular color (sRGB)
                     tex_entry(12), // KHR volume thickness (G)
+                    tex_entry(13), // glTF occlusion (R, linear)
                 ],
             });
 
@@ -257,13 +270,123 @@ impl RenderState {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: ms,
             multiview: None,
             cache: None,
         });
+        let transparent_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("pbr pipeline transparent"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[VERTEX_BUFFER_LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: ms,
+            multiview: None,
+            cache: None,
+        });
+        let double_sided_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("pbr pipeline double-sided"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[VERTEX_BUFFER_LAYOUT],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: HDR_FORMAT,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: ms,
+                multiview: None,
+                cache: None,
+            });
+        let double_sided_transparent_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("pbr pipeline double-sided transparent"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[VERTEX_BUFFER_LAYOUT],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: HDR_FORMAT,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: ms,
+                multiview: None,
+                cache: None,
+            });
 
         Self {
             pipeline,
+            double_sided_pipeline,
+            transparent_pipeline,
+            double_sided_transparent_pipeline,
             frame_bg_layout,
             instance_bg_layout,
             material_bg_layout,

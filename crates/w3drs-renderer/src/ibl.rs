@@ -24,6 +24,67 @@ pub struct IblContext {
     pub sampler: wgpu::Sampler,
 }
 
+/// CPU-side IBL bake result, ready to upload on the render thread.
+///
+/// This keeps expensive HDR convolution off the UI/render loop while respecting
+/// the usual rule that `wgpu` resource creation stays on the render thread.
+#[derive(Debug)]
+pub struct PreparedIbl {
+    pub irradiance_size: u32,
+    pub prefiltered_size: u32,
+    pub prefiltered_mip_count: u32,
+    pub brdf_lut_size: u32,
+    irradiance_faces: Vec<Vec<u8>>,
+    prefiltered_faces_by_mip: Vec<Vec<Vec<u8>>>,
+    brdf_lut: Vec<u8>,
+}
+
+impl PreparedIbl {
+    pub fn from_hdr_with_spec(hdr: &HdrImage, spec: &IblGenerationSpec) -> Self {
+        let irr = spec.irradiance_size;
+        let p0 = spec.prefiltered_size;
+        let mips = prefiltered_mip_level_count(p0);
+        let bl = spec.brdf_lut_size;
+
+        log::info!("IBL: spec: irr {irr}², pre {p0}² ×{mips} mips, LUT {bl}²");
+        log::info!("IBL: computing irradiance map ({}×{}×6)…", irr, irr);
+        let irradiance_faces = compute_irradiance_faces(hdr, irr, spec.irradiance_samples);
+
+        log::info!(
+            "IBL: computing prefiltered env map ({}×{}×6, {} mips)…",
+            p0,
+            p0,
+            mips
+        );
+        let mut prefiltered_faces_by_mip = Vec::with_capacity(mips as usize);
+        for mip in 0..mips {
+            let roughness = mip as f32 / (mips - 1).max(1) as f32;
+            let mip_size = (p0 >> mip).max(1);
+            let mip_samples = prefiltered_samples_for_mip(mip_size, spec);
+            prefiltered_faces_by_mip.push(compute_prefiltered_faces(
+                hdr,
+                mip_size,
+                roughness,
+                mip_samples,
+            ));
+        }
+
+        log::info!("IBL: computing BRDF LUT ({bl}×{bl})…");
+        let brdf_lut = compute_brdf_lut(bl, spec.brdf_integral_samples);
+        log::info!("IBL: CPU bake done.");
+
+        Self {
+            irradiance_size: irr,
+            prefiltered_size: p0,
+            prefiltered_mip_count: mips,
+            brdf_lut_size: bl,
+            irradiance_faces,
+            prefiltered_faces_by_mip,
+            brdf_lut,
+        }
+    }
+}
+
 impl IblContext {
     /// Flat ambient fallback (no HDR): constant grey irradiance + pre-computed BRDF LUT.
     pub fn new_default(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
@@ -64,89 +125,44 @@ impl IblContext {
         queue: &wgpu::Queue,
         spec: &IblGenerationSpec,
     ) -> Self {
-        let irr = spec.irradiance_size;
-        let p0 = spec.prefiltered_size;
-        let mips = prefiltered_mip_level_count(p0);
-        let bl0 = spec.brdf_lut_size;
-        log::info!("IBL: spec: irr {irr}², pre {p0}² ×{mips} mips, LUT {bl0}²");
-        log::info!("IBL: computing irradiance map ({}×{}×6)…", irr, irr);
+        let prepared = PreparedIbl::from_hdr_with_spec(hdr, spec);
+        Self::from_prepared(device, queue, &prepared)
+    }
+
+    pub fn from_prepared(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        prepared: &PreparedIbl,
+    ) -> Self {
+        let irr = prepared.irradiance_size;
+        let p0 = prepared.prefiltered_size;
+        let mips = prepared.prefiltered_mip_count;
+        let bl = prepared.brdf_lut_size;
+
         let irr_tex = create_cubemap(device, irr, irr, 1);
-        let irr_samples = spec.irradiance_samples;
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use rayon::prelude::*;
-            let faces: Vec<Vec<u8>> = (0..6usize)
-                .into_par_iter()
-                .map(|face| compute_irradiance_face(hdr, face, irr, irr_samples))
-                .collect();
-            for (face, face_data) in faces.iter().enumerate() {
-                upload_cubemap_layer(queue, &irr_tex, face as u32, 0, irr, irr, face_data);
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            for face in 0..6usize {
-                let face_data = compute_irradiance_face(hdr, face, irr, irr_samples);
-                upload_cubemap_layer(queue, &irr_tex, face as u32, 0, irr, irr, &face_data);
-            }
+        for (face, face_data) in prepared.irradiance_faces.iter().enumerate() {
+            upload_cubemap_layer(queue, &irr_tex, face as u32, 0, irr, irr, face_data);
         }
 
-        log::info!(
-            "IBL: computing prefiltered env map ({}×{}×6, {} mips)…",
-            p0,
-            p0,
-            mips
-        );
         let pre_tex = create_cubemap(device, p0, p0, mips);
-        for mip in 0..mips {
-            let roughness = mip as f32 / (mips - 1).max(1) as f32;
+        for (mip, faces) in prepared.prefiltered_faces_by_mip.iter().enumerate() {
+            let mip = mip as u32;
             let mip_size = (p0 >> mip).max(1);
-            let mip_samples = prefiltered_samples_for_mip(mip_size, spec);
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                use rayon::prelude::*;
-                let faces: Vec<Vec<u8>> = (0..6usize)
-                    .into_par_iter()
-                    .map(|face| {
-                        compute_prefiltered_face(hdr, face, mip_size, roughness, mip_samples)
-                    })
-                    .collect();
-                for (face, face_data) in faces.iter().enumerate() {
-                    upload_cubemap_layer(
-                        queue,
-                        &pre_tex,
-                        face as u32,
-                        mip,
-                        mip_size,
-                        mip_size,
-                        face_data,
-                    );
-                }
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                for face in 0..6usize {
-                    let face_data =
-                        compute_prefiltered_face(hdr, face, mip_size, roughness, mip_samples);
-                    upload_cubemap_layer(
-                        queue,
-                        &pre_tex,
-                        face as u32,
-                        mip,
-                        mip_size,
-                        mip_size,
-                        &face_data,
-                    );
-                }
+            for (face, face_data) in faces.iter().enumerate() {
+                upload_cubemap_layer(
+                    queue,
+                    &pre_tex,
+                    face as u32,
+                    mip,
+                    mip_size,
+                    mip_size,
+                    face_data,
+                );
             }
         }
 
-        let bl = spec.brdf_lut_size;
-        log::info!("IBL: computing BRDF LUT ({bl}×{bl})…");
-        let brdf_data = compute_brdf_lut(bl, spec.brdf_integral_samples);
         let brdf_tex = create_brdf_lut_texture(device, bl);
-        upload_brdf_lut(queue, &brdf_tex, &brdf_data, bl);
-
+        upload_brdf_lut(queue, &brdf_tex, &prepared.brdf_lut, bl);
         log::info!("IBL: done.");
         build_context(device, irr_tex, pre_tex, brdf_tex, irr)
     }
@@ -359,6 +375,23 @@ fn compute_irradiance_face(hdr: &HdrImage, face: usize, size: u32, samples: u32)
     data
 }
 
+fn compute_irradiance_faces(hdr: &HdrImage, size: u32, samples: u32) -> Vec<Vec<u8>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rayon::prelude::*;
+        (0..6usize)
+            .into_par_iter()
+            .map(|face| compute_irradiance_face(hdr, face, size, samples))
+            .collect()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        (0..6usize)
+            .map(|face| compute_irradiance_face(hdr, face, size, samples))
+            .collect()
+    }
+}
+
 fn compute_prefiltered_texel(
     hdr: &HdrImage,
     face: usize,
@@ -435,6 +468,28 @@ fn compute_prefiltered_face(
         }
     }
     data
+}
+
+fn compute_prefiltered_faces(
+    hdr: &HdrImage,
+    size: u32,
+    roughness: f32,
+    samples: u32,
+) -> Vec<Vec<u8>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rayon::prelude::*;
+        (0..6usize)
+            .into_par_iter()
+            .map(|face| compute_prefiltered_face(hdr, face, size, roughness, samples))
+            .collect()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        (0..6usize)
+            .map(|face| compute_prefiltered_face(hdr, face, size, roughness, samples))
+            .collect()
+    }
 }
 
 /// Returns RGBA16F encoded as bytes but with only RG used (scale, bias for split-sum).

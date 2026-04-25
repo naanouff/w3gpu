@@ -358,7 +358,17 @@ struct SkyPass {
 }
 
 impl SkyPass {
-    fn new(device: &wgpu::Device, hdr_view: &wgpu::TextureView, ibl: &IblContext) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        hdr_view: &wgpu::TextureView,
+        ibl: &IblContext,
+        main_pass_msaa: u32,
+    ) -> Self {
+        let ms = wgpu::MultisampleState {
+            count: main_pass_msaa.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        };
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sky frame layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -451,7 +461,7 @@ impl SkyPass {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: ms,
             multiview: None,
             cache: None,
         });
@@ -570,7 +580,11 @@ impl State {
             .await
             .expect("GPU context creation failed");
 
-        let render_state = RenderState::new(&context.device, context.surface_format);
+        let render_state = RenderState::new(
+            &context.device,
+            context.surface_format,
+            context.main_pass_msaa,
+        );
         let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
 
         let mut world = World::new();
@@ -606,7 +620,12 @@ impl State {
         );
         let ibl_context =
             IblContext::from_hdr_with_spec(&hdr_image, &context.device, &context.queue, &ibl_spec);
-        let sky_pass = SkyPass::new(&context.device, &hdr_equirect_view, &ibl_context);
+        let sky_pass = SkyPass::new(
+            &context.device,
+            &hdr_equirect_view,
+            &ibl_context,
+            context.main_pass_msaa,
+        );
         let env_bind_group = build_env_bind_group(
             &context.device,
             &render_state.ibl_bg_layout,
@@ -626,7 +645,12 @@ impl State {
         let mut cull_pass = CullPass::new(&context.device);
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
-        let hdr_target = HdrTarget::new(&context.device, size.width.max(1), size.height.max(1));
+        let hdr_target = HdrTarget::new(
+            &context.device,
+            size.width.max(1),
+            size.height.max(1),
+            context.main_pass_msaa,
+        );
         let post_process = PostProcessPass::new(
             &context.device,
             &hdr_target.view,
@@ -642,7 +666,7 @@ impl State {
             TonemapParams {
                 exposure: 1.0,
                 bloom_strength: 0.0,
-                flags: TonemapParams::FLAG_SKIP_FXAA,
+                flags: 0,
                 _pad1: 0.0,
             },
         );
@@ -865,19 +889,14 @@ impl State {
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main hdr"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.hdr_target.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.02,
-                            g: 0.02,
-                            b: 0.03,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
+                color_attachments: &[Some(self.hdr_target.main_pass_color_attachment(
+                    wgpu::Color {
+                        r: 0.02,
+                        g: 0.02,
+                        b: 0.03,
+                        a: 1.0,
                     },
-                })],
+                ))],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.context.depth_view,
                     depth_ops: Some(wgpu::Operations {

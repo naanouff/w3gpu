@@ -3,7 +3,7 @@ use instant::Instant;
 use std::collections::HashMap;
 use w3drs_assets::{
     load_from_bytes, load_hdr_from_bytes, parse_phase_a_viewer_config_str_or_default, primitives,
-    Material, PhaseAVariant, PhaseAViewerConfig,
+    AlphaMode, Material, PhaseAVariant, PhaseAViewerConfig, ViewerLightState,
 };
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
@@ -11,10 +11,11 @@ use w3drs_ecs::{
 };
 use w3drs_render_graph::parse_render_graph_json;
 use w3drs_renderer::{
-    build_entity_list, camera_system, derive_shadow_batches, frustum_culling_system,
+    active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
+    derive_shadow_batches, frustum_culling_system, light_uniforms_from_viewer,
     run_graph_v0_checksum_from_wgsl, transform_system, AssetRegistry, BloomParams, CullPass,
     CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget,
-    HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass,
+    HizPass, IblContext, IblGenerationSpec, MaterialTextures, PostProcessPass,
     RenderGraphExecError, RenderState, ShadowPass, TonemapParams,
 };
 
@@ -72,6 +73,7 @@ pub struct W3drsEngine {
     cull_enabled: bool,
     total_time: f32,
     phase_a_viewer: PhaseAViewerConfig,
+    viewer_light: ViewerLightState,
 }
 
 #[wasm_bindgen]
@@ -95,7 +97,11 @@ impl W3drsEngine {
             .await
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-        let render_state = RenderState::new(&context.device, context.surface_format);
+        let render_state = RenderState::new(
+            &context.device,
+            context.surface_format,
+            context.main_pass_msaa,
+        );
         let mut asset_registry = AssetRegistry::new(&context.device, &context.queue);
         asset_registry.upload_material(
             &Material::default(),
@@ -123,7 +129,8 @@ impl W3drsEngine {
         cull_pass.rebuild_hiz_bg(&context.device, &hiz_pass.hiz_full_view);
 
         let phase_a_viewer = PhaseAViewerConfig::default();
-        let hdr_target = HdrTarget::new(&context.device, width, height);
+        let viewer_light = ViewerLightState::default();
+        let hdr_target = HdrTarget::new(&context.device, width, height, context.main_pass_msaa);
         let post_process = PostProcessPass::new(
             &context.device,
             &hdr_target.view,
@@ -161,6 +168,7 @@ impl W3drsEngine {
             cull_enabled: true,
             total_time: 0.0,
             phase_a_viewer,
+            viewer_light,
         })
     }
 
@@ -285,6 +293,16 @@ impl W3drsEngine {
                     )
                 }),
                 metallic_roughness: prim.metallic_roughness_image.map(|img| {
+                    self.asset_registry.upload_texture_rgba8(
+                        &img.data,
+                        img.width,
+                        img.height,
+                        false,
+                        &self.context.device,
+                        &self.context.queue,
+                    )
+                }),
+                occlusion: prim.occlusion_image.map(|img| {
                     self.asset_registry.upload_texture_rgba8(
                         &img.data,
                         img.width,
@@ -424,6 +442,74 @@ impl W3drsEngine {
         self.cull_enabled = enabled;
     }
 
+    /// Met à jour la lumière directionnelle / ambiant / ombre (même sémantique que le viewer natif).
+    #[wasm_bindgen(js_name = setViewerLight)]
+    pub fn set_viewer_light(
+        &mut self,
+        dir_x: f32,
+        dir_y: f32,
+        dir_z: f32,
+        color_r: f32,
+        color_g: f32,
+        color_b: f32,
+        directional_intensity: f32,
+        ambient_intensity: f32,
+        shadow_bias: f32,
+    ) {
+        let d = Vec3::new(dir_x, dir_y, dir_z);
+        if d.length_squared() < 1e-20 {
+            return;
+        }
+        self.viewer_light.light_direction = d.normalize().to_array();
+        self.viewer_light.light_color = [color_r, color_g, color_b];
+        self.viewer_light.directional_intensity = directional_intensity.max(0.0);
+        self.viewer_light.ambient_intensity = ambient_intensity.max(0.0);
+        self.viewer_light.shadow_bias = shadow_bias.max(0.0);
+    }
+
+    /// Vide l’ECS et le registre d’assets (sauf défauts), remet le matériau 0. Appeler **avant** un nouveau `load_gltf` pour éviter d’empiler des ressources.
+    #[wasm_bindgen(js_name = clearSceneForNewGltf)]
+    pub fn clear_scene_for_new_gltf(&mut self) {
+        self.world = World::new();
+        self.asset_registry
+            .reset_in_place(&self.context.device, &self.context.queue);
+        self.asset_registry.upload_material(
+            &Material::default(),
+            MaterialTextures::default(),
+            &self.context.device,
+            &self.render_state.material_bg_layout,
+        );
+    }
+
+    /// Recadre la caméra active sur l’union des AABB en scène (même esprit que le viewer natif).
+    #[wasm_bindgen(js_name = reframeCamera)]
+    pub fn reframe_camera(&mut self) {
+        // `world_matrix` à jour avant mesure des AABB.
+        transform_system(&mut self.world, 0.0, 0.0);
+        let Some((center, radius)) = self.scene_world_bounds() else {
+            return;
+        };
+        let Some((cam_entity, fov_y, aspect)) = self.active_camera_entity_fov_aspect() else {
+            return;
+        };
+        let dist = fit_distance_for_radius(radius, fov_y, aspect).clamp(0.35, 200.0);
+        let pitch = 0.22f32;
+        let y = dist * pitch.sin();
+        let z = dist * pitch.cos();
+        let eye = center + Vec3::new(0.0, y, z);
+        let (_, rot, _) = Mat4::look_at_rh(eye, center, Vec3::Y)
+            .inverse()
+            .to_scale_rotation_translation();
+        if let Some(t) = self
+            .world
+            .get_component_mut::<TransformComponent>(cam_entity)
+        {
+            t.position = eye;
+            t.rotation = rot;
+            t.update_local_matrix();
+        }
+    }
+
     /// Phase **B.5** : exécute le graphe v0 sur le **même** `Device` / `Queue` que le viewer, avec
     /// les sources WGSL fournies en JSON : `{"shaders/foo.wgsl": "…wgsl…"}` (clés = chemins du document).
     /// Retourne le checksum FNV-1a 64 bits (décimal, string) de la texture `readback_id` (`Rgba16Float`).
@@ -551,7 +637,7 @@ impl W3drsEngine {
             0,
             bytemuck::bytes_of(&frame_uniforms),
         );
-        let light_uniforms = Self::build_light_uniforms();
+        let light_uniforms = light_uniforms_from_viewer(&self.viewer_light);
         self.shadow_pass
             .update_light(&self.context.queue, &light_uniforms);
 
@@ -607,23 +693,18 @@ impl W3drsEngine {
             }
         }
 
-        // 4. PBR main pass (GPU-indirect, per entity) → HDR target
+        // 4. PBR main pass (GPU-indirect, per entity) → HDR target (MSAA + resolve si >1)
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.hdr_target.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.05,
-                            g: 0.05,
-                            b: 0.08,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
+                color_attachments: &[Some(self.hdr_target.main_pass_color_attachment(
+                    wgpu::Color {
+                        r: 0.05,
+                        g: 0.05,
+                        b: 0.08,
+                        a: 1.0,
                     },
-                })],
+                ))],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.context.depth_view,
                     depth_ops: Some(wgpu::Operations {
@@ -647,6 +728,30 @@ impl W3drsEngine {
                     .get_material(entity.material_id)
                     .or_else(|| self.asset_registry.get_material(0));
                 let Some(mat) = mat else { continue };
+                if matches!(mat.alpha_mode, AlphaMode::Blend) {
+                    continue;
+                }
+                let Some(mesh) = self.asset_registry.get_mesh(entity.mesh_id) else {
+                    continue;
+                };
+                rp.set_bind_group(2, &mat.bind_group, &[]);
+                rp.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                rp.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed_indirect(
+                    &self.cull_pass.entity_indirect_buf,
+                    idx as u64 * indirect_stride,
+                );
+            }
+            rp.set_pipeline(&self.render_state.transparent_pipeline);
+            for (idx, entity) in sorted.iter().enumerate() {
+                let mat = self
+                    .asset_registry
+                    .get_material(entity.material_id)
+                    .or_else(|| self.asset_registry.get_material(0));
+                let Some(mat) = mat else { continue };
+                if !matches!(mat.alpha_mode, AlphaMode::Blend) {
+                    continue;
+                }
                 let Some(mesh) = self.asset_registry.get_mesh(entity.mesh_id) else {
                     continue;
                 };
@@ -667,76 +772,74 @@ impl W3drsEngine {
         output.present();
     }
 
-    fn build_light_uniforms() -> LightUniforms {
-        let light_dir = Vec3::new(-0.5, -1.0, -0.5).normalize();
-        let light_pos = -light_dir * 20.0;
-        let light_view = Mat4::look_at_rh(light_pos, Vec3::ZERO, Vec3::Y);
-        let light_proj = Mat4::orthographic_rh(-14.0, 14.0, -14.0, 14.0, 0.1, 60.0);
-        LightUniforms {
-            view_proj: (light_proj * light_view).to_cols_array_2d(),
-            shadow_bias: 0.001,
-            _pad: [0.0; 3],
-        }
+    fn camera_view_proj(&self) -> (Mat4, Mat4) {
+        let (v, p, _) = active_camera_vpc(&self.world);
+        (v, p)
     }
 
-    fn camera_view_proj(&self) -> (Mat4, Mat4) {
+    fn active_camera_entity_fov_aspect(&self) -> Option<(u32, f32, f32)> {
         self.world
             .query_entities::<CameraComponent>()
             .into_iter()
             .find_map(|e| {
-                let cam = self.world.get_component::<CameraComponent>(e)?;
-                if cam.is_active {
-                    Some((cam.view_matrix, cam.projection_matrix))
-                } else {
-                    None
-                }
+                self.world
+                    .get_component::<CameraComponent>(e)
+                    .and_then(|c| {
+                        if c.is_active {
+                            Some((e, c.fov_y_radians, c.aspect))
+                        } else {
+                            None
+                        }
+                    })
             })
-            .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY))
+    }
+
+    fn scene_world_bounds(&self) -> Option<(Vec3, f32)> {
+        let mut mn = Vec3::splat(f32::MAX);
+        let mut mx = Vec3::splat(f32::MIN);
+        let mut any = false;
+        for entity in self.world.query_entities::<RenderableComponent>() {
+            let Some(r) = self.world.get_component::<RenderableComponent>(entity) else {
+                continue;
+            };
+            if !r.visible {
+                continue;
+            }
+            let world_matrix = self
+                .world
+                .get_component::<TransformComponent>(entity)
+                .map(|t| t.world_matrix)
+                .unwrap_or(Mat4::IDENTITY);
+            let Some(mesh) = self.asset_registry.get_mesh(r.mesh_id) else {
+                continue;
+            };
+            let (amin, amax) = transform_aabb(
+                &world_matrix,
+                Vec3::from(mesh.aabb_min),
+                Vec3::from(mesh.aabb_max),
+            );
+            mn = mn.min(amin);
+            mx = mx.max(amax);
+            any = true;
+        }
+        if !any {
+            return None;
+        }
+        let center = (mn + mx) * 0.5;
+        let radius = ((mx - mn).length() * 0.5).max(0.15);
+        Some((center, radius))
     }
 
     fn build_frame_uniforms(&self) -> FrameUniforms {
-        let (view, projection, cam_pos) = self
-            .world
-            .query_entities::<CameraComponent>()
-            .into_iter()
-            .find_map(|e| {
-                let cam = self.world.get_component::<CameraComponent>(e)?;
-                if !cam.is_active {
-                    return None;
-                }
-                let pos = self
-                    .world
-                    .get_component::<TransformComponent>(e)
-                    .map(|t| {
-                        let w = t.world_matrix.w_axis;
-                        Vec3::new(w.x, w.y, w.z)
-                    })
-                    .unwrap_or(Vec3::ZERO);
-                Some((cam.view_matrix, cam.projection_matrix, pos))
-            })
-            .unwrap_or((Mat4::IDENTITY, Mat4::IDENTITY, Vec3::ZERO));
-
-        let inv_vp = (projection * view).inverse();
-        let light = Self::build_light_uniforms();
-
-        FrameUniforms {
-            projection: projection.to_cols_array_2d(),
-            view: view.to_cols_array_2d(),
-            inv_view_projection: inv_vp.to_cols_array_2d(),
-            camera_position: cam_pos.to_array(),
-            _pad0: 0.0,
-            light_direction: Vec3::new(-0.5, -1.0, -0.5).normalize().to_array(),
-            _pad1: 0.0,
-            light_color: [1.0, 0.95, 0.9],
-            ambient_intensity: 0.12,
-            total_time: self.total_time,
-            _pad2: [0.0; 3],
-            light_view_proj: light.view_proj,
-            shadow_bias: light.shadow_bias,
-            ibl_flags: 0,
-            ibl_diffuse_scale: self.phase_a_viewer.ibl_diffuse_scale(),
-            _pad3: 0.0,
-        }
+        let (view, projection, cam_pos) = active_camera_vpc(&self.world);
+        build_frame_uniforms_for_viewer(
+            view,
+            projection,
+            cam_pos,
+            self.total_time,
+            self.phase_a_viewer.ibl_diffuse_scale(),
+            &self.viewer_light,
+        )
     }
 
     fn collect_draw_entities(&self) -> Vec<DrawEntity> {
@@ -787,10 +890,15 @@ impl W3drsEngine {
 fn tonemap_params_for_phase_a_variant(v: &PhaseAVariant) -> TonemapParams {
     let exposure = v.tonemap.as_ref().map(|t| t.exposure).unwrap_or(1.0);
     let bloom_strength = v.tonemap.as_ref().map(|t| t.bloom_strength).unwrap_or(0.0);
+    let fxaa = v.tonemap.as_ref().map(|t| t.fxaa).unwrap_or(true);
     TonemapParams {
         exposure,
         bloom_strength,
-        flags: 0,
+        flags: if fxaa {
+            0
+        } else {
+            TonemapParams::FLAG_SKIP_FXAA
+        },
         _pad1: 0.0,
     }
 }
@@ -854,6 +962,13 @@ fn build_env_bind_group(
             },
         ],
     })
+}
+
+fn fit_distance_for_radius(radius: f32, fov_y_radians: f32, aspect: f32) -> f32 {
+    let half_v = (fov_y_radians * 0.5).clamp(0.05, 1.4);
+    let half_h = (half_v.tan() * aspect.max(0.1)).atan();
+    let fit_half = half_v.min(half_h).max(0.05);
+    (radius / fit_half.tan()) * 1.05
 }
 
 fn get_canvas(id: &str) -> Result<web_sys::HtmlCanvasElement, JsValue> {

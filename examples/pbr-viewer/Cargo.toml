@@ -1,0 +1,24 @@
+[package]
+name = "pbr-viewer"
+edition.workspace = true
+version.workspace = true
+description = "Viewer PBR natif : Phase B (graphe JSON + ombre B.7), panneau egui + rfd, aligné web."
+
+[dependencies]
+w3drs-assets = { path = "../../crates/w3drs-assets" }
+w3drs-camera-controller = { path = "../../crates/w3drs-camera-controller" }
+w3drs-ecs = { path = "../../crates/w3drs-ecs" }
+w3drs-input = { path = "../../crates/w3drs-input" }
+w3drs-renderer = { path = "../../crates/w3drs-renderer" }
+w3drs-render-graph = { path = "../../crates/w3drs-render-graph" }
+bytemuck.workspace = true
+glam.workspace = true
+log = { workspace = true }
+env_logger = "0.11"
+pollster = { version = "0.4" }
+winit = "0.30"
+wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
+egui = "0.31"
+egui-winit = "0.31"
+egui-wgpu = "0.31"
+rfd = "0.15"

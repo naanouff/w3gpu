@@ -1,0 +1,10 @@
+[package]
+name = "w3drs-camera-controller"
+edition.workspace = true
+version.workspace = true
+description = "Reusable camera controllers for w3drs viewers."
+
+[dependencies]
+glam.workspace = true
+w3drs-ecs = { path = "../w3drs-ecs" }
+w3drs-input = { path = "../w3drs-input", default-features = false }

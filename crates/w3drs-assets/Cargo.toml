@@ -20,7 +20,8 @@ gltf = { version = "1.4", default-features = false, features = [
     "KHR_materials_emissive_strength",
     "KHR_materials_volume",
 ] }
-image = { version = "0.25", default-features = false, features = ["hdr"] }
+image = { version = "0.25", default-features = false, features = ["hdr", "jpeg", "png", "webp"] }
+rayon = "1"
 
 [dev-dependencies]
 serde_json.workspace = true

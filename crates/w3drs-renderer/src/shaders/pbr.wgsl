@@ -50,13 +50,15 @@ struct MaterialUniforms {
     ior:       f32,
     clearcoat_factor:     f32,
     clearcoat_roughness:  f32,
-    _pad_main: f32,
+    occlusion_strength: f32,
     khr0:       vec4<f32>, // transmission, thickness, atten dist, specular factor
     khr1:       vec4<f32>, // specular color factor + 0
     khr2:       vec4<f32>, // attenuation color + 0
     khr_flags:  u32,
-    _kf0: u32, _kf1: u32, _kf2: u32,
-    uv_transforms: array<UvTransform, 11>,
+    normal_scale: f32,
+    alpha_cutoff: f32,
+    alpha_mode: u32,
+    uv_transforms: array<UvTransform, 12>,
 }
 
 @group(0) @binding(0) var<uniform>        frame:     FrameUniforms;
@@ -74,6 +76,7 @@ struct MaterialUniforms {
 @group(2) @binding(10) var specular_tex:  texture_2d<f32>;
 @group(2) @binding(11) var spec_color_tex: texture_2d<f32>;
 @group(2) @binding(12) var thick_tex:     texture_2d<f32>;
+@group(2) @binding(13) var occlusion_tex: texture_2d<f32>;
 
 @group(3) @binding(0) var irradiance_map:  texture_cube<f32>;
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
@@ -104,15 +107,28 @@ struct VertexOutput {
     @location(6)       color:           vec4<f32>,
 }
 
+fn normal_matrix_from_world(world: mat4x4<f32>) -> mat3x3<f32> {
+    let a = world[0].xyz;
+    let b = world[1].xyz;
+    let c = world[2].xyz;
+    let inv_t0 = cross(b, c);
+    let det = dot(a, inv_t0);
+    if (abs(det) < 1e-8) {
+        return mat3x3<f32>(a, b, c);
+    }
+    let inv_det = 1.0 / det;
+    return mat3x3<f32>(
+        inv_t0 * inv_det,
+        cross(c, a) * inv_det,
+        cross(a, b) * inv_det,
+    );
+}
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     let world     = instances[in.instance_idx];
     let world_pos = world * vec4<f32>(in.position, 1.0);
-    let normal_mat = mat3x3<f32>(
-        world[0].xyz,
-        world[1].xyz,
-        world[2].xyz,
-    );
+    let normal_mat = normal_matrix_from_world(world);
     var out: VertexOutput;
     out.clip_pos        = frame.projection * frame.view * world_pos;
     out.world_pos       = world_pos.xyz;
@@ -238,14 +254,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo_sample = textureSample(albedo_tex, mat_sampler, uv_alb);
     let mr_sample     = textureSample(mr_tex, mat_sampler, uv_mr);
     let emit_sample   = textureSample(emissive_tex, mat_sampler, uv_em);
+    if (material.alpha_mode == 1u && (material.albedo.a * albedo_sample.a) < material.alpha_cutoff) {
+        discard;
+    }
 
     let albedo    = material.albedo.rgb * albedo_sample.rgb * in.color.rgb;
     let metallic  = material.metallic  * mr_sample.b;
     let roughness = clamp(material.roughness * mr_sample.g, 0.04, 1.0);
     let emissive  = material.emissive.rgb * emit_sample.rgb * material.emissive.w;
 
+    // glTF : canal R d’`occlusionTexture` (souvent même image ORM, UV ou transform différents de M/R).
+    let uv_ao = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[11u]);
+    let occ_r = textureSample(occlusion_tex, mat_sampler, uv_ao).r;
+    let ao = 1.0 - material.occlusion_strength * (1.0 - occ_r);
+
     let normal_sample = textureSample(normal_tex, mat_sampler, uv_n).xyz;
-    let n_tangent = normalize(normal_sample * 2.0 - vec3<f32>(1.0));
+    var n_tangent = normal_sample * 2.0 - vec3<f32>(1.0);
+    n_tangent = normalize(vec3<f32>(n_tangent.xy * material.normal_scale, n_tangent.z));
     let tbn = mat3x3<f32>(
         normalize(in.world_tangent),
         normalize(in.world_bitangent),
@@ -300,14 +325,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let at = max(at0, 1e-4);
     let ab = max(ab0, 1e-4);
 
-    // ── KHR `specular` F0 (diélectrique) + Direct (w3dts §5) ─────────────────
+    // ── KHR `specular` F0 (diélectrique) — aligné Khronos README §Implementation :
+    // `dielectric_f0 = min(f0_from_ior * specularColor, 1) * specular` (× textures).
     var f0_dielec = dielectric_f0_from_ior(material.ior);
     if ((material.khr_flags & 1u) != 0u) {
         let uv_sp = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[8u]);
         let uv_sc = khr_texture_transform_uv(in.uv0, in.uv1, material.uv_transforms[9u]);
-        let s_w = material.khr0.w * textureSample(specular_tex, mat_sampler, uv_sp).a;
+        let s_tex = textureSample(specular_tex, mat_sampler, uv_sp).a;
         let c_tex = textureSample(spec_color_tex, mat_sampler, uv_sc).rgb;
-        f0_dielec = min(material.khr1.xyz * c_tex * s_w, vec3<f32>(1.0));
+        let s_w = material.khr0.w * s_tex;
+        let spec_col = min(material.khr1.xyz * c_tex, vec3<f32>(1.0));
+        f0_dielec = min(f0_dielec * spec_col, vec3<f32>(1.0)) * s_w;
     }
     let f0 = mix(f0_dielec, albedo, metallic);
     let NdotL = max(dot(N, L), 0.0);
@@ -368,7 +396,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let shadow_factor = pcf_shadow(in.world_pos);
     let direct = (diffuse_direct + specular_base) * shadow_factor;
 
-    // ── IBL (w3dts §6, sans transmission / AO texture) ──────────────────────────
+    // ── IBL (w3dts §6) ; AO texture × indirect seulement (lumière directe / ombre déjà) ─
     let kS_IBL = select(
         fresnelSchlickRoughness(NdotV, f0, roughness),
         vec3<f32>(0.0),
@@ -417,7 +445,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         cc_rough_eff >= 0.999,
     );
 
-    var ambient = diffuseIBL_surf + specularIBL + spec_ibl_coat;
+    var ambient = (diffuseIBL_surf + specularIBL + spec_ibl_coat) * vec3<f32>(ao, ao, ao);
     // KHR transmission + volume (approx. IBL « à travers » + Beer)
     // Pas de branchement sur des valeurs issues d’un `textureSample` (WGSL: flux de contrôle uniforme).
     if ((material.khr_flags & 2u) != 0u) {

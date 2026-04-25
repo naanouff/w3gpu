@@ -1,12 +1,13 @@
 use glam::{Mat3, Mat4, Vec3};
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
     material::{
-        AlphaMode, Material, ShadingModel, TextureUvTransform, TEX_UV_ALBEDO, TEX_UV_ANISOTROPY,
-        TEX_UV_CLEARCOAT, TEX_UV_CLEARCOAT_ROUGHNESS, TEX_UV_EMISSIVE, TEX_UV_METALLIC_ROUGHNESS,
-        TEX_UV_NORMAL, TEX_UV_SPECULAR, TEX_UV_SPECULAR_COLOR, TEX_UV_THICKNESS,
-        TEX_UV_TRANSMISSION,
+        AlphaMode, Material, ShadingModel, TextureUvTransform, MATERIAL_TEX_SLOT_COUNT,
+        TEX_UV_ALBEDO, TEX_UV_ANISOTROPY, TEX_UV_CLEARCOAT, TEX_UV_CLEARCOAT_ROUGHNESS,
+        TEX_UV_EMISSIVE, TEX_UV_METALLIC_ROUGHNESS, TEX_UV_NORMAL, TEX_UV_OCCLUSION,
+        TEX_UV_SPECULAR, TEX_UV_SPECULAR_COLOR, TEX_UV_THICKNESS, TEX_UV_TRANSMISSION,
     },
     mesh::Mesh,
     vertex::Vertex,
@@ -37,6 +38,8 @@ pub struct GltfPrimitive {
     pub normal_image: Option<RgbaImage>,
     /// Metallic (B) + roughness (G) per glTF spec (linear)
     pub metallic_roughness_image: Option<RgbaImage>,
+    /// `occlusionTexture` (R, linéaire) — souvent le même buffer que M/R, slot / UV glTF distincts.
+    pub occlusion_image: Option<RgbaImage>,
     /// Emissive color (sRGB)
     pub emissive_image: Option<RgbaImage>,
     /// `KHR_materials_anisotropy` texture (linear RGB); default mapping when absent uses factor-only path.
@@ -68,7 +71,19 @@ pub struct GltfPrimitive {
 pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
     let gltf = gltf::Gltf::from_slice_without_validation(bytes)?;
     let buffers = gltf::import_buffers(&gltf, None, gltf.blob.clone())?;
-    let images = gltf::import_images(&gltf, None, &buffers)?;
+
+    // Collect raw compressed bytes per image (fast, no decoding).
+    let raw_list: Vec<Option<Vec<u8>>> = gltf
+        .images()
+        .map(|img| extract_raw_image_bytes(&img, &buffers))
+        .collect();
+
+    // Decode all images in parallel — JPEG/PNG decompression is CPU-bound.
+    let images: Vec<Option<RgbaImage>> = raw_list
+        .into_par_iter()
+        .map(|raw_opt| raw_opt.and_then(|raw| decode_image_rgba8(&raw)))
+        .collect();
+
     let mut result = Vec::new();
 
     let scene_opt = gltf.default_scene().or_else(|| gltf.scenes().next());
@@ -92,6 +107,34 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
     }
 
     Ok(result)
+}
+
+fn extract_raw_image_bytes(img: &gltf::Image<'_>, buffers: &[gltf::buffer::Data]) -> Option<Vec<u8>> {
+    match img.source() {
+        gltf::image::Source::View { view, .. } => {
+            let buf = buffers.get(view.buffer().index())?;
+            let start = view.offset();
+            let end = start + view.length();
+            Some(buf[start..end].to_vec())
+        }
+        gltf::image::Source::Uri { .. } => None,
+    }
+}
+
+fn decode_image_rgba8(raw: &[u8]) -> Option<RgbaImage> {
+    use image::ImageReader;
+    use std::io::Cursor;
+    let reader = ImageReader::new(Cursor::new(raw))
+        .with_guessed_format()
+        .ok()?;
+    let img = reader.decode().ok()?;
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Some(RgbaImage {
+        data: rgba.into_raw(),
+        width,
+        height,
+    })
 }
 
 fn mat4_from_gltf_transform(t: gltf::scene::Transform) -> Mat4 {
@@ -133,7 +176,7 @@ fn transform_vertices(vertices: &mut [Vertex], world: Mat4) {
 fn visit_scene_node(
     document: &gltf::Gltf,
     buffers: &[gltf::buffer::Data],
-    images: &[gltf::image::Data],
+    images: &[Option<RgbaImage>],
     node: gltf::Node<'_>,
     parent_world: Mat4,
     out: &mut Vec<GltfPrimitive>,
@@ -156,7 +199,7 @@ fn visit_scene_node(
 fn push_primitive(
     document: &gltf::Gltf,
     buffers: &[gltf::buffer::Data],
-    images: &[gltf::image::Data],
+    images: &[Option<RgbaImage>],
     primitive: &gltf::Primitive<'_>,
     node_world: Mat4,
     out: &mut Vec<GltfPrimitive>,
@@ -242,6 +285,10 @@ fn push_primitive(
             .map(|t| t.texture().source().index()),
         images,
     );
+    let occlusion_image = mat.occlusion_texture().and_then(|ot| {
+        image_index_for_gltf_texture_index(document, ot.texture().index())
+            .and_then(|i| image_for_idx(Some(i), images))
+    });
     let emissive_image = image_for_idx(
         mat.emissive_texture().map(|t| t.texture().source().index()),
         images,
@@ -288,6 +335,7 @@ fn push_primitive(
         albedo_image,
         normal_image,
         metallic_roughness_image,
+        occlusion_image,
         emissive_image,
         anisotropy_image,
         clearcoat_image,
@@ -302,10 +350,9 @@ fn push_primitive(
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn image_for_idx(idx: Option<usize>, images: &[gltf::image::Data]) -> Option<RgbaImage> {
-    let img = images.get(idx?)?;
-    Some(RgbaImage {
-        data: to_rgba8(img),
+fn image_for_idx(idx: Option<usize>, images: &[Option<RgbaImage>]) -> Option<RgbaImage> {
+    images.get(idx?)?.as_ref().map(|img| RgbaImage {
+        data: img.data.clone(),
         width: img.width,
         height: img.height,
     })
@@ -322,6 +369,7 @@ fn image_index_for_gltf_texture_index(
         .map(|tex| tex.source().index())
 }
 
+#[cfg(test)]
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
     use gltf::image::Format;
     match img.format {
@@ -733,6 +781,19 @@ fn uv_transform_from_normal_texture(nt: &gltf::material::NormalTexture<'_>) -> T
         })
 }
 
+fn uv_transform_from_occlusion_texture(
+    ot: &gltf::material::OcclusionTexture<'_>,
+) -> TextureUvTransform {
+    let base_tc = ot.tex_coord().min(1);
+    ot.extension_value("KHR_texture_transform")
+        .and_then(|v| v.as_object())
+        .map(|o| texture_uv_merge_khr_json(base_tc, o))
+        .unwrap_or(TextureUvTransform {
+            tex_coord: base_tc,
+            ..Default::default()
+        })
+}
+
 fn parse_anisotropy(mat: &gltf::Material<'_>) -> ParsedAnisotropy {
     let Some(v) = mat.extension_value("KHR_materials_anisotropy") else {
         return ParsedAnisotropy::default();
@@ -842,6 +903,11 @@ fn convert_material(
     let base = pbr.base_color_factor();
     let emissive = mat.emissive_factor();
     let emissive_strength = mat.emissive_strength().unwrap_or(1.0);
+    let normal_scale = mat
+        .normal_texture()
+        .map(|normal| normal.scale())
+        .unwrap_or(1.0)
+        .max(0.0);
     let alpha_mode = match mat.alpha_mode() {
         gltf::material::AlphaMode::Opaque => AlphaMode::Opaque,
         gltf::material::AlphaMode::Mask => AlphaMode::Mask,
@@ -849,7 +915,8 @@ fn convert_material(
     };
     let ior = mat.ior().unwrap_or(1.5).clamp(1.0001, 256.0);
 
-    let mut texture_transforms = [TextureUvTransform::default(); 11];
+    let mut texture_transforms = [TextureUvTransform::default(); MATERIAL_TEX_SLOT_COUNT];
+    let mut occlusion_strength = 1.0f32;
     texture_transforms[TEX_UV_ALBEDO] = pbr
         .base_color_texture()
         .map(|t| uv_transform_from_gltf_info(&t))
@@ -869,6 +936,10 @@ fn convert_material(
     texture_transforms[TEX_UV_ANISOTROPY] = aniso.uv;
     texture_transforms[TEX_UV_CLEARCOAT] = clearcoat.clearcoat_uv;
     texture_transforms[TEX_UV_CLEARCOAT_ROUGHNESS] = clearcoat.rough_uv;
+    if let Some(ot) = mat.occlusion_texture() {
+        texture_transforms[TEX_UV_OCCLUSION] = uv_transform_from_occlusion_texture(&ot);
+        occlusion_strength = ot.strength();
+    }
 
     let mut khr_flags: u32 = 0;
     let mut transmission_factor = 0.0f32;
@@ -918,6 +989,7 @@ fn convert_material(
         metallic: pbr.metallic_factor(),
         roughness: pbr.roughness_factor(),
         emissive,
+        normal_scale,
         alpha_mode,
         alpha_cutoff: mat.alpha_cutoff().unwrap_or(0.5),
         double_sided: mat.double_sided(),
@@ -933,7 +1005,32 @@ fn convert_material(
         thickness_factor,
         attenuation_distance,
         attenuation_color,
+        occlusion_strength,
         khr_flags,
         texture_transforms,
+    }
+}
+
+#[cfg(test)]
+mod gltf_ao_tests {
+    use std::path::Path;
+
+    use super::load_from_bytes;
+
+    /// Damaged Helmet glTF (Khronos) inclut `occlusionTexture` (souvent même image ORM, canal R).
+    #[test]
+    fn damaged_helmet_loads_occlusion() {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../www/public/damaged_helmet_source_glb.glb");
+        let bytes = std::fs::read(&p)
+            .unwrap_or_else(|e| panic!("read {}: {e} (dépôt w3drs avec www/ requis)", p.display()));
+        let prims = load_from_bytes(&bytes).expect("parse glb");
+        assert!(
+            prims.iter().any(|prim| prim.occlusion_image.is_some()),
+            "on attend au moins une `occlusionTexture` (ex. réf. DamagedHelmet)"
+        );
+        assert!(prims
+            .iter()
+            .any(|prim| prim.metallic_roughness_image.is_some()));
     }
 }

@@ -6,9 +6,8 @@ use std::path::PathBuf;
 use w3drs_render_graph::{BlitRegion, IndirectDispatchArgs, Pass, Resource};
 use w3drs_renderer::{
     parse_render_graph_json, run_graph_v0_checksum, run_graph_v0_checksum_with_registry,
-    run_graph_v0_checksum_with_registry_pre_writes,
-    run_graph_v0_checksum_with_registry_wgsl_host, validate_render_graph_exec_v0,
-    RenderGraphExecError, RenderGraphGpuRegistry, RenderGraphV0Host,
+    run_graph_v0_checksum_with_registry_pre_writes, run_graph_v0_checksum_with_registry_wgsl_host,
+    validate_render_graph_exec_v0, RenderGraphExecError, RenderGraphGpuRegistry, RenderGraphV0Host,
 };
 
 struct Gpu {
@@ -258,9 +257,8 @@ fn phase_b_b6_b7_raster_depth_mesh_host_hooks_and_depth_encode() {
     let doc = parse_render_graph_json(&json).expect("parse");
     validate_render_graph_exec_v0(&doc, "hdr_readback").expect("validate");
     let registry = RenderGraphGpuRegistry::new(&gpu.device, &doc).expect("registry");
-    let mut load = |rel: &str| {
-        std::fs::read_to_string(dir.join(rel)).map_err(RenderGraphExecError::from)
-    };
+    let mut load =
+        |rel: &str| std::fs::read_to_string(dir.join(rel)).map_err(RenderGraphExecError::from);
     let mut host = B67TestHost::default();
     run_graph_v0_checksum_with_registry_wgsl_host(
         &gpu.device,

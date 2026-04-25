@@ -145,7 +145,10 @@ pub enum RenderGraphValidateError {
         offset: u64,
     },
     #[error("pass {pass_id:?} must omit `{field}` or set a non-empty string (B.6 ECS nœud)")]
-    EcsLabelEmpty { pass_id: String, field: &'static str },
+    EcsLabelEmpty {
+        pass_id: String,
+        field: &'static str,
+    },
     #[error("raster_depth_mesh pass {pass_id:?}: {detail}")]
     RasterDepthMeshInvalid { pass_id: String, detail: String },
 }
@@ -308,19 +311,34 @@ fn validate_pass_resource_semantics_v0(
         {
             let (pass_id, ecs_before, ecs_after) = match p {
                 Pass::Compute {
-                    id, ecs_before, ecs_after, ..
+                    id,
+                    ecs_before,
+                    ecs_after,
+                    ..
                 }
                 | Pass::RasterMesh {
-                    id, ecs_before, ecs_after, ..
+                    id,
+                    ecs_before,
+                    ecs_after,
+                    ..
                 }
                 | Pass::Fullscreen {
-                    id, ecs_before, ecs_after, ..
+                    id,
+                    ecs_before,
+                    ecs_after,
+                    ..
                 }
                 | Pass::Blit {
-                    id, ecs_before, ecs_after, ..
+                    id,
+                    ecs_before,
+                    ecs_after,
+                    ..
                 }
                 | Pass::RasterDepthMesh {
-                    id, ecs_before, ecs_after, ..
+                    id,
+                    ecs_before,
+                    ecs_after,
+                    ..
                 } => (id, ecs_before, ecs_after),
             };
             check_ecs_string_options(pass_id, ecs_before, ecs_after)?;
@@ -952,7 +970,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "shaders/x.wgsl".into(),
                     entry_point: "cs_main".into(),
@@ -965,7 +985,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "shaders/y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1053,7 +1075,9 @@ mod tests {
                 usage: vec!["render_attachment".into()],
                 mip_level_count: 1,
             }],
-            passes: vec![Pass::RasterMesh { ecs_before: None, ecs_after: None,
+            passes: vec![Pass::RasterMesh {
+                ecs_before: None,
+                ecs_after: None,
                 id: "r".into(),
                 shader: "s.wgsl".into(),
                 vertex_entry: "vs_main".into(),
@@ -1082,7 +1106,9 @@ mod tests {
                 usage: vec!["render_attachment".into()],
                 mip_level_count: 1,
             }],
-            passes: vec![Pass::RasterMesh { ecs_before: None, ecs_after: None,
+            passes: vec![Pass::RasterMesh {
+                ecs_before: None,
+                ecs_after: None,
                 id: "r".into(),
                 shader: "s.wgsl".into(),
                 vertex_entry: "vs_main".into(),
@@ -1138,7 +1164,9 @@ mod tests {
                 usage: vec!["render_attachment".into()],
                 mip_level_count: 1,
             }],
-            passes: vec![Pass::RasterMesh { ecs_before: None, ecs_after: None,
+            passes: vec![Pass::RasterMesh {
+                ecs_before: None,
+                ecs_after: None,
                 id: "r".into(),
                 shader: "s.wgsl".into(),
                 vertex_entry: "vs_main".into(),
@@ -1167,7 +1195,9 @@ mod tests {
                 usage: vec!["render_attachment".into()],
                 mip_level_count: 1,
             }],
-            passes: vec![Pass::RasterMesh { ecs_before: None, ecs_after: None,
+            passes: vec![Pass::RasterMesh {
+                ecs_before: None,
+                ecs_after: None,
                 id: "r".into(),
                 shader: "s.wgsl".into(),
                 vertex_entry: "vs_main".into(),
@@ -1207,7 +1237,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1220,7 +1252,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1271,7 +1305,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1284,7 +1320,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1325,7 +1363,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1338,7 +1378,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1379,7 +1421,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1392,7 +1436,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1433,7 +1479,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1446,7 +1494,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1487,7 +1537,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1500,7 +1552,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1549,7 +1603,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1562,7 +1618,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1600,7 +1658,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1613,7 +1673,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1651,7 +1713,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1664,7 +1728,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1702,7 +1768,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1715,7 +1783,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1761,7 +1831,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1774,7 +1846,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1812,7 +1886,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1825,7 +1901,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1871,7 +1949,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1884,7 +1964,9 @@ mod tests {
                     storage_buffers_read_group1: vec![],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1918,7 +2000,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1931,7 +2015,9 @@ mod tests {
                     storage_buffers_read_group1: vec!["g1_ro_only".into()],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -1977,7 +2063,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -1990,7 +2078,9 @@ mod tests {
                     storage_buffers_read_group1: vec!["g1r".into(), "g1r".into()],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -2036,7 +2126,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -2049,7 +2141,9 @@ mod tests {
                     storage_buffers_read_group1: vec!["g1x".into()],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -2095,7 +2189,9 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Compute { ecs_before: None, ecs_after: None,
+                Pass::Compute {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "c".into(),
                     shader: "x.wgsl".into(),
                     entry_point: "m".into(),
@@ -2108,7 +2204,9 @@ mod tests {
                     storage_buffers_read_group1: vec!["g1r".into()],
                     indirect_dispatch: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -2139,13 +2237,17 @@ mod tests {
                 mip_level_count: 1,
             }],
             passes: vec![
-                Pass::Blit { ecs_before: None, ecs_after: None,
+                Pass::Blit {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "b".into(),
                     source: "t".into(),
                     destination: "t".into(),
                     region: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),
@@ -2186,13 +2288,17 @@ mod tests {
                 },
             ],
             passes: vec![
-                Pass::Blit { ecs_before: None, ecs_after: None,
+                Pass::Blit {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "blit".into(),
                     source: "a".into(),
                     destination: "b".into(),
                     region: None,
                 },
-                Pass::RasterMesh { ecs_before: None, ecs_after: None,
+                Pass::RasterMesh {
+                    ecs_before: None,
+                    ecs_after: None,
                     id: "r".into(),
                     shader: "y.wgsl".into(),
                     vertex_entry: "vs_main".into(),

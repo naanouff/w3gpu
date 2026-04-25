@@ -1,0 +1,12 @@
+[package]
+name = "w3drs-input"
+edition.workspace = true
+version.workspace = true
+description = "Input normalization layer for native and future WASM viewers."
+
+[features]
+default = ["winit"]
+winit = ["dep:winit"]
+
+[dependencies]
+winit = { version = "0.30", optional = true }

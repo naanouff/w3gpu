@@ -84,6 +84,41 @@
   main.variants-area{max-width: 1280px;margin: 24px auto 96px;padding: 0 32px;}
   section.variant{display:none;animation: fadein .25s ease;}
   section.variant.active{ display:block; }
+
+  /* PRINT — show every variant on its own page */
+  @media print{
+    @page { size: A3 landscape; margin: 10mm; }
+    html, body{
+      background: var(--paper) !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    header.topbar, nav.variants, .tweaks-toggle, .back, #tweaksPanel, .floating, [id="floating"]{
+      display:none !important;
+    }
+    .intro{ margin: 0 0 12px; padding: 0; }
+    main.variants-area{ margin: 0; padding: 0; max-width: none; }
+    section.variant{
+      display:block !important;
+      break-before: page;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      animation: none !important;
+      padding-top: 8px;
+    }
+    section.variant:first-of-type{ break-before: avoid; }
+    .frame-wrap{
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .sketch-frame{
+      break-inside: avoid;
+      page-break-inside: avoid;
+      box-shadow: 4px 4px 0 0 rgba(0,0,0,0.12) !important;
+    }
+    .rationale{ break-inside: avoid; page-break-inside: avoid; }
+    *{ animation: none !important; transition: none !important; }
+  }
   @keyframes fadein{ from{opacity:0; transform: translateY(4px)} to{opacity:1; transform:none} }
 
   .variant-head{display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;padding-bottom: 16px;border-bottom: 1.5px dashed var(--rule);}
@@ -1377,7 +1412,7 @@
     sections.forEach(s => s.classList.toggle('active', s.dataset.v === String(n)));
     document.querySelectorAll('#segJump button').forEach(b => b.classList.toggle('on', b.dataset.v === String(n)));
     localStorage.setItem('w3d:r2:variant', n);
-    window.scrollTo({top: document.querySelector('nav.variants').offsetTop - 10, behavior: 'smooth'});
+    const nav = document.querySelector('nav.variants'); if(nav) window.scrollTo({top: nav.offsetTop - 10, behavior: 'smooth'});
   }
   tabs.forEach(t => t.addEventListener('click', () => showVariant(t.dataset.v)));
 
@@ -1469,6 +1504,19 @@
       }, 180);
     });
   });
+</script>
+
+<script>
+  // Auto-print: wait for fonts + a small delay, then trigger print dialog.
+  (async function autoPrint(){
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 600));
+    window.print();
+  })();
 </script>
 
 </body>
