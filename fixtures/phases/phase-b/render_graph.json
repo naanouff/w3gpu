@@ -8,7 +8,15 @@
       "format": "Rgba16Float",
       "width": 1280,
       "height": 720,
-      "usage": ["texture_binding", "render_attachment"]
+      "usage": ["texture_binding", "render_attachment", "copy_src"]
+    },
+    {
+      "kind": "texture_2d",
+      "id": "hdr_blit_dst",
+      "format": "Rgba16Float",
+      "width": 1280,
+      "height": 720,
+      "usage": ["copy_dst", "texture_binding", "render_attachment"]
     },
     {
       "kind": "texture_2d",
@@ -19,9 +27,35 @@
       "usage": ["render_attachment"]
     },
     {
+      "kind": "texture_2d",
+      "id": "ping",
+      "format": "Rgba16Float",
+      "width": 8,
+      "height": 8,
+      "usage": ["storage", "texture_binding"]
+    },
+    {
       "kind": "buffer",
       "id": "indirect_args",
       "size": 4096,
+      "usage": ["storage", "copy_dst"]
+    },
+    {
+      "kind": "buffer",
+      "id": "ro_pad",
+      "size": 64,
+      "usage": ["storage", "copy_dst"]
+    },
+    {
+      "kind": "buffer",
+      "id": "g1_side",
+      "size": 64,
+      "usage": ["storage", "copy_dst"]
+    },
+    {
+      "kind": "buffer",
+      "id": "g1_ro_pad",
+      "size": 64,
       "usage": ["storage", "copy_dst"]
     }
   ],
@@ -31,7 +65,13 @@
       "id": "warmup_dispatch",
       "shader": "shaders/trivial_dispatch.wgsl",
       "entry_point": "cs_main",
-      "dispatch": { "x": 4, "y": 4, "z": 1 }
+      "dispatch": { "x": 4, "y": 4, "z": 1 },
+      "texture_reads": ["hdr_color"],
+      "storage_buffers": ["indirect_args"],
+      "storage_buffers_read": ["ro_pad"],
+      "storage_buffers_group1": ["g1_side"],
+      "storage_buffers_read_group1": ["g1_ro_pad"],
+      "storage_writes": ["ping"]
     },
     {
       "kind": "raster_mesh",
@@ -41,6 +81,21 @@
       "fragment_entry": "fs_main",
       "color_targets": ["hdr_color"],
       "depth_target": "scene_depth"
+    },
+    {
+      "kind": "fullscreen",
+      "id": "fullscreen_second_pass",
+      "shader": "shaders/minimal_raster.wgsl",
+      "vertex_entry": "vs_main",
+      "fragment_entry": "fs_main",
+      "color_targets": ["hdr_color"],
+      "depth_target": "scene_depth"
+    },
+    {
+      "kind": "blit",
+      "id": "mirror_hdr",
+      "source": "hdr_color",
+      "destination": "hdr_blit_dst"
     }
   ]
 }

@@ -8,6 +8,7 @@ name = "khronos-pbr-sample"
 path = "src/main.rs"
 
 [dependencies]
+w3drs-render-graph = { path = "../../crates/w3drs-render-graph" }
 w3drs-renderer = { path = "../../crates/w3drs-renderer" }
 w3drs-assets = { path = "../../crates/w3drs-assets" }
 w3drs-ecs = { path = "../../crates/w3drs-ecs" }

@@ -108,7 +108,9 @@ fn main() {
         std::process::exit(1);
     }
     let Some((device, queue)) = try_gpu() else {
-        eprintln!("[phase-b-graph] pas d’adaptateur GPU (pilote / machine requis pour le checksum).");
+        eprintln!(
+            "[phase-b-graph] pas d’adaptateur GPU (pilote / machine requis pour le checksum)."
+        );
         let _ = writeln!(
             std::io::stdout(),
             "ÉCHEC : aucun adaptateur WebGPU (wgpu) — pas de checksum. \
@@ -118,8 +120,8 @@ fn main() {
     };
     let _ = writeln!(std::io::stdout(), "GPU OK — exécution du graphe…");
     let _ = std::io::stdout().flush();
-    let checksum = run_graph_v0_checksum(&device, &queue, &doc, &root, readback_id)
-        .unwrap_or_else(|e| {
+    let checksum =
+        run_graph_v0_checksum(&device, &queue, &doc, &root, readback_id).unwrap_or_else(|e| {
             eprintln!("[phase-b-graph] exécution : {e}");
             let _ = writeln!(std::io::stdout(), "ÉCHEC exécution : {e}\n");
             std::process::exit(1);
@@ -129,5 +131,10 @@ fn main() {
         readback_id, checksum, root.display()
     );
     print!("{out}");
-    eprintln!("[phase-b-graph] readback={} checksum={} root={}", readback_id, checksum, root.display());
+    eprintln!(
+        "[phase-b-graph] readback={} checksum={} root={}",
+        readback_id,
+        checksum,
+        root.display()
+    );
 }

@@ -303,6 +303,8 @@ Résultats HTML dans `target/criterion/`.
 
 ## Phase B — Graphe de rendu (jalon v0) — 2026-04
 
+**Clôture v0 (2026-04-24+)** : B.1–**B.7** livrés (ticket [Phase B](tickets/phase-B-graphe-rendu-compute.md) *Terminée*). **B.6** : `ecs_before` / `ecs_after` + `RenderGraphV0Host::ecs_node` ; **B.7** : `raster_depth_mesh` + `draw_raster_depth_mesh` ; API `encode_*_with_wgsl_host` / `run_graph_v0_checksum_with_registry_wgsl_host` ; `insert_buffer` / `insert_texture_2d` sur le registre ; test [`phase_b_b6_b7_…`](../crates/w3drs-renderer/tests/phase_b_graph_exec.rs) + [b67_raster_depth_test.json](../fixtures/phases/phase-b/b67_raster_depth_test.json). *Poursuite* : câblage ombre moteur ↔ JSON (hôte dans `khronos` ou équivalent).
+
 **Objectif** : [ROADMAP § Phase B](ROADMAP.md) ; ticket [Phase B — graphe & compute](tickets/phase-B-graphe-rendu-compute.md).
 
 **Réalisé** :
@@ -313,6 +315,13 @@ Résultats HTML dans `target/criterion/`.
 - **Natif** : `w3drs-renderer` → module **`render_graph_exec`** (`run_graph_v0_checksum` : passes du JSON, readback `Rgba16Float`, FNV-1a 64) ; test d’intégration **`phase_b_graph_exec`** (deux soumissions → même checksum ; skip si pas d’adaptateur GPU).
 - **B.1 (registre GPU)** : [`RenderGraphGpuRegistry`](../crates/w3drs-renderer/src/render_graph_exec.rs) — textures / buffers nommés depuis le JSON, `resize_texture_2d`, `run_graph_v0_checksum_with_registry` ; tests étendus [`phase_b_graph_exec`](../crates/w3drs-renderer/tests/phase_b_graph_exec.rs).
 - **B.2 (pré-barrières)** : `validate_exec_v0` étendu — `texture_reads` / `storage_writes` sur les passes `compute` (optionnel JSON), contrôle des usages `render_attachment` / `texture_binding` / `storage` vs références des passes, interdiction des doublons dans `color_targets`, `depth_target` + formats depth ; `pass_ids_in_order_v0` ; erreurs mappées côté `RenderGraphExecError` (natif). **Exécuteur** : `raster_mesh` attache `depth_target` (fixture `scene_depth` + sync `www/public/phase-b/`). Schéma : [render-graph-v0.md](schemas/render-graph-v0.md) ; ticket [Phase B](tickets/phase-B-graphe-rendu-compute.md).
+- **B.3 (amorce)** : `compute` — `storage_buffers` (rw), **`storage_buffers_read`** (ro), `storage_writes`, **`texture_reads`** : validation (buffers rw vs ro, doublons, textures reads/écritures) + group 0 (`Buffer` storage rw/ro, `StorageTexture`, `Texture` sampled). Fixture `ro_pad` + shader ; sync `www/public/phase-b/`.
+- **B.3 (passes)** : `kind` **`fullscreen`** (même validation/encode que `raster_mesh`) + **`blit`** (`copy_texture_to_texture` mip 0 ; validation `copy_src` / `copy_dst`, format + extent) ; texture `hdr_blit_dst` ; ticket + [render-graph-v0.md](schemas/render-graph-v0.md).
+- **B.3 (bind group 1)** : champs JSON **`storage_buffers_group1`** (rw) et **`storage_buffers_read_group1`** (ro) sur `compute` ; validation + layout/bindings `wgpu` + fixture `g1_side` / `g1_ro_pad` + sync `www/public/phase-b/`.
+- **B.3 (étendu 2026-04-24)** : textures **`mip_level_count`** ; **`compute.indirect_dispatch`** + usage buffer **`indirect`** ; **`blit.region`** (mips + sous-rectangle) ; API **`encode_render_graph_passes_v0`** et **`run_graph_v0_checksum_with_registry_pre_writes`** ; tests d’intégration checksum (indirect semé = dispatch fixe ; blit avec région pleine mip0 = blit sans région). Schéma [render-graph-v0.md](schemas/render-graph-v0.md) + ticket [Phase B](tickets/phase-B-graphe-rendu-compute.md) mis à jour.
+- **B.4 (livrable)** : `khronos-pbr-sample` — **`--render-graph`**, **`--render-graph-readback`**, **`--render-graph-slot`** `pre` \| `after_cull` \| `post_pbr` ; `encode_render_graph_passes_v0` dans le même `CommandEncoder` (graphe isolé du câblage PBR, emplacement paramétrable). **B.7** : avec `--render-graph`, l’ombre = `encode_render_graph_passes_v0_with_wgsl_host` + [`render_graph_shadow_khronos.json`](../examples/khronos-pbr-sample/render_graph_shadow_khronos.json) (hôte *mesh batches*) ; sans ce mode, ombre = pipeline manuel `ShadowPass` (inchangé).
+- **B.5 (livrable)** : exécuteur v0 sur **WASM** — `encode_render_graph_passes_v0_with_wgsl`, `run_graph_v0_checksum_from_wgsl`, `W3drsEngine::w3drsPhaseBGraphRunChecksum` ; `www` fetch JSON + WGSL, checksum en console. Dépendance `w3drs-render-graph` sur cible `wasm32` pour `w3drs-renderer`.
+- **B.6 / B.7 (v0)** : labels `ecs_before` / `ecs_after` ; passe `raster_depth_mesh` et hôtes — [Phase B](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) + [ROADMAP](ROADMAP.md#phase-b--graphe-de-rendu--compute-équivalent-rendergraph-w3dts) ; câblage moteur complet = *poursuite*.
 
 **Suite (validation)** : `validate_render_graph_exec_v0` (sans GPU) + tests d’erreur `RenderGraphExecError` ; `Rgba8Unorm` autorisé pour textures non-readback ; readback checksum = **`Rgba16Float`** uniquement (`InvalidReadbackFormat`).
 
@@ -320,9 +329,9 @@ Résultats HTML dans `target/criterion/`.
 
 **Exemple CLI** : `cargo run -p phase-b-graph --release` — charge `fixtures/phases/phase-b/render_graph.json` (+ `shaders/`), valide, affiche le **checksum** (stderr).
 
-**Web** : `www/public/phase-b/` (JSON + WGSL copiés du fixture) + `main.ts` → `w3drsValidateRenderGraphV0` au chargement (smoke aligné natif).
+**Web** : `www/public/phase-b/` + `main.ts` — `w3drsValidateRenderGraphV0` + exécution **GPU** `w3drsPhaseBGraphRunChecksum` (checksum console ; aligné natif).
 
-**Suite** : bindings / barrières génériques, fusion avec le viewer PBR, exécuteur GPU WASM. **Plan détaillé (jalons B.1–B.6)** : [Phase B — *Plan d’exécution*](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) ; [schéma render-graph v0 — feuille de route](schemas/render-graph-v0.md#feuille-de-route--exécuteur-complet-parité-moteur-objectif-w3dts).
+**Poursuite** : barrières wgpu explicites ; *full* câblage ombre/ECS gameplay dans le sample — [Phase B — Poursuites](tickets/phase-B-graphe-rendu-compute.md#poursuites-hors-périmètre-schéma-v0-figé) ; [schéma — évolutions](schemas/render-graph-v0.md#évolutions-futures-hors-v0).
 
 ---
 
@@ -336,15 +345,15 @@ Résultats HTML dans `target/criterion/`.
 - [tickets/README.md](tickets/README.md) : lien vers cette section pour les revues *parité*.
 - [`.cursor/rules/w3drs-w3dts-migration.mdc`](../.cursor/rules/w3drs-w3dts-migration.mdc) : règle alignée sur l’intention 1:1.
 - [phase-a-gates-record.md](tickets/phase-a-gates-record.md) : modèle d’**enregistrement** pour les *gates* visuels (natif + web) ; [phase-a-pbr-checklist-w3dts.md](tickets/phase-a-pbr-checklist-w3dts.md) : renvoi *Enregistrement DOD* ; [phase-A-pbr-materiaux-gltf.md](tickets/phase-A-pbr-materiaux-gltf.md) : DOD liée aux gates.
-- [phase-B-graphe-rendu-compute.md](tickets/phase-B-graphe-rendu-compute.md) : *Plan d’exécution* (B.0–B.6) + statut ; [render-graph-v0.md](schemas/render-graph-v0.md) : *Feuille de route* exécuteur complet.
+- [phase-B-graphe-rendu-compute.md](tickets/phase-B-graphe-rendu-compute.md) : *Plan* B.1–B.7 + statut ; [render-graph-v0.md](schemas/render-graph-v0.md) : `raster_depth_mesh`, nœuds ECS.
 - [ROADMAP](ROADMAP.md) *Barre de progression* : note de **révision 2026-04-24** (mise à jour textuelle sans recalcul de pourcentage).
 
-**Suite** : ~~emplir phase-a-gates-record~~ **fait** (clôture Phase A 2026-04-20) ; implémenter jalons Phase B (B.1→) côté code.
+**Suite** : ~~emplir phase-a-gates-record~~ **fait** (clôture Phase A 2026-04-20) ; ~~implémenter jalons Phase B (B.1→B.7)~~ **fait (v0, 2026-04-24+)**.
 
 ---
 
 ## À venir
 
 - **Phase A** : ~~clôture~~ **terminée** (2026-04-20) — [phase-a-gates-record.md](tickets/phase-a-gates-record.md), [ticket A](tickets/phase-A-pbr-materiaux-gltf.md) **Terminée**
-- **Phase B** : [plan B.1–B.6](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) (registre, barrières, viewer, WASM, ECS)
+- **Phase B** : **v0 terminé** (B.1–B.7) — [ticket](tickets/phase-B-graphe-rendu-compute.md) ; **poursuite** câblage ombre/viewer : [Poursuites](tickets/phase-B-graphe-rendu-compute.md#poursuites-hors-périmètre-schéma-v0-figé)
 - **ROADMAP** : Phase K (éditeur / workspace) — voir [ROADMAP.md](ROADMAP.md)

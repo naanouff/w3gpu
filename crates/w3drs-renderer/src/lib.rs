@@ -17,15 +17,20 @@ pub mod shadow_pass;
 pub mod systems;
 pub mod vertex_layout;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub mod render_graph_exec;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use render_graph_exec::{
-    run_graph_v0_checksum, run_graph_v0_checksum_with_registry, validate_render_graph_exec_v0,
-    RenderGraphExecError, RenderGraphGpuRegistry, Texture2dGpu,
+    encode_render_graph_passes_v0, run_graph_v0_checksum, run_graph_v0_checksum_with_registry,
+    run_graph_v0_checksum_with_registry_pre_writes,
 };
-#[cfg(not(target_arch = "wasm32"))]
+pub use render_graph_exec::{
+    encode_render_graph_passes_v0_with_wgsl, encode_render_graph_passes_v0_with_wgsl_host,
+    run_graph_v0_checksum_from_wgsl, run_graph_v0_checksum_with_registry_wgsl,
+    run_graph_v0_checksum_with_registry_wgsl_host,
+    validate_render_graph_exec_v0, NoopRenderGraphV0Host, RenderGraphExecError, RenderGraphGpuRegistry,
+    RenderGraphV0Host, Texture2dGpu,
+};
 pub use w3drs_render_graph::{
     parse_render_graph_json, pass_ids_in_order_v0, validate_exec_v0, RenderGraphValidateError,
 };
@@ -38,7 +43,7 @@ pub use gpu_context::{GpuContext, DEPTH_FORMAT};
 pub use hdr_target::{HdrTarget, HDR_FORMAT};
 pub use hiz_pass::HizPass;
 pub use ibl::IblContext;
-pub use ibl_spec::{from_tier_name_silent, IblGenerationSpec, prefiltered_mip_level_count};
+pub use ibl_spec::{from_tier_name_silent, prefiltered_mip_level_count, IblGenerationSpec};
 pub use light_uniforms::LightUniforms;
 pub use material_uniforms::MaterialUniforms;
 pub use plugin::{App, Plugin};

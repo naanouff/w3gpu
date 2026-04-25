@@ -22,6 +22,7 @@ rayon = "1"
 w3drs-render-graph = { path = "../w3drs-render-graph" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+w3drs-render-graph = { path = "../w3drs-render-graph" }
 wgpu = { workspace = true, features = ["wgsl", "webgpu"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

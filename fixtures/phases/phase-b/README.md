@@ -6,8 +6,9 @@ Projet de test pour [Phase B — Graphe de rendu & compute](../../docs/tickets/p
 
 | Fichier | Rôle |
 |---------|------|
-| [`render_graph.json`](render_graph.json) | Document v0 : ressources + passes (compute puis raster vers `hdr_color` + depth `scene_depth`) — schéma [`docs/schemas/render-graph-v0.md`](../../docs/schemas/render-graph-v0.md). |
-| [`shaders/`](shaders/) | WGSL référencés par le JSON (exécutés par `run_graph_v0_checksum` côté natif). |
+| [`render_graph.json`](render_graph.json) | Document v0 : ressources + passes (compute : buffers rw/ro, textures, **option** indirect + mips sur textures si étendu ; raster `hdr_color` + depth `scene_depth` ; **blit** avec ou sans `region`) — schéma [`docs/schemas/render-graph-v0.md`](../../docs/schemas/render-graph-v0.md). |
+| [`b67_raster_depth_test.json`](b67_raster_depth_test.json) | Smoke **B.6/B.7** : seulement `raster_depth_mesh` + nœuds `ecs_before` / `ecs_after` (hôte natif) ; lire le test d’intégration. |
+| [`shaders/`](shaders/) | WGSL référencés par le JSON (exécutés par `run_graph_v0_checksum` côté natif) ; y compris [`shadow_depth.wgsl`](shaders/shadow_depth.wgsl) (B.7). |
 | [`expected.md`](expected.md) | Ordre des passes et lien vers tests. |
 
 ## Prérequis
@@ -37,7 +38,17 @@ Le test `phase_b_graph_exec` exécute le graphe sur **GPU natif** (`run_graph_v0
 
 **Web** : copie miroir sous [`www/public/phase-b/`](../../www/public/phase-b/) (servie par Vite) ; `www/src/main.ts` appelle **`w3drsValidateRenderGraphV0`** au boot (console `[w3drs] Phase B render graph: validate OK…`). Après changement Rust du bindgen : `npm run build:wasm`.
 
+**Viewer PBR (B.4)** : depuis la racine `w3drs/`, le graphe s’encode dans le **même** `CommandEncoder` que le moteur (ordre ajustable) :
+
+```bash
+cargo run -p khronos-pbr-sample -- --render-graph fixtures/phases/phase-b/render_graph.json
+cargo run -p khronos-pbr-sample -- --render-graph fixtures/phases/phase-b/render_graph.json --render-graph-slot post_pbr
+```
+
+- **`--render-graph-readback <id>`** si le readback n’est pas `hdr_color`
+- **`--render-graph-slot`** : `pre` (avant Hi-Z), `after_cull` (défaut, après cull + copie indirect), `post_pbr` (après main PBR, avant tonemap)
+
 ## Suite
 
-- Généraliser l’exécuteur (bindings, barrières, resize) ; brancher le **même** JSON côté WASM.
-- Même graphe chargé côté **WASM** une fois l’API stable.
+- Généraliser l’exécuteur (bindings, barrières explicites hors render pass) ; brancher le **même** JSON côté **GPU WASM** (B.5).
+- Fusion pipeline principal (B.4 suite) : HDR / passes moteur pilotés par données.

@@ -34,6 +34,9 @@ pub enum Resource {
         height: u32,
         #[serde(default)]
         usage: Vec<String>,
+        /// Nombre de mips alloués (≥ 1). Requis pour `blit.region` avec `src_mip_level` / `dst_mip_level` > 0.
+        #[serde(default = "default_mip_level_count")]
+        mip_level_count: u32,
     },
     #[serde(rename = "buffer")]
     Buffer {
@@ -61,6 +64,26 @@ pub enum Pass {
         /// Textures written as **storage** images in this pass (`storage` usage on the resource).
         #[serde(default)]
         storage_writes: Vec<String>,
+        /// Buffers bound as **read/write storage** in group 0 (`binding` = index in this list) — `storage` usage requis sur la ressource.
+        #[serde(default)]
+        storage_buffers: Vec<String>,
+        /// Buffers bound as **read-only storage** in group 0, **after** `storage_buffers` (bindings continues).
+        #[serde(default)]
+        storage_buffers_read: Vec<String>,
+        /// Read/write **storage** buffers in **bind group 1** (`@group(1)`), `binding` = index in this list. Puis **`storage_buffers_read_group1`** (ro) avec des `binding` qui **continuent** après cette liste.
+        #[serde(default)]
+        storage_buffers_group1: Vec<String>,
+        /// Read-only **storage** buffers in **bind group 1**, après `storage_buffers_group1` (mêmes règles d’usage `storage` ; pas de doublon ; interdit si le buffer est déjà en groupe 0 ou en rw groupe 1).
+        #[serde(default)]
+        storage_buffers_read_group1: Vec<String>,
+        /// Si présent, `dispatch_workgroups_indirect` sur ce buffer (`offset` … `+12` octets, 3×`u32` aligné 4) ; sinon `dispatch` fixe.
+        #[serde(default)]
+        indirect_dispatch: Option<IndirectDispatchArgs>,
+        /// B.6 : optional label; host encodes `ecs_node` before this pass (native / embedded runner).
+        #[serde(default)]
+        ecs_before: Option<String>,
+        #[serde(default)]
+        ecs_after: Option<String>,
     },
     #[serde(rename = "raster_mesh")]
     RasterMesh {
@@ -72,7 +95,127 @@ pub enum Pass {
         color_targets: Vec<String>,
         #[serde(default)]
         depth_target: Option<String>,
+        #[serde(default)]
+        ecs_before: Option<String>,
+        #[serde(default)]
+        ecs_after: Option<String>,
     },
+    /// Fullscreen triangle raster pass (same attachment model as `raster_mesh` in v0).
+    #[serde(rename = "fullscreen")]
+    Fullscreen {
+        id: String,
+        shader: String,
+        vertex_entry: String,
+        fragment_entry: String,
+        #[serde(default)]
+        color_targets: Vec<String>,
+        #[serde(default)]
+        depth_target: Option<String>,
+        #[serde(default)]
+        ecs_before: Option<String>,
+        #[serde(default)]
+        ecs_after: Option<String>,
+    },
+    /// **B.7** : depth-only mesh pass (no color targets) — `shadow_depth`-style: group(0) uniform, group(1) read-only instance matrices. Draws are **host**-encoded (see `RenderGraphV0Host` in `w3drs-renderer`).
+    #[serde(rename = "raster_depth_mesh")]
+    RasterDepthMesh {
+        id: String,
+        shader: String,
+        vertex_entry: String,
+        /// Depth target only (e.g. `Depth32Float`).
+        depth_target: String,
+        /// `group(0) @binding(0)` — uniform (e.g. 80B `LightUniforms`).
+        light_uniforms_buffer: String,
+        /// `group(1) @binding(0)` — `storage, read` instance `mat4x4` array.
+        instance_buffer: String,
+        #[serde(default)]
+        ecs_before: Option<String>,
+        #[serde(default)]
+        ecs_after: Option<String>,
+    },
+    /// Copie texture → texture (`copy_texture_to_texture`). Sans `region` : mip 0 entier, mêmes format et taille logique qu’aujourd’hui. Avec `region` : sous-rectangle et mips (voir `BlitRegion`).
+    #[serde(rename = "blit")]
+    Blit {
+        id: String,
+        source: String,
+        destination: String,
+        #[serde(default)]
+        region: Option<BlitRegion>,
+        #[serde(default)]
+        ecs_before: Option<String>,
+        #[serde(default)]
+        ecs_after: Option<String>,
+    },
+}
+
+impl Pass {
+    /// Submission-order pass id.
+    pub fn id(&self) -> &str {
+        match self {
+            Pass::Compute { id, .. }
+            | Pass::RasterMesh { id, .. }
+            | Pass::Fullscreen { id, .. }
+            | Pass::Blit { id, .. }
+            | Pass::RasterDepthMesh { id, .. } => id.as_str(),
+        }
+    }
+
+    /// B.6 : run host `ecs_node` with this label **before** encoding the pass (if `Some` and non-empty).
+    pub fn ecs_before_label(&self) -> Option<&str> {
+        let s = match self {
+            Pass::Compute { ecs_before, .. }
+            | Pass::RasterMesh { ecs_before, .. }
+            | Pass::Fullscreen { ecs_before, .. }
+            | Pass::Blit { ecs_before, .. }
+            | Pass::RasterDepthMesh { ecs_before, .. } => ecs_before.as_deref(),
+        };
+        s.filter(|l| !l.is_empty())
+    }
+
+    /// B.6 : run host `ecs_node` with this label **after** encoding the pass (if `Some` and non-empty).
+    pub fn ecs_after_label(&self) -> Option<&str> {
+        let s = match self {
+            Pass::Compute { ecs_after, .. }
+            | Pass::RasterMesh { ecs_after, .. }
+            | Pass::Fullscreen { ecs_after, .. }
+            | Pass::Blit { ecs_after, .. }
+            | Pass::RasterDepthMesh { ecs_after, .. } => ecs_after.as_deref(),
+        };
+        s.filter(|l| !l.is_empty())
+    }
+}
+
+fn default_mip_level_count() -> u32 {
+    1
+}
+
+/// Arguments pour `dispatch_workgroups_indirect` (12 octets : `x`, `y`, `z` en `u32` little-endian).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct IndirectDispatchArgs {
+    pub buffer: String,
+    #[serde(default)]
+    pub offset: u64,
+}
+
+/// Sous-copie optionnelle pour une passe `blit` (origines en texels, taille implicite = reste valide si `width` / `height` absents).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct BlitRegion {
+    #[serde(default)]
+    pub src_mip_level: u32,
+    #[serde(default)]
+    pub dst_mip_level: u32,
+    #[serde(default)]
+    pub src_origin_x: u32,
+    #[serde(default)]
+    pub src_origin_y: u32,
+    #[serde(default)]
+    pub dst_origin_x: u32,
+    #[serde(default)]
+    pub dst_origin_y: u32,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -134,6 +277,8 @@ fn validate(doc: &RenderGraphDocument) -> Result<(), RenderGraphError> {
                 dispatch,
                 texture_reads: _,
                 storage_writes: _,
+                storage_buffers: _,
+                storage_buffers_read: _,
                 ..
             } => {
                 if dispatch.x == 0 || dispatch.y == 0 || dispatch.z == 0 {
@@ -143,7 +288,12 @@ fn validate(doc: &RenderGraphDocument) -> Result<(), RenderGraphError> {
                 }
                 id.as_str()
             }
-            Pass::RasterMesh { id, .. } => id.as_str(),
+            Pass::RasterMesh { id, .. }
+            | Pass::Fullscreen { id, .. }
+            | Pass::Blit { id, .. }
+            | Pass::RasterDepthMesh { id, .. } => {
+                id.as_str()
+            }
         };
         if !seen_pass.insert(id) {
             return Err(RenderGraphError::DuplicatePassId(id.to_string()));
@@ -168,10 +318,12 @@ mod tests {
         let doc = parse_render_graph_json(&json).expect("valid graph");
         assert_eq!(doc.schema, SCHEMA_ID);
         assert_eq!(doc.version, 1);
-        assert_eq!(doc.resources.len(), 3);
-        assert_eq!(doc.passes.len(), 2);
+        assert_eq!(doc.resources.len(), 8);
+        assert_eq!(doc.passes.len(), 4);
         assert!(matches!(doc.passes[0], Pass::Compute { .. }));
         assert!(matches!(doc.passes[1], Pass::RasterMesh { .. }));
+        assert!(matches!(doc.passes[2], Pass::Fullscreen { .. }));
+        assert!(matches!(doc.passes[3], Pass::Blit { .. }));
     }
 
     #[test]

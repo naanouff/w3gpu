@@ -368,13 +368,13 @@ Cible native : `Backends::all()` (DX12 / Metal / Vulkan)
 #### Pipeline de rendu (état actuel)
 
 ```
-ShadowPass (group 0 = light VP, group 1 = object)   ← à implémenter (Phase 3a)
+ShadowPass (group 0 = light VP, group 1 = instances)   ← implémenté moteur (`crates/w3drs-renderer` ; graphe data-driven = Phase B.7)
     ↓ shadow_map: Depth32Float 2048×2048
 MainPass   (group 0 = frame, 1 = object, 2 = material, 3 = IBL, 4 = shadow)
     ↓ surface présentation
 ```
 
-**Phase B (en cours)** : graphe déclaratif — spec [`schemas/render-graph-v0.md`](schemas/render-graph-v0.md), données [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/), crate **`w3drs-render-graph`** (parse + **`validate_exec_v0`**, sans `wgpu`), exécuteur natif **`w3drs_renderer::render_graph_exec`** (`run_graph_v0_checksum`). **WASM** : `w3drsValidateRenderGraphV0` dans `www/pkg` (validation seule). Le viewer PBR reste **codé** jusqu’à fusion graphe ↔ pipeline.
+**Phase B (en cours)** : graphe déclaratif — spec [`schemas/render-graph-v0.md`](schemas/render-graph-v0.md), données [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/), crate **`w3drs-render-graph`** (parse + **`validate_exec_v0`**, sans `wgpu`), exécuteur natif **`w3drs_renderer::render_graph_exec`** (`run_graph_v0_checksum`). **WASM** : `w3drsValidateRenderGraphV0` dans `www/pkg` (validation seule). Le viewer PBR reste **codé** jusqu’à **fusion** graphe ↔ pipeline (*jalon B.4*). **Shadow** : passe moteur aujourd’ui ; cible **B.7** = même sémantique via fichier graphe (voir [Phase B — B.7](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts)).
 
 #### AssetRegistry
 

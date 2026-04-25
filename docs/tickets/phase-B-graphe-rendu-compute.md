@@ -4,7 +4,7 @@
 |-------|--------|
 | **ID** | `PHASE-B` |
 | **Roadmap** | [ROADMAP § Phase B](../ROADMAP.md) |
-| **Statut** | **En cours** — v0 + **B.1** (registre GPU) + **B.2** partiel (validation usages / passes, `pass_ids_in_order_v0`) ; **suite** : barrières **wgpu** explicites, fusion viewer, GPU **WASM** (voir *Plan d’exécution*) |
+| **Statut** | **Terminée (v0)** — B.1–B.7 : parse/validation, exécuteur **natif + WASM**, `raster_depth_mesh` + hôte **B.7**, nœuds **`ecs_before` / `ecs_after`** + hôte **B.6** ; fixture **phase-b** + [`b67_raster_depth_test.json`](../../fixtures/phases/phase-b/b67_raster_depth_test.json) ; intégration **khronos** + slot. **Poursuite** (hors clôture fonctionnelle) : barrières wgpu explicites, remplacer des passes moteur par ressources injectées — [§ Poursuites](#poursuites-hors-périmètre-v0) |
 
 ## Axes prioritaires
 
@@ -20,93 +20,81 @@
 
 ## Périmètre
 
-Description déclarative, registre ressources, exécuteurs raster/fullscreen/compute, intégration ECS.
+Description déclarative, registre ressources, exécuteurs raster/fullscreen/compute, intégration ECS (labels + hôte).
 
+### Types de passes — v0
+
+| `kind` (JSON) | Statut | Rôle (résumé) |
+|---------------|--------|---------------|
+| `compute` | **v0** | Dispatch fixe ou **`indirect_dispatch`** ; bindings g0 + g1 ; `ecs_before` / `ecs_after` (B.6). |
+| `raster_mesh` | **v0** | + `ecs_*` (B.6). |
+| `fullscreen` | **v0** | idem. |
+| `raster_depth_mesh` | **v0 (B.7)** | Profondeur seule, layout `shadow_depth` ; `draw_raster_depth_mesh` hôte. |
+| `blit` | **v0** | + `ecs_*` (B.6). |
+| *Autres* | **Backlog** | *clear* MSAA, *resolve*, *copy_to_buffer* — [schéma — évolutions](../schemas/render-graph-v0.md#évolutions-futures-hors-v0). |
+
+**Spec (2026)** : `fullscreen` est un **`kind` distinct** avec le même schéma que `raster_mesh` en v0 (validation partagée, encode identique côté natif).
 
 ## Scène ou projet de test (validation fonctionnelle)
-
-Chaque livraison doit inclure ou étendre **un projet de test versionné** permettant la **validation fonctionnelle** des fonctionnalités de cette phase (répétable, même sur CI dès que l’infra le permet).
 
 | Champ | Valeur |
 |-------|--------|
 | **ID fixture** | phase-b |
-| **Chemin cible** | fixtures/phases/phase-b/ (racine dépôt **w3drs/** ; créer au premier jalon — voir [convention](../../fixtures/phases/README.md)) |
+| **Chemin cible** | fixtures/phases/phase-b/ |
 | **Rôle** | Fichier graphe de rendu déclaratif + shaders ; démo compute+raster pilotée par data sans fork moteur. |
-
-### Évolution (ROADMAP)
-
-| Moment | Attendu |
-|--------|---------|
-| **Aujourd’hui** | Dossier **scène / projet** + README.md : prérequis, commandes (cargo xtask client, www), point d’entrée (argument CLI, env, ou config). |
-| **À terme** | **Workspace éditeur** + **.w3db** : chargement **natif** et **web** du **même** paquet pour QA sans divergence de données. |
-
-### Description prescrite de la scène v0 (rédigée dès maintenant)
-
-Spec de `fixtures/phases/phase-b/` : tout le rendu + compute piloté par **données**, sans fork moteur.
-
-| Élément | Contenu attendu |
-|---------|-----------------|
-| `README.md` | Comment charger le graphe sous **natif** et **web** ; critère de succès (image ou buffer attendu). |
-| `render_graph.json` | Ressources (buffers / textures) + passes **raster** + **au moins une** passe **compute** (ex. gradient ou simu minimale) + dispatch. |
-| `shaders/*.wgsl` | Entrypoints nommés comme dans le JSON ; chemins relatifs. |
-| `expected.md` | Ordre des passes **déterministe** ; métrique (checksum buffer / taille mip / compteur draw indirect). |
 
 ### Critères de scène (DOR / DOD)
 
-- **DOR** : [x] `fixtures/phases/phase-b/` + README + graphe + shaders (pas de gros binaire ; LFS N/A v0).
-- **DOD** : [x] exécuteur GPU natif + checksum ; [x] **test** : `cargo test -p w3drs-render-graph` (parse + `validate_exec_v0` + fixture) ; [x] **web** : `w3drsValidateRenderGraphV0` dans `www/pkg` (validation JSON, pas encore run GPU) ; [ ] validation manuelle visuelle.
-
+- **DOR** : [x] `fixtures/phases/phase-b/` + README + graphe + shaders.
+- **DOD** : [x] exécuteur GPU + tests ; [x] web : validation + `w3drsPhaseBGraphRunChecksum` ; [x] B.6/B.7 : test `phase_b_b6_b7_raster_depth_mesh_host_hooks_and_depth_encode` + [`b67_raster_depth_test.json`](../../fixtures/phases/phase-b/b67_raster_depth_test.json).
 
 ---
 
 ## Definition of Ready (DOR)
 
-- [x] **Schéma** du format graphe (v0) : [`docs/schemas/render-graph-v0.md`](../schemas/render-graph-v0.md).
-- [x] **Démo data** : [`fixtures/phases/phase-b/render_graph.json`](../../fixtures/phases/phase-b/render_graph.json) + [`shaders/`](../../fixtures/phases/phase-b/shaders/).
-- [x] `cargo xtask check` vert sur la base (à réexécuter après chaque merge touchant le workspace).
+- [x] **Schéma** v0 : [`docs/schemas/render-graph-v0.md`](../schemas/render-graph-v0.md).
+- [x] **Démo data** : [`render_graph.json`](../../fixtures/phases/phase-b/render_graph.json) + [`shaders/`](../../fixtures/phases/phase-b/shaders/).
+- [x] `cargo xtask check` vert sur la base.
 
 ---
 
 ## Definition of Done (DOD)
 
-- [x] Démo « compute + raster » pilotée par le fichier graphe + shaders fixture (exécuteur minimal `w3drs_renderer::render_graph_exec::run_graph_v0_checksum`, hors intégration au viewer principal).
-- [x] Tests d’intégration : `cargo test -p w3drs-renderer --test phase_b_graph_exec` — **deux** exécutions consécutives → même checksum readback texture `hdr_color`.
-- [x] Régression parse : `cargo test -p w3drs-render-graph` + `RenderGraphError` testé (schéma invalide, etc.).
-- [x] Régression exécuteur : `w3drs_render_graph::validate_exec_v0` + tests dans `exec_validate.rs` ; `validate_render_graph_exec_v0` = délégation + `From` → `RenderGraphExecError` ; test intégration **`phase_b_graph_missing_shader_returns_io`** (`Io`).
-
-### Outils de validation
-
-| Outil | Rôle | Seuil |
-|-------|------|--------|
-| `cargo test` | Tests intégration graphe + exécuteurs | 0 échec. |
-| `cargo llvm-cov` / tarpaulin | Couverture parse + exec | Seuil sur diff (PR). |
-| `cargo xtask check` | wasm + native | Vert. |
-| Client natif + WASM | Même graphe chargé sur **deux** cibles (deux jobs CI ou labels) | Tableau résultats OK / skip documenté. |
-| Benchmark optionnel | `criterion` ou compteur passes/frame | Pas de régression > X % vs baseline enregistrée dans `journal.md`. |
+- [x] Démo « compute + raster » pilotée par le fichier graphe + shaders.
+- [x] Tests d’intégration : `phase_b_graph_exec` (y compris indirect, blit région, **B.6/B.7** hôte).
+- [x] Régression parse : `w3drs-render-graph`.
+- [x] `validate_render_graph_exec_v0` + intégration I/O.
+- [x] **B.6** : champs `ecs_before` / `ecs_after` + `RenderGraphV0Host` ; **B.7** : `raster_depth_mesh` + `draw_raster_depth_mesh` + `insert_buffer` / `insert_texture_2d`.
 
 ---
 
 ## Plan d’exécution — exécuteur complet & WASM (cible w3dts)
 
-Objectif : même **souplesse** qu’un *RenderGraph* w3dts (fichier + passes raster/compute) **sans fork** du moteur, **y compris** dans le **navigateur** une fois l’exécuteur complet branché.
-
 | Jalon | Livrable | Rôle |
 |-------|----------|------|
-| B.1 | **Registre de ressources** (buffers/textures, resize, noms) | **Partiel (2026-04-20)** : `RenderGraphGpuRegistry` + look-up + `resize_texture_2d` + `run_graph_v0_checksum_with_registry` ; **reste** : alias, cohérence tailles doc ↔ GPU dans le schéma. |
-| B.2 | **Barrières / synchronisation** entre passes (read/write, render vs compute) | **Partiel** : validation **sans GPU** + `pass_ids_in_order_v0` ; exécuteur natif : **depth** sur `raster_mesh` (`depth_target` → render pass + pipeline depth, clear profondeur ; stencil si format combo) ; **reste** : barrières explicites hors render pass, DAG, annotations fines. |
-| B.3 | **Généralisation** des exécutions `wgpu` : fullscreen, compute indirect quand le schéma le supporte, bind layouts **data** | Évite que chaque feature ajoute un chemin *ad hoc* dans `w3drs-renderer`. |
-| B.4 | **Fusion** avec le **viewer PBR** (`RenderState` / loop actuelle) : le graphe **remplace** ou **configure** le pipeline principal pour un projet donné. |
-| B.5 | **WASM** : même *encode* que B.1–B.3 sur `Device/Queue` du canvas WebGPU ; tests smoke `www/` + `cargo check` wasm. |
-| B.6 | **ECS** : nœuds ↔ systèmes (préparation d’`entity_indirect_buf` ou uniforms entre passes), spec à figer. |
+| B.1 | **Registre** | v0 : `RenderGraphGpuRegistry` + `insert_buffer` / `insert_texture_2d` (B.7) ; resize, mips. |
+| B.2 | **Barrières** | v0 : validation + ordre + depth raster ; *suite* : barrières wgpu explicites. |
+| B.3 | **Passes** | v0 : compute, fullscreen, blit, indirect, mips. |
+| B.4 | **Viewer** | `khronos-pbr-sample` — emplacement d’encodage. |
+| B.5 | **WASM** | encode + checksum ; hôte `Noop` par défaut. |
+| B.6 | **ECS** | v0 : labels `ecs_before` / `ecs_after` → `ecs_node` (exé. systèmes côté hôte natif). |
+| B.7 | **Shadow** data-driven | v0 : `raster_depth_mesh` + hôte `draw_raster_depth_mesh` (même sémantique que [`ShadowPass`](../../crates/w3drs-renderer/src/shadow_pass.rs) une fois câblé). |
 
-*Référence normative* : [schéma v0 — feuille de route](../schemas/render-graph-v0.md#feuille-de-route--exécuteur-complet-parité-moteur-objectif-w3dts).
+*Référence* : [schéma v0](../schemas/render-graph-v0.md).
 
-**État (2026-04)** : B.0 **fait** ; **B.1** **amorcé** ; **B.2** **amorcé** (validation statique + ordre des passes) ; B.3–B.6 **ouverts** — DOD *client natif + WASM* (même JSON exécuté GPU web) reste *skip* tant que B.5 n’est pas clos.
+**État (v0, 2026-04-24+)** : B.1–B.7 livrés au sens **data + exécuteur + hôtes** ; câblage ombre *réel* du viewer PBR sur le JSON = **poursuite** (identifiants ressources moteur ↔ noms du graphe).
 
 ---
 
-## Journal
+## Poursuites (hors périmètre *schéma v0 figé*)
 
-- [x] **2026-04-20** — jalon parse : crate `w3drs-render-graph`, spec v0, fixture `phase-b` ; **B.1** : `RenderGraphGpuRegistry`, `resize_texture_2d`, `run_graph_v0_checksum_with_registry` ; tests `phase_b_graph_exec` (resize + buffer + id inconnu) ; **B.2** : champs optionnels `texture_reads` / `storage_writes` sur `compute`, validation usages par passe, doublons `color_targets`, `depth_target` + formats depth ; `pass_ids_in_order_v0` ; détail [`../journal.md`](../journal.md).
-- [x] **2026-04-24** — *Plan d’exécution* (jalons B.1–B.6) + renvois [schéma v0 — feuille de route](../schemas/render-graph-v0.md#feuille-de-route--exécuteur-complet-parité-moteur-objectif-w3dts) ; voir [`../journal.md`](../journal.md) section *Documentation — port 1:1…*.
-- [ ] Clôture (Phase B « complète » 1:1) → exécuteur fusion viewer + GPU WASM + [`../journal.md`](../journal.md) : métriques parallélisme + image de référence.
+- Barrières explicites hors pass intégré, DAG.
+- Câblage scène : HDR / depth moteur ↔ mêmes ids que le JSON.
+- *Editor* : sélection nœud ECS par UI (au-delà de chaînes dans le JSON).
+
+---
+
+## Journal (extrait)
+
+- [x] **2026-04-24+** — **B.6 / B.7 intégrés v0** : `raster_depth_mesh`, `RenderGraphV0Host`, `encode_render_graph_passes_v0_with_wgsl_host`, `run_graph_v0_checksum_with_registry_wgsl_host` ; test `phase_b_b6_b7_…` ; [schéma v0](../schemas/render-graph-v0.md) ; [journal](../journal.md).
+- [x] **Passes** : `kind` `fullscreen` + `blit` (v0) ; **évolutions** : *clear*, *resolve* — [schéma v0 — futures](../schemas/render-graph-v0.md#évolutions-futures-hors-v0).

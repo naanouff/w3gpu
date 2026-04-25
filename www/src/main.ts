@@ -43,13 +43,15 @@ function goAdjacentModel(nModels: number, delta: number): void {
 async function main(): Promise<void> {
   await init();
 
-  // Phase B — même validation que le natif (parse + validate_exec_v0) ; exécuteur GPU graphe : à venir
+  let phaseBJsonText: string | null = null;
+  // Phase B — parse + validate_exec_v0 (sans GPU) ; B.5 : encodage GPU + checksum (après moteur créé)
   try {
     const rg = await fetch('/phase-b/render_graph.json');
     if (rg.ok) {
-      w3drsValidateRenderGraphV0(await rg.text(), 'hdr_color');
+      phaseBJsonText = await rg.text();
+      w3drsValidateRenderGraphV0(phaseBJsonText, 'hdr_color');
       console.info(
-        '[w3drs] Phase B render graph: validate OK (w3drsValidateRenderGraphV0, readback=hdr_color)',
+        '[w3drs] Phase B: validate OK (w3drsValidateRenderGraphV0, readback=hdr_color)',
       );
     } else {
       console.warn(`[w3drs] Phase B: /phase-b/render_graph.json HTTP ${String(rg.status)}`);
@@ -60,6 +62,32 @@ async function main(): Promise<void> {
 
   status.textContent = 'Creating engine...';
   const engine = await W3drsEngine.create('w3drs-canvas');
+
+  if (phaseBJsonText != null) {
+    try {
+      const doc = JSON.parse(phaseBJsonText) as {
+        passes?: { shader?: string; kind: string }[];
+      };
+      const need = new Set<string>();
+      for (const p of doc.passes ?? []) {
+        if (typeof p.shader === 'string' && p.shader.length > 0) {
+          need.add(p.shader);
+        }
+      }
+      const wgsl: Record<string, string> = {};
+      for (const relp of need) {
+        const sh = await fetch(`/phase-b/${relp}`);
+        if (!sh.ok) {
+          throw new Error(`WGSL ${relp} HTTP ${String(sh.status)}`);
+        }
+        wgsl[relp] = await sh.text();
+      }
+      const sum = engine.w3drsPhaseBGraphRunChecksum(phaseBJsonText, JSON.stringify(wgsl), 'hdr_color') as string;
+      console.info(`[w3drs] Phase B.5: GPU graph checksum = ${String(sum)} (w3drsPhaseBGraphRunChecksum, same encode as native)`);
+    } catch (e) {
+      console.warn('[w3drs] Phase B.5: GPU run skipped (optional):', e);
+    }
+  }
 
   try {
     const cfg = await fetch('/phase-a/materials/default.json');

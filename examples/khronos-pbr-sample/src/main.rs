@@ -10,11 +10,15 @@ use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
+use w3drs_render_graph::RenderGraphDocument;
 use w3drs_renderer::{
-    build_entity_list, camera_system, derive_shadow_batches, transform_system, AssetRegistry,
-    BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms,
-    GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures,
-    PostProcessPass, RenderState, ShadowPass, TonemapParams, MAX_CULL_ENTITIES,
+    build_entity_list, camera_system, derive_shadow_batches, encode_render_graph_passes_v0,
+    encode_render_graph_passes_v0_with_wgsl_host, parse_render_graph_json, transform_system,
+    validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
+    DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass, IblContext,
+    IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass, RenderGraphExecError,
+    RenderGraphGpuRegistry, RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu,
+    TonemapParams, MAX_CULL_ENTITIES, SHADOW_SIZE,
 };
 use winit::{
     application::ApplicationHandler,
@@ -24,12 +28,76 @@ use winit::{
     window::{Window, WindowId},
 };
 
+/// Où insérer le sous-graphe déclaratif Phase B dans le `CommandEncoder` (B.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum RenderGraphSlot {
+    /// Avant Hi-Z / cull (premières commandes de la frame).
+    PreFrame,
+    /// Après cull + copie indirect → readback (défaut, ordre historique).
+    #[default]
+    AfterCullReadback,
+    /// Après le main PBR sur `hdr_target`, avant post-process / swapchain.
+    PostPbr,
+}
+
+fn parse_render_graph_slot(s: &str) -> Option<RenderGraphSlot> {
+    match s.to_ascii_lowercase().as_str() {
+        "pre" | "pre_frame" => Some(RenderGraphSlot::PreFrame),
+        "after_cull" | "cull" => Some(RenderGraphSlot::AfterCullReadback),
+        "post_pbr" | "post" | "post_hdr" => Some(RenderGraphSlot::PostPbr),
+        _ => None,
+    }
+}
+
 fn main() {
     env_logger::init();
+    let (render_graph_json, render_graph_readback, render_graph_slot) = parse_render_graph_cli();
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::default();
+    let mut app = App {
+        state: None,
+        render_graph_json,
+        render_graph_readback,
+        render_graph_slot,
+    };
     event_loop.run_app(&mut app).unwrap();
+}
+
+/// `--render-graph PATH`, `--render-graph-readback ID` (défaut `hdr_color`),
+/// `--render-graph-slot pre|after_cull|post_pbr` (défaut `after_cull`).
+/// Avec un graphe, l’**ombre** est aussi data-driven (B.7) : `render_graph_shadow_khronos.json` +
+/// `fixtures/phases/phase-b/shaders/shadow_depth.wgsl`, registre câblé sur
+/// `ShadowPass` + buffer d’instances.
+fn parse_render_graph_cli() -> (Option<PathBuf>, String, RenderGraphSlot) {
+    let mut it = std::env::args();
+    let mut json: Option<PathBuf> = None;
+    let mut readback = "hdr_color".to_string();
+    let mut slot = RenderGraphSlot::default();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--render-graph" => {
+                json = it.next().map(PathBuf::from);
+            }
+            "--render-graph-readback" => {
+                if let Some(id) = it.next() {
+                    readback = id;
+                }
+            }
+            "--render-graph-slot" => {
+                if let Some(s) = it.next() {
+                    if let Some(sl) = parse_render_graph_slot(&s) {
+                        slot = sl;
+                    } else {
+                        log::warn!(
+                            "unknown --render-graph-slot {s:?}, using after_cull (pre|after_cull|post_pbr)"
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (json, readback, slot)
 }
 
 // ── Orbit camera ───────────────────────────────────────────────────────────────
@@ -125,9 +193,11 @@ fn bounds_from_primitives(primitives: &[GltfPrimitive]) -> (Vec3, f32) {
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
-#[derive(Default)]
 struct App {
     state: Option<State>,
+    render_graph_json: Option<PathBuf>,
+    render_graph_readback: String,
+    render_graph_slot: RenderGraphSlot,
 }
 
 impl ApplicationHandler for App {
@@ -137,7 +207,15 @@ impl ApplicationHandler for App {
                 Window::default_attributes().with_title("khronos-pbr-sample — Phase A GLB viewer"),
             )
             .unwrap();
-        self.state = Some(State::new(window).block_on());
+        self.state = Some(
+            State::new(
+                window,
+                self.render_graph_json.clone(),
+                self.render_graph_readback.clone(),
+                self.render_graph_slot,
+            )
+            .block_on(),
+        );
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -227,6 +305,58 @@ impl ApplicationHandler for App {
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
+/// Sous-graphe B.7 (ombre) : mêmes GPU buffers que le viewer, encodé à l’étape « shadow ».
+struct ShadowGraphInViewer {
+    doc: RenderGraphDocument,
+    registry: RenderGraphGpuRegistry,
+    shader_root: PathBuf,
+}
+
+/// Optional Phase B JSON graph (own textures/buffers), validated at init; encoded each frame.
+struct PhaseBRenderGraphHook {
+    doc: RenderGraphDocument,
+    registry: RenderGraphGpuRegistry,
+    shader_root: PathBuf,
+    /// Ombres en `raster_depth_mesh` (remplace le render pass manuel) — requiert le même
+    /// [`workspace_root`]/`fixtures/phases/phase-b/shaders/shadow_depth.wgsl` que l’hôte moteur.
+    shadow: ShadowGraphInViewer,
+}
+
+/// Hôte B.7 : même boucle d’`draw_indexed` qu’avant, dans le `RenderPass` ouvert par le graphe.
+struct KhronosShadowHost<'a> {
+    asset_registry: &'a AssetRegistry,
+    shadow_batches: &'a [ShadowBatch],
+}
+
+impl RenderGraphV0Host for KhronosShadowHost<'_> {
+    fn draw_raster_depth_mesh(&mut self, _pass_id: &str, rpass: &mut wgpu::RenderPass<'_>) {
+        for batch in self.shadow_batches {
+            let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
+                continue;
+            };
+            rpass.set_vertex_buffer(0, m.vertex_buffer.slice(..));
+            rpass.set_index_buffer(m.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            rpass.draw_indexed(
+                0..m.index_count,
+                0,
+                batch.first_instance..batch.first_instance + batch.instance_count,
+            );
+        }
+    }
+}
+
+fn texture2d_gpu_shadow_map(sp: &ShadowPass) -> Texture2dGpu {
+    Texture2dGpu {
+        texture: sp.shadow_texture.clone(),
+        view: sp.shadow_view.clone(),
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        width: SHADOW_SIZE,
+        height: SHADOW_SIZE,
+        mip_level_count: 1,
+    }
+}
+
 struct State {
     window: Window,
     context: GpuContext,
@@ -262,10 +392,20 @@ struct State {
     last_instant: std::time::Instant,
     world: World,
     scheduler: Scheduler,
+
+    /// Phase B.4: declarative passes composed into the viewer command buffer (no readback).
+    phase_b_render_graph: Option<PhaseBRenderGraphHook>,
+    /// Emplacement d’encodage du graphe (voir [`RenderGraphSlot`]) — ignoré si pas de `--render-graph`.
+    render_graph_slot: RenderGraphSlot,
 }
 
 impl State {
-    async fn new(window: Window) -> Self {
+    async fn new(
+        window: Window,
+        render_graph_json: Option<PathBuf>,
+        render_graph_readback: String,
+        render_graph_slot: RenderGraphSlot,
+    ) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -414,6 +554,81 @@ impl State {
             mapped_at_creation: false,
         });
 
+        let phase_b_render_graph = render_graph_json.as_ref().map(|path| {
+            let json = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                panic!("--render-graph {}: read failed: {e}", path.display());
+            });
+            let doc = parse_render_graph_json(&json).unwrap_or_else(|e| {
+                panic!("--render-graph {}: parse failed: {e}", path.display());
+            });
+            validate_render_graph_exec_v0(&doc, &render_graph_readback).unwrap_or_else(|e| {
+                panic!(
+                    "--render-graph {}: validate (readback {:?}): {e}",
+                    path.display(),
+                    render_graph_readback
+                );
+            });
+            let shader_root = path.parent().unwrap_or_else(|| {
+                panic!(
+                    "--render-graph {}: expected a parent directory (WGSL paths are relative to it)",
+                    path.display()
+                );
+            });
+            let registry = RenderGraphGpuRegistry::new(&context.device, &doc).unwrap_or_else(|e| {
+                panic!("--render-graph {}: GPU registry: {e}", path.display());
+            });
+
+            let shadow_path =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("render_graph_shadow_khronos.json");
+            let shadow_json = std::fs::read_to_string(&shadow_path).unwrap_or_else(|e| {
+                panic!("{}: read failed: {e}", shadow_path.display());
+            });
+            let sdoc = parse_render_graph_json(&shadow_json)
+                .unwrap_or_else(|e| panic!("{}: parse: {e}", shadow_path.display()));
+            validate_render_graph_exec_v0(&sdoc, "hdr_readback_shadow_guard").unwrap_or_else(|e| {
+                panic!("{}: validate: {e}", shadow_path.display());
+            });
+            let mut sreg = RenderGraphGpuRegistry::new(&context.device, &sdoc).unwrap_or_else(|e| {
+                panic!("{shadow_path:?}: shadow GPU registry: {e}");
+            });
+            sreg.insert_buffer(
+                "light_uniforms".to_string(),
+                shadow_pass.light_uniform_buffer.clone(),
+            );
+            sreg.insert_buffer(
+                "pbr_instance_matrices".to_string(),
+                render_state.instance_buffer.clone(),
+            );
+            sreg.insert_texture_2d("shadow_map".to_string(), texture2d_gpu_shadow_map(&shadow_pass));
+
+            let b7_shader_root = workspace_root().join("fixtures/phases/phase-b");
+            if !b7_shader_root.join("shaders/shadow_depth.wgsl").is_file() {
+                panic!(
+                    "B.7 shadow: missing {}, copy from the repo fixture",
+                    b7_shader_root.join("shaders/shadow_depth.wgsl").display()
+                );
+            }
+            let shadow = ShadowGraphInViewer {
+                doc: sdoc,
+                registry: sreg,
+                shader_root: b7_shader_root,
+            };
+            log::info!(
+                "Phase B.4 render graph: {} resource(s), {} pass(es), slot {:?} — {}",
+                doc.resources.len(),
+                doc.passes.len(),
+                render_graph_slot,
+                path.display()
+            );
+            log::info!("Phase B.7 shadow: raster_depth_mesh via data (registry câble moteur).");
+            PhaseBRenderGraphHook {
+                doc,
+                registry,
+                shader_root: shader_root.to_path_buf(),
+                shadow,
+            }
+        });
+
         let orbit = OrbitCamera::new(6.0, 0.22, 0.0, Vec3::ZERO);
 
         let mut state = Self {
@@ -443,10 +658,52 @@ impl State {
             last_instant: std::time::Instant::now(),
             world,
             scheduler,
+            phase_b_render_graph,
+            render_graph_slot,
         };
 
         state.load_sample(0);
         state
+    }
+
+    fn encode_phase_b_graph(&self, enc: &mut wgpu::CommandEncoder) {
+        if let Some(hook) = &self.phase_b_render_graph {
+            if let Err(e) = encode_render_graph_passes_v0(
+                enc,
+                &self.context.device,
+                &hook.registry,
+                &hook.doc,
+                &hook.shader_root,
+            ) {
+                log::warn!("render graph encode: {e}");
+            }
+        }
+    }
+
+    /// B.7 : ombre = une passe `raster_depth_mesh` (JSON embarqué) + [`KhronosShadowHost`].
+    fn encode_shadow_data_driven(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        shadow: &ShadowGraphInViewer,
+        shadow_batches: &[ShadowBatch],
+    ) {
+        let mut load = |rel: &str| {
+            std::fs::read_to_string(shadow.shader_root.join(rel)).map_err(RenderGraphExecError::from)
+        };
+        let mut host = KhronosShadowHost {
+            asset_registry: &self.asset_registry,
+            shadow_batches,
+        };
+        if let Err(e) = encode_render_graph_passes_v0_with_wgsl_host(
+            enc,
+            &self.context.device,
+            &shadow.registry,
+            &shadow.doc,
+            &mut load,
+            &mut host,
+        ) {
+            log::warn!("B.7 shadow graph encode: {e}");
+        }
     }
 
     fn prev_sample(&mut self) {
@@ -757,7 +1014,7 @@ impl State {
         &self,
         entity_count: u32,
         sorted: &[DrawEntity],
-        shadow_batches: &[w3drs_renderer::ShadowBatch],
+        shadow_batches: &[ShadowBatch],
     ) {
         let output = match self.context.surface.get_current_texture() {
             Ok(t) => t,
@@ -786,6 +1043,10 @@ impl State {
             .device
             .create_command_encoder(&Default::default());
 
+        if self.render_graph_slot == RenderGraphSlot::PreFrame {
+            self.encode_phase_b_graph(&mut enc);
+        }
+
         // 1. Z-prepass + Hi-Z pyramid (requis seulement si cull GPU activé)
         if VIEWER_GPU_OCCLUSION {
             self.hiz_pass.encode(
@@ -810,8 +1071,15 @@ impl State {
             );
         }
 
-        // 4. Shadow depth pass (CPU-batched)
-        {
+        if self.render_graph_slot == RenderGraphSlot::AfterCullReadback {
+            self.encode_phase_b_graph(&mut enc);
+        }
+
+        // 4. Shadow depth (CPU-batched) — B.7 data-driven via graphe quand Phase B.4 actif, sinon
+        //    pipeline [`ShadowPass`] héritée.
+        if let Some(hook) = &self.phase_b_render_graph {
+            self.encode_shadow_data_driven(&mut enc, &hook.shadow, shadow_batches);
+        } else {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
@@ -892,6 +1160,10 @@ impl State {
                     idx as u64 * indirect_stride,
                 );
             }
+        }
+
+        if self.render_graph_slot == RenderGraphSlot::PostPbr {
+            self.encode_phase_b_graph(&mut enc);
         }
 
         // 6. Post-process → swapchain

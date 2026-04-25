@@ -68,7 +68,7 @@ impl IblContext {
         let p0 = spec.prefiltered_size;
         let mips = prefiltered_mip_level_count(p0);
         let bl0 = spec.brdf_lut_size;
-        log::info!( "IBL: spec: irr {irr}², pre {p0}² ×{mips} mips, LUT {bl0}²");
+        log::info!("IBL: spec: irr {irr}², pre {p0}² ×{mips} mips, LUT {bl0}²");
         log::info!("IBL: computing irradiance map ({}×{}×6)…", irr, irr);
         let irr_tex = create_cubemap(device, irr, irr, 1);
         let irr_samples = spec.irradiance_samples;
@@ -80,36 +80,22 @@ impl IblContext {
                 .map(|face| compute_irradiance_face(hdr, face, irr, irr_samples))
                 .collect();
             for (face, face_data) in faces.iter().enumerate() {
-                upload_cubemap_layer(
-                    queue,
-                    &irr_tex,
-                    face as u32,
-                    0,
-                    irr,
-                    irr,
-                    face_data,
-                );
+                upload_cubemap_layer(queue, &irr_tex, face as u32, 0, irr, irr, face_data);
             }
         }
         #[cfg(target_arch = "wasm32")]
         {
             for face in 0..6usize {
                 let face_data = compute_irradiance_face(hdr, face, irr, irr_samples);
-                upload_cubemap_layer(
-                    queue,
-                    &irr_tex,
-                    face as u32,
-                    0,
-                    irr,
-                    irr,
-                    &face_data,
-                );
+                upload_cubemap_layer(queue, &irr_tex, face as u32, 0, irr, irr, &face_data);
             }
         }
 
         log::info!(
             "IBL: computing prefiltered env map ({}×{}×6, {} mips)…",
-            p0, p0, mips
+            p0,
+            p0,
+            mips
         );
         let pre_tex = create_cubemap(device, p0, p0, mips);
         for mip in 0..mips {

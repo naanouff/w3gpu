@@ -1,0 +1,47 @@
+{
+  "schema": "w3drs.render_graph",
+  "version": 1,
+  "resources": [
+    {
+      "kind": "texture_2d",
+      "id": "hdr_readback_shadow_guard",
+      "format": "Rgba16Float",
+      "width": 4,
+      "height": 4,
+      "usage": ["render_attachment", "copy_src", "storage"],
+      "mip_level_count": 1
+    },
+    {
+      "kind": "texture_2d",
+      "id": "shadow_map",
+      "format": "Depth32Float",
+      "width": 2048,
+      "height": 2048,
+      "usage": ["render_attachment", "texture_binding"],
+      "mip_level_count": 1
+    },
+    {
+      "kind": "buffer",
+      "id": "light_uniforms",
+      "size": 80,
+      "usage": ["uniform", "copy_dst"]
+    },
+    {
+      "kind": "buffer",
+      "id": "pbr_instance_matrices",
+      "size": 262144,
+      "usage": ["storage", "copy_dst"]
+    }
+  ],
+  "passes": [
+    {
+      "kind": "raster_depth_mesh",
+      "id": "khronos_shadow_depth",
+      "shader": "shaders/shadow_depth.wgsl",
+      "vertex_entry": "vs_main",
+      "depth_target": "shadow_map",
+      "light_uniforms_buffer": "light_uniforms",
+      "instance_buffer": "pbr_instance_matrices"
+    }
+  ]
+}

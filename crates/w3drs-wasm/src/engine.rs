@@ -1,4 +1,6 @@
 use glam::{Mat4, Quat, Vec3, Vec4};
+use instant::Instant;
+use std::collections::HashMap;
 use w3drs_assets::{
     load_from_bytes, load_hdr_from_bytes, parse_phase_a_viewer_config_str_or_default, primitives,
     Material, PhaseAVariant, PhaseAViewerConfig,
@@ -7,14 +9,15 @@ use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
+use w3drs_render_graph::parse_render_graph_json;
 use w3drs_renderer::{
     build_entity_list, camera_system, derive_shadow_batches, frustum_culling_system,
-    transform_system, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
-    DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget, HizPass, IblContext,
-    IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass, RenderState, ShadowPass,
-    TonemapParams,
+    run_graph_v0_checksum_from_wgsl, transform_system, AssetRegistry, BloomParams, CullPass,
+    CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget,
+    HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures, PostProcessPass,
+    RenderGraphExecError, RenderState, ShadowPass, TonemapParams,
 };
-use instant::Instant;
+
 use wasm_bindgen::prelude::*;
 
 /// Temps côté WASM le long du chemin `load_hdr` (millisecondes).
@@ -390,9 +393,8 @@ impl W3drsEngine {
         let parse_ms = elapsed_ms(t_parse);
 
         let t_ibl = Instant::now();
-        let spec = IblGenerationSpec::from_tier_name(
-            &self.phase_a_viewer.active_settings().ibl_tier,
-        );
+        let spec =
+            IblGenerationSpec::from_tier_name(&self.phase_a_viewer.active_settings().ibl_tier);
         self.ibl_context =
             IblContext::from_hdr_with_spec(&hdr, &self.context.device, &self.context.queue, &spec);
         let ibl_ms = elapsed_ms(t_ibl);
@@ -420,6 +422,39 @@ impl W3drsEngine {
 
     pub fn set_cull_enabled(&mut self, enabled: bool) {
         self.cull_enabled = enabled;
+    }
+
+    /// Phase **B.5** : exécute le graphe v0 sur le **même** `Device` / `Queue` que le viewer, avec
+    /// les sources WGSL fournies en JSON : `{"shaders/foo.wgsl": "…wgsl…"}` (clés = chemins du document).
+    /// Retourne le checksum FNV-1a 64 bits (décimal, string) de la texture `readback_id` (`Rgba16Float`).
+    #[wasm_bindgen(js_name = w3drsPhaseBGraphRunChecksum)]
+    pub fn phase_b_graph_run_checksum(
+        &self,
+        graph_json: &str,
+        wgsl_map_json: &str,
+        readback_id: &str,
+    ) -> Result<String, JsValue> {
+        let doc =
+            parse_render_graph_json(graph_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let map: HashMap<String, String> = serde_json::from_str(wgsl_map_json)
+            .map_err(|e| JsValue::from_str(&format!("wgsl map JSON: {e}")))?;
+        let mut load = |rel: &str| {
+            map.get(rel)
+                .cloned()
+                .ok_or_else(|| RenderGraphExecError::WgslNotFound {
+                    rel: rel.to_string(),
+                })
+        };
+        let sum = run_graph_v0_checksum_from_wgsl(
+            &self.context.device,
+            &self.context.queue,
+            &doc,
+            readback_id,
+            &[],
+            &mut load,
+        )
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(format!("{sum}"))
     }
 
     // ── frame ─────────────────────────────────────────────────────────────────

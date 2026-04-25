@@ -82,9 +82,7 @@ impl ApplicationHandler for App {
         let window = event_loop
             .create_window(Window::default_attributes().with_title(title))
             .unwrap();
-        self.state = Some(
-            State::new(window, self.ibl_spec, self.hdr_path.clone()).block_on(),
-        );
+        self.state = Some(State::new(window, self.ibl_spec, self.hdr_path.clone()).block_on());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {

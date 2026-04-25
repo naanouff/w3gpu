@@ -118,12 +118,16 @@ Référence : [README.md](../README.md), [journal.md](journal.md).
 
 **But** : même **flexibilité** que le RenderGraph w3dts : passes raster + compute, ressources buffers/textures, dispatch direct/indirect, reconfiguration contrôlée.
 
-- [x] **Description déclarative** du graphe (**v0 JSON** + [`docs/schemas/render-graph-v0.md`](schemas/render-graph-v0.md) + fixture [`fixtures/phases/phase-b/`](../fixtures/phases/phase-b/) + crate **`w3drs-render-graph`** parse/validation) — exécuteur `wgpu` **v0** (`run_graph_v0_checksum`, natif) : fait ; [suite](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) (registre, WASM, viewer).
-- [ ] **Registre de ressources** (lifetime, resize, transitions de barrières).
-- [ ] **Exécuteurs** : raster mesh, fullscreen, compute — réutiliser les briques déjà présentes dans w3drs et les **generaliser**.
-- [ ] **Intégration ECS** : attacher des systèmes à des nœuds du graphe (séparation data / exécution).
+**Jalons détaillés** (B.1–B.7) : [ticket Phase B](tickets/phase-B-graphe-rendu-compute.md#plan-dexécution--exécuteur-complet--wasm-cible-w3dts) — **B.1–B.7** en **v0** (B.6 labels ECS + hôte, B.7 `raster_depth_mesh` + hôte) ; [Phase B](tickets/phase-B-graphe-rendu-compute.md#poursuites-hors-périmètre-v0) = barrières wgpu explicites, câblage moteur↔JSON (HDR, etc.) *ultérieur*.
 
-**Critère de sortie** : démo « compute + raster » (ex. simulation simple + rendu) **sans fork** du moteur, uniquement via data de graphe + shaders.
+- [x] **Description déclarative** + exécuteur `wgpu` v0 (natif + **WASM** `w3drsPhaseBGraphRunChecksum`) + parse/validation + fixture + tests.
+- [x] **Registre** `RenderGraphGpuRegistry` (buffers/textures nommés, resize, mips) — périmètre v0.
+- [x] **Exécuteurs** : `compute` (g0/g1, indirect), `raster_mesh`, `fullscreen`, `blit`, `raster_depth_mesh` (B.7) — v0.
+- [x] **B.6** : `ecs_before` / `ecs_after` + `RenderGraphV0Host::ecs_node` (natif ; WASM no-op si hôte par défaut).
+- [x] **Viewer** : `khronos-pbr-sample` — `--render-graph` + slot ; même `CommandEncoder` que le moteur.
+- [ ] **Poursuite** : barrières wgpu explicites hors pass ; remplacer des passes moteur (HDR, shadow) par câblage ressource↔`insert_buffer` / `insert_texture_2d` + même JSON.
+
+**Critère de sortie (v0 atteint)** : démo « compute + raster » pilotée par le JSON + shaders **sans fork** moteur ; **même** graphe validé / exécuté **natif + web** (checksum reproductible).
 
 ---
 
