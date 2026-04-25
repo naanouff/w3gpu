@@ -1,6 +1,6 @@
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 
-use crate::error::EngineError;
+use crate::{error::EngineError, hdr_target::pick_hdr_main_pass_msaa};
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -12,6 +12,8 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
+    /// Facteur MSAA pour le pass PBR HDR principal (1 si non supporté).
+    pub main_pass_msaa: u32,
 }
 
 impl GpuContext {
@@ -64,7 +66,9 @@ impl GpuContext {
         };
         surface.configure(&device, &surface_config);
 
-        let (depth_texture, depth_view) = create_depth_texture(&device, width, height);
+        let main_pass_msaa = pick_hdr_main_pass_msaa(&adapter);
+        let (depth_texture, depth_view) =
+            create_depth_texture(&device, width, height, main_pass_msaa);
 
         Ok(Self {
             device,
@@ -74,6 +78,7 @@ impl GpuContext {
             surface_format,
             depth_texture,
             depth_view,
+            main_pass_msaa,
         })
     }
 
@@ -84,7 +89,8 @@ impl GpuContext {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
-        (self.depth_texture, self.depth_view) = create_depth_texture(&self.device, width, height);
+        (self.depth_texture, self.depth_view) =
+            create_depth_texture(&self.device, width, height, self.main_pass_msaa);
     }
 }
 
@@ -92,7 +98,9 @@ pub fn create_depth_texture(
     device: &Device,
     width: u32,
     height: u32,
+    sample_count: u32,
 ) -> (wgpu::Texture, wgpu::TextureView) {
+    let sample_count = sample_count.max(1);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth texture"),
         size: wgpu::Extent3d {
@@ -101,7 +109,7 @@ pub fn create_depth_texture(
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
