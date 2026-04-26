@@ -1,4 +1,6 @@
 target/
+# Brouillon local d’essai (hors workspace) — ne pas versionner.
+crates/w3d-egui-pbr/
 www/node_modules/
 www/pkg/
 www/dist/

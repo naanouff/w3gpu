@@ -8,67 +8,62 @@ use w3drs_renderer::pick_hdr_main_pass_msaa;
 
 const OUT_FMT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-/// Saisie orbit pour la zone viewport (même frame que le rendu).
-fn input_frame_viewport(ctx: &egui::Context, vrect: egui::Rect) -> InputFrame {
-    ctx.input(|i| {
-        let inside = i
-            .pointer
-            .interact_pos()
-            .map_or(false, |p| vrect.contains(p));
-        if !inside {
-            return InputFrame::default();
-        }
-        let d = i.pointer.delta();
-        let scroll = i.smooth_scroll_delta;
-        let wheel = scroll.y / 12.0;
-        let primary = if i.pointer.button_down(egui::PointerButton::Primary) {
-            PointerDelta::new(d.x, d.y)
-        } else {
-            PointerDelta::default()
-        };
-        let sec = if i.pointer.button_down(egui::PointerButton::Secondary) {
-            PointerDelta::new(d.x, d.y)
-        } else {
-            PointerDelta::default()
-        };
-        let mid = if i.pointer.button_down(egui::PointerButton::Middle) {
-            PointerDelta::new(d.x, d.y)
-        } else {
-            PointerDelta::default()
-        };
-        InputFrame {
-            primary_drag: primary,
-            secondary_drag: sec,
-            middle_drag: mid,
-            wheel_lines: wheel,
-            ..Default::default()
-        }
-    })
-}
-
-/// Exposé pour tests : construit le même enregistrement de champs.
-pub fn input_frame_viewport_test_rect(
+/// Construit le même [`InputFrame`] qu’`input_frame_viewport` (logique partagée, testée sans egui).
+pub fn input_frame_for_viewport(
     interact_pos: Option<egui::Pos2>,
     vrect: egui::Rect,
     delta: egui::Vec2,
-    primary_down: bool,
     smooth_scroll_y: f32,
+    primary_down: bool,
+    secondary_down: bool,
+    middle_down: bool,
 ) -> InputFrame {
-    let inside = interact_pos.map_or(false, |p| vrect.contains(p));
+    let inside = interact_pos
+        .map_or(false, |p| vrect.contains(p));
     if !inside {
         return InputFrame::default();
     }
     let wheel = smooth_scroll_y / 12.0;
+    let d = &delta;
     let primary = if primary_down {
-        PointerDelta::new(delta.x, delta.y)
+        PointerDelta::new(d.x, d.y)
+    } else {
+        PointerDelta::default()
+    };
+    let sec = if secondary_down {
+        PointerDelta::new(d.x, d.y)
+    } else {
+        PointerDelta::default()
+    };
+    let mid = if middle_down {
+        PointerDelta::new(d.x, d.y)
     } else {
         PointerDelta::default()
     };
     InputFrame {
         primary_drag: primary,
+        secondary_drag: sec,
+        middle_drag: mid,
         wheel_lines: wheel,
         ..Default::default()
     }
+}
+
+/// Saisie orbit pour la zone viewport (même frame que le rendu).
+fn input_frame_viewport(ctx: &egui::Context, vrect: egui::Rect) -> InputFrame {
+    ctx.input(|i| {
+        let pos = i.pointer.interact_pos();
+        let d = i.pointer.delta();
+        input_frame_for_viewport(
+            pos,
+            vrect,
+            d,
+            i.smooth_scroll_delta.y,
+            i.pointer.button_down(egui::PointerButton::Primary),
+            i.pointer.button_down(egui::PointerButton::Secondary),
+            i.pointer.button_down(egui::PointerButton::Middle),
+        )
+    })
 }
 
 /// État 3D.
@@ -224,22 +219,84 @@ impl Default for Viewport3dPbr {
 mod tests {
     use eframe::egui::{pos2, Rect, Vec2};
 
-    use super::input_frame_viewport_test_rect;
+    use super::input_frame_for_viewport;
 
     #[test]
-    fn test_rect_empty_when_outside() {
+    fn when_pointer_outside_rect_frame_is_zero() {
         let r = Rect::from_min_size(pos2(10.0, 10.0), Vec2::splat(100.0));
-        let f = input_frame_viewport_test_rect(Some(pos2(0.0, 0.0)), r, Vec2::new(1.0, 2.0), true, 0.0);
+        let f = input_frame_for_viewport(
+            Some(pos2(0.0, 0.0)),
+            r,
+            Vec2::new(1.0, 2.0),
+            0.0,
+            true,
+            true,
+            true,
+        );
         assert_eq!(f.primary_drag.dx, 0.0);
         assert_eq!(f.wheel_lines, 0.0);
     }
 
     #[test]
-    fn test_rect_drag_inside() {
+    fn when_interact_pos_none_frame_is_zero() {
+        let r = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(10.0));
+        let f = input_frame_for_viewport(
+            None,
+            r,
+            Vec2::splat(5.0),
+            0.0,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(f.primary_drag.dx, 0.0);
+    }
+
+    #[test]
+    fn inside_primary_and_wheel() {
         let r = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(200.0));
-        let f = input_frame_viewport_test_rect(Some(pos2(10.0, 10.0)), r, Vec2::new(2.0, 3.0), true, 12.0);
+        let f = input_frame_for_viewport(
+            Some(pos2(10.0, 10.0)),
+            r,
+            Vec2::new(2.0, 3.0),
+            12.0,
+            true,
+            false,
+            false,
+        );
         assert!((f.primary_drag.dx - 2.0).abs() < 0.01);
         assert!((f.primary_drag.dy - 3.0).abs() < 0.01);
         assert!((f.wheel_lines - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn inside_secondary_fills_delta() {
+        let r = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(200.0));
+        let f = input_frame_for_viewport(
+            Some(pos2(1.0, 1.0)),
+            r,
+            Vec2::new(-1.0, 4.0),
+            0.0,
+            false,
+            true,
+            false,
+        );
+        assert!((f.secondary_drag.dx + 1.0).abs() < 0.01);
+        assert!((f.secondary_drag.dy - 4.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn inside_middle_fills_delta() {
+        let r = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(200.0));
+        let f = input_frame_for_viewport(
+            Some(pos2(5.0, 5.0)),
+            r,
+            Vec2::new(0.0, 7.0),
+            0.0,
+            false,
+            false,
+            true,
+        );
+        assert!((f.middle_drag.dy - 7.0).abs() < 0.01);
     }
 }
