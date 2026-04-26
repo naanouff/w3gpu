@@ -8,7 +8,9 @@
 
 use std::mem::size_of;
 
-use w3drs_renderer::{CullPass, CullUniforms, DrawIndexedIndirectArgs, EntityCullData};
+use w3drs_renderer::{
+    CullPass, CullUniforms, DrawIndexedIndirectArgs, EntityCullData, CULL_STATS_SIZE,
+};
 
 // ── GPU context ────────────────────────────────────────────────────────────────
 
@@ -122,15 +124,25 @@ fn uniforms(view_proj: [[f32; 4]; 4], entity_count: u32, cull_enabled: u32) -> C
 
 // ── Cull-pass runner ───────────────────────────────────────────────────────────
 
+/// Decoded result of one cull dispatch: per-entity `instance_count` plus the
+/// `[frustum_rejected, hiz_rejected]` atomics read back from the cull pass.
+#[derive(Debug)]
+struct CullResult {
+    instance_count: Vec<u32>,
+    frustum_rejected: u32,
+    hiz_rejected: u32,
+}
+
 /// Upload entities + uniforms, dispatch cull compute, read back `instance_count`
-/// for each entity. Returns a `Vec<u32>` parallel to `entities`.
+/// for each entity AND the 2× u32 atomic stats. Returns a `CullResult`.
 fn run_cull(
     gpu: &Gpu,
     cull: &CullPass,
     readback: &wgpu::Buffer,
+    stats_readback: &wgpu::Buffer,
     uni: CullUniforms,
     entities: &[EntityCullData],
-) -> Vec<u32> {
+) -> CullResult {
     let n = uni.entity_count as usize;
     assert!(n > 0 && n <= entities.len());
 
@@ -141,19 +153,52 @@ fn run_cull(
 
     let stride = size_of::<DrawIndexedIndirectArgs>() as u64;
     let mut enc = gpu.device.create_command_encoder(&Default::default());
+    cull.clear_stats(&gpu.queue);
     cull.encode(&mut enc, uni.entity_count);
     enc.copy_buffer_to_buffer(&cull.entity_indirect_buf, 0, readback, 0, n as u64 * stride);
+    enc.copy_buffer_to_buffer(&cull.cull_stats_buf, 0, stats_readback, 0, CULL_STATS_SIZE);
     gpu.queue.submit([enc.finish()]);
 
-    let slice = readback.slice(..n as u64 * stride);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    gpu.device.poll(wgpu::Maintain::Wait);
-    let view = slice.get_mapped_range();
-    let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
-    let result = args[..n].iter().map(|a| a.instance_count).collect();
-    drop(view);
-    readback.unmap();
-    result
+    let instance_count = {
+        let slice = readback.slice(..n as u64 * stride);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        gpu.device.poll(wgpu::Maintain::Wait);
+        let view = slice.get_mapped_range();
+        let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
+        let r: Vec<u32> = args[..n].iter().map(|a| a.instance_count).collect();
+        drop(view);
+        readback.unmap();
+        r
+    };
+    let (frustum_rejected, hiz_rejected) = {
+        let slice = stats_readback.slice(..CULL_STATS_SIZE);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        gpu.device.poll(wgpu::Maintain::Wait);
+        let view = slice.get_mapped_range();
+        let s: &[u32] = bytemuck::cast_slice(&view);
+        let r = (s[0], s[1]);
+        drop(view);
+        stats_readback.unmap();
+        r
+    };
+
+    CullResult {
+        instance_count,
+        frustum_rejected,
+        hiz_rejected,
+    }
+}
+
+/// Convenience: previous shape — list of instance_counts only.
+fn run_cull_counts(
+    gpu: &Gpu,
+    cull: &CullPass,
+    readback: &wgpu::Buffer,
+    stats_readback: &wgpu::Buffer,
+    uni: CullUniforms,
+    entities: &[EntityCullData],
+) -> Vec<u32> {
+    run_cull(gpu, cull, readback, stats_readback, uni, entities).instance_count
 }
 
 /// Create a MAP_READ | COPY_DST readback buffer sized for `n` indirect args.
@@ -166,10 +211,21 @@ fn make_readback(gpu: &Gpu, n: usize) -> wgpu::Buffer {
     })
 }
 
+/// 8-byte staging buffer for the `[frustum_rejected, hiz_rejected]` atomics.
+fn make_stats_readback(gpu: &Gpu) -> wgpu::Buffer {
+    gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("stats readback"),
+        size: CULL_STATS_SIZE,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    })
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 /// When cull_enabled = 0 every entity must have instance_count = 1,
 /// regardless of its AABB or the depth in the Hi-Z texture.
+/// Both atomic counters must remain at zero (early-return path).
 #[test]
 fn cull_disabled_marks_all_visible() {
     let Some(gpu) = try_gpu() else { return };
@@ -177,6 +233,7 @@ fn cull_disabled_marks_all_visible() {
     let (_tex, view) = make_hiz(&gpu, 0.0); // extreme occluder — irrelevant when disabled
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 3);
+    let stats = make_stats_readback(&gpu);
 
     let entities = [
         entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]), // at origin
@@ -187,11 +244,24 @@ fn cull_disabled_marks_all_visible() {
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 3, 0 /* DISABLED */),
         &entities,
     );
 
-    assert_eq!(result, [1, 1, 1], "cull_enabled=0 must pass every entity");
+    assert_eq!(
+        result.instance_count,
+        [1, 1, 1],
+        "cull_enabled=0 must pass every entity"
+    );
+    assert_eq!(
+        result.frustum_rejected, 0,
+        "atomic[0] must stay 0 when cull is disabled"
+    );
+    assert_eq!(
+        result.hiz_rejected, 0,
+        "atomic[1] must stay 0 when cull is disabled"
+    );
 }
 
 /// An entity in the frustum with a clear Hi-Z (depth=1.0, no occluder)
@@ -203,12 +273,14 @@ fn visible_entity_clear_sky() {
     let (_tex, view) = make_hiz(&gpu, 1.0); // Hi-Z = far plane (nothing occluding)
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
 
     // Entity at origin, 10 units from camera → NDC z ≈ 0.99 < 1.0 → visible
-    let result = run_cull(
+    let result = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])],
     );
@@ -218,6 +290,7 @@ fn visible_entity_clear_sky() {
 
 /// An entity far from the camera, behind a very close occluder (Hi-Z ≈ 0.0),
 /// must be culled: depth_near >> 0.0.
+/// The reject must be tagged on the Hi-Z atomic, NOT the frustum atomic.
 #[test]
 fn entity_behind_close_occluder() {
     let Some(gpu) = try_gpu() else { return };
@@ -227,16 +300,27 @@ fn entity_behind_close_occluder() {
     let (_tex, view) = make_hiz(&gpu, 0.1);
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
 
     let result = run_cull(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])],
     );
 
-    assert_eq!(result, [0], "entity behind close occluder must be culled");
+    assert_eq!(
+        result.instance_count,
+        [0],
+        "entity behind close occluder must be culled"
+    );
+    assert_eq!(result.frustum_rejected, 0, "must NOT be tagged as frustum");
+    assert_eq!(
+        result.hiz_rejected, 1,
+        "must be tagged on the Hi-Z atomic exactly once"
+    );
 }
 
 /// An entity whose AABB straddles the camera near-plane (some corners behind
@@ -250,14 +334,16 @@ fn near_plane_straddler_never_culled() {
     let (_tex, view) = make_hiz(&gpu, 0.0);
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
 
     // AABB from z=9 to z=11 with camera at z=10:
     // corners at z=9  → view_z=-1 → clip.w=1  (in front)
     // corners at z=11 → view_z=+1 → clip.w=-1 (behind)  → any_behind=true → depth_near=0.0
-    let result = run_cull(
+    let result = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0])],
     );
@@ -266,6 +352,7 @@ fn near_plane_straddler_never_culled() {
 }
 
 /// An entity entirely behind the camera (all clip.w ≤ 0) must be culled.
+/// Reject must be tagged on the frustum atomic (all_behind path).
 #[test]
 fn all_corners_behind_camera() {
     let Some(gpu) = try_gpu() else { return };
@@ -273,6 +360,7 @@ fn all_corners_behind_camera() {
     let (_tex, view) = make_hiz(&gpu, 1.0);
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
 
     // Entity at z=11 to 13 — entirely behind camera at z=10.
     // All corners have view_z > 0 → clip.w < 0 → all_behind=true.
@@ -280,15 +368,94 @@ fn all_corners_behind_camera() {
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([-0.5, -0.5, 11.0], [0.5, 0.5, 13.0])],
     );
 
-    assert_eq!(result, [0], "entity fully behind camera must be culled");
+    assert_eq!(
+        result.instance_count,
+        [0],
+        "entity fully behind camera must be culled"
+    );
+    assert_eq!(
+        result.frustum_rejected, 1,
+        "all_behind must be tagged on the frustum atomic"
+    );
+    assert_eq!(result.hiz_rejected, 0, "must NOT be tagged as Hi-Z");
+}
+
+/// An entity entirely past the far plane (closest point still > far) must
+/// be culled by the GPU frustum reject, regardless of Hi-Z depth.
+///
+/// Camera setup: at z=10 with `far=100`, so world-space objects between
+/// z=-90 (≈ far) and beyond should clip.  We pick z=-200..-150 → all corners
+/// are well past the far plane → ndc_min.z > 1.0 → cull.
+#[test]
+fn entity_past_far_plane() {
+    let Some(gpu) = try_gpu() else { return };
+    let mut cull = CullPass::new(&gpu.device);
+    // Hi-Z = 1.0 (clear sky) — cull MUST come from frustum reject, not depth.
+    let (_tex, view) = make_hiz(&gpu, 1.0);
+    cull.rebuild_hiz_bg(&gpu.device, &view);
+    let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
+
+    let result = run_cull(
+        &gpu,
+        &cull,
+        &readback,
+        &stats,
+        uniforms(standard_view_proj(), 1, 1),
+        &[entity([-0.5, -0.5, -200.0], [0.5, 0.5, -150.0])],
+    );
+
+    assert_eq!(
+        result.instance_count,
+        [0],
+        "entity past far plane must be culled"
+    );
+    assert_eq!(
+        result.frustum_rejected, 1,
+        "past-far must be tagged as frustum, not Hi-Z"
+    );
+    assert_eq!(result.hiz_rejected, 0);
+}
+
+/// An entity entirely above the screen (Y > 1.0 in NDC for all corners) must
+/// be culled by the coarse Y-frustum reject — counted on the frustum atomic.
+#[test]
+fn entity_outside_frustum_y_above() {
+    let Some(gpu) = try_gpu() else { return };
+    let mut cull = CullPass::new(&gpu.device);
+    let (_tex, view) = make_hiz(&gpu, 1.0); // clear sky — depth test would pass
+    cull.rebuild_hiz_bg(&gpu.device, &view);
+    let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
+
+    // Camera fov=60°, aspect=1, at z=10 looking at origin.
+    // Frustum half-height at z=0 ≈ 5.77.  y in [10, 11] is well above.
+    let result = run_cull(
+        &gpu,
+        &cull,
+        &readback,
+        &stats,
+        uniforms(standard_view_proj(), 1, 1),
+        &[entity([-0.5, 10.0, -0.5], [0.5, 11.0, 0.5])],
+    );
+
+    assert_eq!(
+        result.instance_count,
+        [0],
+        "entity above the screen must be culled"
+    );
+    assert_eq!(result.frustum_rejected, 1);
+    assert_eq!(result.hiz_rejected, 0);
 }
 
 /// An entity whose projected AABB lies entirely outside the XY frustum must
-/// be culled (coarse frustum reject before the Hi-Z depth test).
+/// be culled (coarse frustum reject before the Hi-Z depth test) — counted on
+/// the frustum atomic.
 #[test]
 fn entity_outside_frustum_xy() {
     let Some(gpu) = try_gpu() else { return };
@@ -296,6 +463,7 @@ fn entity_outside_frustum_xy() {
     let (_tex, view) = make_hiz(&gpu, 1.0); // clear sky — depth test would pass
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
 
     // Camera fov=60°, aspect=1, at z=10 looking at origin.
     // Frustum half-width at z=0 (view_z=-10) = 10 * tan(30°) ≈ 5.77 world units.
@@ -304,11 +472,18 @@ fn entity_outside_frustum_xy() {
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 1, 1),
         &[entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5])],
     );
 
-    assert_eq!(result, [0], "entity outside XY frustum must be culled");
+    assert_eq!(
+        result.instance_count,
+        [0],
+        "entity outside XY frustum must be culled"
+    );
+    assert_eq!(result.frustum_rejected, 1);
+    assert_eq!(result.hiz_rejected, 0);
 }
 
 /// Mixed scene: verify per-entity independence.
@@ -322,16 +497,18 @@ fn multiple_entities_mixed() {
     let (_tex, view) = make_hiz(&gpu, 1.0);
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 3);
+    let stats = make_stats_readback(&gpu);
 
     let entities = [
         entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),  // visible
         entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5]), // outside frustum → culled
         entity([-1.0, -1.0, 7.0], [1.0, 1.0, 9.0]),   // near camera → visible
     ];
-    let result = run_cull(
+    let result = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 3, 1),
         &entities,
     );
@@ -361,18 +538,21 @@ fn monotonicity_cull_on_never_exceeds_cull_off() {
     ];
     let n = entities.len() as u32;
     let readback = make_readback(&gpu, entities.len());
+    let stats = make_stats_readback(&gpu);
 
-    let off = run_cull(
+    let off = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), n, 0 /* OFF */),
         &entities,
     );
-    let on = run_cull(
+    let on = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), n, 1 /* ON */),
         &entities,
     );
@@ -400,20 +580,103 @@ fn straddler_visible_among_culled_neighbours() {
     let (_tex, view) = make_hiz(&gpu, 0.0); // everything gets culled unless straddling
     cull.rebuild_hiz_bg(&gpu.device, &view);
     let readback = make_readback(&gpu, 3);
+    let stats = make_stats_readback(&gpu);
 
     let entities = [
         entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]), // far → culled (depth > 0)
         entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0]), // straddler → depth_near=0 → visible
         entity([-0.5, -0.5, 7.0], [0.5, 0.5, 9.0]),  // near but in front → depth≈0.9 > 0 → culled
     ];
-    let result = run_cull(
+    let result = run_cull_counts(
         &gpu,
         &cull,
         &readback,
+        &stats,
         uniforms(standard_view_proj(), 3, 1),
         &entities,
     );
 
     assert_eq!(result[1], 1, "straddler must stay visible when Hi-Z = 0.0");
     assert_eq!(result[0], 0, "far entity must be culled with Hi-Z = 0.0");
+}
+
+/// Mixed-cause scene exercises the full breakdown invariant
+/// `visible + frustum_rejected + hiz_rejected = pre-cull`. We hand-build a
+/// scene with one entity in each category (visible, frustum-rejected,
+/// hi-z-rejected) and assert each atomic increments by exactly one.
+#[test]
+fn stats_split_one_per_cause() {
+    let Some(gpu) = try_gpu() else { return };
+    let mut cull = CullPass::new(&gpu.device);
+    // Hi-Z = 0.05: ANY entity past the near plane will fail the depth test.
+    // Use a depth that's safely > 0 but small enough that an in-frustum
+    // entity at origin (NDC z ≈ 0.99) still gets rejected.
+    let (_tex, view) = make_hiz(&gpu, 0.05);
+    cull.rebuild_hiz_bg(&gpu.device, &view);
+    let readback = make_readback(&gpu, 3);
+    let stats = make_stats_readback(&gpu);
+
+    let entities = [
+        // 0 — straddler (any_behind=true → depth_near=0 < 0.05 → visible)
+        entity([-0.5, -0.5, 9.0], [0.5, 0.5, 11.0]),
+        // 1 — outside XY frustum → frustum reject
+        entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5]),
+        // 2 — in frustum but depth_near ≈ 0.99 > 0.05 → Hi-Z reject
+        entity([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),
+    ];
+    let result = run_cull(
+        &gpu,
+        &cull,
+        &readback,
+        &stats,
+        uniforms(standard_view_proj(), 3, 1),
+        &entities,
+    );
+
+    assert_eq!(
+        result.instance_count,
+        [1, 0, 0],
+        "exactly one of each: visible / frustum-rejected / hi-z-rejected"
+    );
+    assert_eq!(
+        result.frustum_rejected, 1,
+        "atomic[0] must count exactly one frustum reject"
+    );
+    assert_eq!(
+        result.hiz_rejected, 1,
+        "atomic[1] must count exactly one Hi-Z reject"
+    );
+    let visible: u32 = result.instance_count.iter().sum();
+    assert_eq!(
+        visible + result.frustum_rejected + result.hiz_rejected,
+        3,
+        "stats invariant: visible + frustum + hiz must equal pre-cull"
+    );
+}
+
+/// Re-running the cull pass must re-clear the atomics. We dispatch the same
+/// scene twice with `clear_stats()` between runs (which `run_cull` does) and
+/// expect the second readback to match the first — not double.
+#[test]
+fn stats_cleared_between_dispatches() {
+    let Some(gpu) = try_gpu() else { return };
+    let mut cull = CullPass::new(&gpu.device);
+    let (_tex, view) = make_hiz(&gpu, 1.0); // clear — only frustum reject can fire
+    cull.rebuild_hiz_bg(&gpu.device, &view);
+    let readback = make_readback(&gpu, 1);
+    let stats = make_stats_readback(&gpu);
+
+    // One entity outside XY frustum → exactly one frustum reject per dispatch.
+    let scene = [entity([10.0, -0.5, -0.5], [11.0, 0.5, 0.5])];
+    let uni = uniforms(standard_view_proj(), 1, 1);
+
+    let r1 = run_cull(&gpu, &cull, &readback, &stats, uni, &scene);
+    assert_eq!(r1.frustum_rejected, 1, "first dispatch must count 1");
+
+    let r2 = run_cull(&gpu, &cull, &readback, &stats, uni, &scene);
+    assert_eq!(
+        r2.frustum_rejected, 1,
+        "second dispatch must also count 1 (atomics zeroed by clear_stats)"
+    );
+    assert_eq!(r2.hiz_rejected, 0);
 }

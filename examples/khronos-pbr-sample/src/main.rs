@@ -14,14 +14,15 @@ use w3drs_ecs::{
 use w3drs_input::{winit_adapter::input_event_from_winit, InputAccumulator};
 use w3drs_render_graph::RenderGraphDocument;
 use w3drs_renderer::{
-    build_entity_list, build_frame_uniforms_for_world, camera_system, derive_shadow_batches,
+    active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
+    derive_shadow_batches,
     encode_render_graph_passes_v0, encode_render_graph_passes_v0_with_wgsl_host,
-    light_uniforms_from_viewer, parse_render_graph_json, transform_system,
+    light_uniforms_for_cascades, parse_render_graph_json, transform_system,
     validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
     DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
     MaterialTextures, PostProcessPass, RenderGraphExecError, RenderGraphGpuRegistry,
     RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams,
-    MAX_CULL_ENTITIES, SHADOW_SIZE,
+    MAX_CULL_ENTITIES, SHADOW_CASCADE_COUNT, SHADOW_SIZE,
 };
 use winit::{
     application::ApplicationHandler,
@@ -254,6 +255,7 @@ impl ApplicationHandler for App {
 // ── State ──────────────────────────────────────────────────────────────────────
 
 /// Sous-graphe B.7 (ombre) : mêmes GPU buffers que le viewer, encodé à l’étape « shadow ».
+#[allow(dead_code)]
 struct ShadowGraphInViewer {
     doc: RenderGraphDocument,
     registry: RenderGraphGpuRegistry,
@@ -261,6 +263,7 @@ struct ShadowGraphInViewer {
 }
 
 /// Optional Phase B JSON graph (own textures/buffers), validated at init; encoded each frame.
+#[allow(dead_code)]
 struct PhaseBRenderGraphHook {
     doc: RenderGraphDocument,
     registry: RenderGraphGpuRegistry,
@@ -271,6 +274,7 @@ struct PhaseBRenderGraphHook {
 }
 
 /// Hôte B.7 : même boucle d’`draw_indexed` qu’avant, dans le `RenderPass` ouvert par le graphe.
+#[allow(dead_code)]
 struct KhronosShadowHost<'a> {
     asset_registry: &'a AssetRegistry,
     shadow_batches: &'a [ShadowBatch],
@@ -296,7 +300,7 @@ impl RenderGraphV0Host for KhronosShadowHost<'_> {
 fn texture2d_gpu_shadow_map(sp: &ShadowPass) -> Texture2dGpu {
     Texture2dGpu {
         texture: sp.shadow_texture.clone(),
-        view: sp.shadow_view.clone(),
+        view: sp.cascade_view(0).clone(),
         format: wgpu::TextureFormat::Depth32Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         width: SHADOW_SIZE,
@@ -555,7 +559,7 @@ impl State {
             });
             sreg.insert_buffer(
                 "light_uniforms".to_string(),
-                shadow_pass.light_uniform_buffer.clone(),
+                shadow_pass.light_uniform_buffers[0].clone(),
             );
             sreg.insert_buffer(
                 "pbr_instance_matrices".to_string(),
@@ -642,6 +646,7 @@ impl State {
     }
 
     /// B.7 : ombre = une passe `raster_depth_mesh` (JSON embarqué) + [`KhronosShadowHost`].
+    #[allow(dead_code)]
     fn encode_shadow_data_driven(
         &self,
         enc: &mut wgpu::CommandEncoder,
@@ -903,12 +908,15 @@ impl State {
             );
         }
 
-        let (view_proj, _) = camera_view_proj(&self.world);
+        // `camera_view_proj` returns `(view, projection)` — combine them so the
+        // cull / Hi-Z passes receive `projection * view` (clip-space matrix).
+        let (cam_view, cam_proj) = camera_view_proj(&self.world);
+        let cull_vp = cam_proj * cam_view;
         self.context.queue.write_buffer(
             &self.cull_pass.cull_uniform_buf,
             0,
             bytemuck::bytes_of(&CullUniforms {
-                view_proj: view_proj.to_cols_array_2d(),
+                view_proj: cull_vp.to_cols_array_2d(),
                 screen_size: [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
                 entity_count,
                 mip_levels: self.hiz_pass.mip_count,
@@ -917,7 +925,7 @@ impl State {
             }),
         );
         self.hiz_pass
-            .update_camera(&self.context.queue, view_proj.to_cols_array_2d());
+            .update_camera(&self.context.queue, cull_vp.to_cols_array_2d());
 
         self.render(entity_count, &sorted, &shadow_batches);
 
@@ -986,19 +994,21 @@ impl State {
         };
         let view = output.texture.create_view(&Default::default());
 
+        let (view_m, proj_m, cam_pos) = active_camera_vpc(&self.world);
+        let frame_uniforms = build_frame_uniforms_for_viewer(
+            view_m,
+            proj_m,
+            cam_pos,
+            self.total_time,
+            self.phase_a_viewer.ibl_diffuse_scale(),
+            &self.viewer_light,
+        );
+        let (shadow_cascades, _splits) =
+            light_uniforms_for_cascades(view_m, proj_m, cam_pos, &self.viewer_light);
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
-            bytemuck::bytes_of(&build_frame_uniforms_for_world(
-                &self.world,
-                self.total_time,
-                self.phase_a_viewer.ibl_diffuse_scale(),
-                &self.viewer_light,
-            )),
-        );
-        self.shadow_pass.update_light(
-            &self.context.queue,
-            &light_uniforms_from_viewer(&self.viewer_light),
+            bytemuck::bytes_of(&frame_uniforms),
         );
 
         let indirect_stride = size_of::<DrawIndexedIndirectArgs>() as u64;
@@ -1039,16 +1049,15 @@ impl State {
             self.encode_phase_b_graph(&mut enc);
         }
 
-        // 4. Shadow depth (CPU-batched) — B.7 data-driven via graphe quand Phase B.4 actif, sinon
-        //    pipeline [`ShadowPass`] héritée.
-        if let Some(hook) = &self.phase_b_render_graph {
-            self.encode_shadow_data_driven(&mut enc, &hook.shadow, shadow_batches);
-        } else {
+        // 4. Shadow depth (CSM): upload all cascade uniforms once, render each cascade.
+        self.shadow_pass
+            .update_cascade_lights(&self.context.queue, &shadow_cascades);
+        for cascade_idx in 0..SHADOW_CASCADE_COUNT {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_pass.shadow_view,
+                    view: self.shadow_pass.cascade_view(cascade_idx),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -1059,7 +1068,7 @@ impl State {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
@@ -1282,7 +1291,7 @@ fn build_env_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: wgpu::BindingResource::TextureView(&shadow.shadow_view),
+                resource: wgpu::BindingResource::TextureView(&shadow.shadow_array_view),
             },
             wgpu::BindGroupEntry {
                 binding: 5,

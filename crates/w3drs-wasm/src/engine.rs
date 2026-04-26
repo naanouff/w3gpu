@@ -12,11 +12,11 @@ use w3drs_ecs::{
 use w3drs_render_graph::parse_render_graph_json;
 use w3drs_renderer::{
     active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
-    derive_shadow_batches, frustum_culling_system, light_uniforms_from_viewer,
-    run_graph_v0_checksum_from_wgsl, transform_system, AssetRegistry, BloomParams, CullPass,
-    CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms, GpuContext, HdrTarget,
-    HizPass, IblContext, IblGenerationSpec, MaterialTextures, PostProcessPass,
-    RenderGraphExecError, RenderState, ShadowPass, TonemapParams,
+    derive_shadow_batches, light_uniforms_for_cascades, run_graph_v0_checksum_from_wgsl,
+    transform_system, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
+    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext,
+    IblGenerationSpec, MaterialTextures, PostProcessPass, RenderGraphExecError, RenderState,
+    ShadowPass, TonemapParams, SHADOW_CASCADE_COUNT,
 };
 
 use wasm_bindgen::prelude::*;
@@ -147,10 +147,14 @@ impl W3drsEngine {
         );
 
         let mut scheduler = Scheduler::new();
+        // Frustum culling is fully handled on GPU by the cull compute pass
+        // (`occlusion_cull.wgsl`: 6-plane reject + Hi-Z test). The legacy
+        // CPU `frustum_culling_system` (hardcoded radius=2 — Phase 3 TODO) is
+        // intentionally NOT registered to avoid double-culling and false
+        // pre-rejects with the wrong bounding sphere.
         scheduler
             .add_system(transform_system)
-            .add_system(camera_system)
-            .add_system(frustum_culling_system);
+            .add_system(camera_system);
 
         Ok(W3drsEngine {
             world: World::new(),
@@ -570,9 +574,12 @@ impl W3drsEngine {
             );
         }
 
-        let (view_proj, _) = self.camera_view_proj();
+        // `camera_view_proj` returns `(view, projection)` — combine them so the
+        // cull / Hi-Z passes receive `projection * view` (clip-space matrix).
+        let (cam_view, cam_proj) = self.camera_view_proj();
+        let cull_vp = cam_proj * cam_view;
         let cull_uniforms = CullUniforms {
-            view_proj: view_proj.to_cols_array_2d(),
+            view_proj: cull_vp.to_cols_array_2d(),
             screen_size: [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
             entity_count,
             mip_levels: self.hiz_pass.mip_count,
@@ -585,7 +592,7 @@ impl W3drsEngine {
             bytemuck::bytes_of(&cull_uniforms),
         );
         self.hiz_pass
-            .update_camera(&self.context.queue, view_proj.to_cols_array_2d());
+            .update_camera(&self.context.queue, cull_vp.to_cols_array_2d());
 
         self.render(entity_count, &sorted, &shadow_batches);
     }
@@ -631,15 +638,22 @@ impl W3drsEngine {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let frame_uniforms = self.build_frame_uniforms();
+        let (view_m, proj_m, cam_pos) = active_camera_vpc(&self.world);
+        let frame_uniforms = build_frame_uniforms_for_viewer(
+            view_m,
+            proj_m,
+            cam_pos,
+            self.total_time,
+            self.phase_a_viewer.ibl_diffuse_scale(),
+            &self.viewer_light,
+        );
+        let (shadow_cascades, _splits) =
+            light_uniforms_for_cascades(view_m, proj_m, cam_pos, &self.viewer_light);
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
             bytemuck::bytes_of(&frame_uniforms),
         );
-        let light_uniforms = light_uniforms_from_viewer(&self.viewer_light);
-        self.shadow_pass
-            .update_light(&self.context.queue, &light_uniforms);
 
         let indirect_stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
         let mut encoder =
@@ -660,13 +674,15 @@ impl W3drsEngine {
         // 2. GPU occlusion cull
         self.cull_pass.encode(&mut encoder, entity_count);
 
-        // 3. Shadow pass (CPU-batched)
-        {
+        // 3. Shadow pass (CSM): upload all cascade uniforms once, render each cascade.
+        self.shadow_pass
+            .update_cascade_lights(&self.context.queue, &shadow_cascades);
+        for cascade_idx in 0..SHADOW_CASCADE_COUNT {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_pass.shadow_view,
+                    view: self.shadow_pass.cascade_view(cascade_idx),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -677,7 +693,7 @@ impl W3drsEngine {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
@@ -830,18 +846,6 @@ impl W3drsEngine {
         Some((center, radius))
     }
 
-    fn build_frame_uniforms(&self) -> FrameUniforms {
-        let (view, projection, cam_pos) = active_camera_vpc(&self.world);
-        build_frame_uniforms_for_viewer(
-            view,
-            projection,
-            cam_pos,
-            self.total_time,
-            self.phase_a_viewer.ibl_diffuse_scale(),
-            &self.viewer_light,
-        )
-    }
-
     fn collect_draw_entities(&self) -> Vec<DrawEntity> {
         let entities = self.world.query_entities::<RenderableComponent>();
         let mut result = Vec::with_capacity(entities.len());
@@ -954,7 +958,7 @@ fn build_env_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: wgpu::BindingResource::TextureView(&shadow.shadow_view),
+                resource: wgpu::BindingResource::TextureView(&shadow.shadow_array_view),
             },
             wgpu::BindGroupEntry {
                 binding: 5,

@@ -23,7 +23,8 @@ struct FrameUniforms {
     _pad2a:              f32,
     _pad2b:              f32,
     _pad2c:              f32,
-    light_view_proj:     mat4x4<f32>,
+    light_view_proj_cascades: array<mat4x4<f32>, 4>,
+    shadow_cascade_splits: vec4<f32>,
     shadow_bias:         f32,
     ibl_flags:            u32,
     ibl_diffuse_scale:   f32,
@@ -82,7 +83,7 @@ struct MaterialUniforms {
 @group(3) @binding(1) var prefiltered_map: texture_cube<f32>;
 @group(3) @binding(2) var brdf_lut:        texture_2d<f32>;
 @group(3) @binding(3) var ibl_sampler:     sampler;
-@group(3) @binding(4) var shadow_map:      texture_depth_2d;
+@group(3) @binding(4) var shadow_map:      texture_depth_2d_array;
 @group(3) @binding(5) var shadow_sampler:  sampler_comparison;
 
 struct VertexInput {
@@ -226,8 +227,17 @@ fn khr_texture_transform_uv(uv0: vec2<f32>, uv1: vec2<f32>, xf: UvTransform) -> 
     return vec2<f32>(rx, ry) + xf.offset;
 }
 
+fn select_shadow_cascade(view_space_z: f32) -> i32 {
+    if (view_space_z <= frame.shadow_cascade_splits.x) { return 0; }
+    if (view_space_z <= frame.shadow_cascade_splits.y) { return 1; }
+    if (view_space_z <= frame.shadow_cascade_splits.z) { return 2; }
+    return 3;
+}
+
 fn pcf_shadow(world_pos: vec3<f32>) -> f32 {
-    let light_clip  = frame.light_view_proj * vec4<f32>(world_pos, 1.0);
+    let view_space = frame.view * vec4<f32>(world_pos, 1.0);
+    let cascade = select_shadow_cascade(-view_space.z);
+    let light_clip  = frame.light_view_proj_cascades[cascade] * vec4<f32>(world_pos, 1.0);
     let ndc         = light_clip.xyz / light_clip.w;
     let uv          = ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
     let depth_ref   = ndc.z - frame.shadow_bias;
@@ -239,7 +249,13 @@ fn pcf_shadow(world_pos: vec3<f32>) -> f32 {
     for (var xi: i32 = -1; xi <= 1; xi = xi + 1) {
         for (var yi: i32 = -1; yi <= 1; yi = yi + 1) {
             let off = vec2<f32>(f32(xi), f32(yi)) * texel;
-            shadow += textureSampleCompare(shadow_map, shadow_sampler, safe_uv + off, safe_depth);
+            shadow += textureSampleCompare(
+                shadow_map,
+                shadow_sampler,
+                safe_uv + off,
+                cascade,
+                safe_depth
+            );
         }
     }
     return select(1.0, shadow / 9.0, in_frustum);

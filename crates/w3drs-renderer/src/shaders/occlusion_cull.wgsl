@@ -35,6 +35,9 @@ struct DrawArgs {
 @group(0) @binding(0) var<uniform>            cull:      CullUniforms;
 @group(0) @binding(1) var<storage, read>       entities:  array<EntityData>;
 @group(0) @binding(2) var<storage, read_write> draw_args: array<DrawArgs>;
+// stats[0] = frustum_rejected, stats[1] = hiz_rejected.
+// CPU clears to [0, 0] before each cull dispatch.
+@group(0) @binding(3) var<storage, read_write> stats:     array<atomic<u32>, 2>;
 @group(1) @binding(0) var hiz_tex: texture_2d<f32>;
 
 @compute @workgroup_size(64)
@@ -85,13 +88,19 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     if all_behind {
         draw_args[eid].instance_count = 0u;
+        atomicAdd(&stats[0], 1u);
         return;
     }
 
-    // Coarse XY frustum cull (skip when any corner is behind — conservative).
+    // Coarse 6-plane frustum cull (skip XY/far when any corner is behind the
+    // near plane — conservative for near-plane straddlers). NDC z range is
+    // [0, 1] (wgpu convention), so `ndc_min.z > 1.0` means the closest point of
+    // the AABB is already past the far plane → fully outside frustum.
     if !any_behind && (ndc_max.x < -1.0 || ndc_min.x > 1.0 ||
-                       ndc_max.y < -1.0 || ndc_min.y > 1.0) {
+                       ndc_max.y < -1.0 || ndc_min.y > 1.0 ||
+                       ndc_min.z > 1.0) {
         draw_args[eid].instance_count = 0u;
+        atomicAdd(&stats[0], 1u);
         return;
     }
 
@@ -109,23 +118,36 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Otherwise use the minimum NDC z of the visible corners (closest to camera).
     let depth_near = select(clamp(ndc_min.z, 0.0, 1.0), 0.0, any_behind);
 
-    // Pick mip level so the 2×2 texel footprint covers the projected footprint
+    // Pick mip level M so 1 texel at M covers ≈ box-pixel-size. With 4 corner
+    // samples the projected box is guaranteed to fit inside the 2×2 footprint
+    // (a box of N pixels straddles at most 2 texels per axis at mip M).
     let size_px = (uv_hi - uv_lo) * cull.screen_size;
-    let mip_f   = log2(max(max(size_px.x, size_px.y), 1.0));
+    let max_dim = max(max(size_px.x, size_px.y), 1.0);
+    let mip_f   = log2(max_dim);
     let mip_i   = clamp(i32(ceil(mip_f)), 0, i32(cull.mip_levels) - 1);
     let mip_u   = u32(mip_i);
 
-    // Sample Hi-Z at centre of projected footprint
-    let uv_c      = (uv_lo + uv_hi) * 0.5;
+    // Sample 4 corners of the projected footprint at the chosen mip and take
+    // the MAX (Hi-Z stores the farthest visible depth per texel, so the MAX
+    // across the 4 corners is the farthest visible surface anywhere in the
+    // box's screen-space coverage).
     let hiz_size  = vec2<f32>(textureDimensions(hiz_tex, mip_u));
-    let texel     = clamp(vec2<i32>(uv_c * hiz_size),
+    let texel_lo  = clamp(vec2<i32>(uv_lo * hiz_size),
                           vec2<i32>(0),
                           vec2<i32>(hiz_size) - vec2<i32>(1));
-    let hiz_depth = textureLoad(hiz_tex, texel, mip_i).r;
+    let texel_hi  = clamp(vec2<i32>(uv_hi * hiz_size),
+                          vec2<i32>(0),
+                          vec2<i32>(hiz_size) - vec2<i32>(1));
+    let d00 = textureLoad(hiz_tex, vec2<i32>(texel_lo.x, texel_lo.y), mip_i).r;
+    let d10 = textureLoad(hiz_tex, vec2<i32>(texel_hi.x, texel_lo.y), mip_i).r;
+    let d01 = textureLoad(hiz_tex, vec2<i32>(texel_lo.x, texel_hi.y), mip_i).r;
+    let d11 = textureLoad(hiz_tex, vec2<i32>(texel_hi.x, texel_hi.y), mip_i).r;
+    let hiz_depth = max(max(d00, d10), max(d01, d11));
 
     // Occluded when nearest point of AABB is farther than Hi-Z stored max-depth
     if depth_near > hiz_depth {
         draw_args[eid].instance_count = 0u;
+        atomicAdd(&stats[1], 1u);
     } else {
         draw_args[eid].instance_count = 1u;
     }

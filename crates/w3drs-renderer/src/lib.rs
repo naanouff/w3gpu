@@ -37,9 +37,9 @@ pub use w3drs_render_graph::{
 };
 
 pub use asset_registry::{AssetRegistry, GpuMaterial, GpuMesh, GpuTexture, MaterialTextures};
-pub use cull_pass::{CullPass, CullUniforms, MAX_CULL_ENTITIES};
+pub use cull_pass::{CullPass, CullUniforms, CULL_STATS_SIZE, MAX_CULL_ENTITIES};
 pub use error::EngineError;
-pub use frame_uniforms::{FrameUniforms, IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE};
+pub use frame_uniforms::{FrameUniforms, IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE, SHADOW_CASCADE_COUNT};
 pub use gpu_context::{GpuContext, DEPTH_FORMAT};
 pub use hdr_target::{pick_hdr_main_pass_msaa, HdrTarget, HDR_FORMAT};
 pub use hiz_pass::HizPass;
@@ -59,5 +59,5 @@ pub use systems::{camera_system, frustum_culling_system, transform_system};
 pub use vertex_layout::VERTEX_BUFFER_LAYOUT;
 pub use viewer_light_rig::{
     active_camera_vpc, build_frame_uniforms_for_viewer, build_frame_uniforms_for_world,
-    light_uniforms_from_viewer,
+    light_uniforms_for_cascades, light_uniforms_from_viewer,
 };

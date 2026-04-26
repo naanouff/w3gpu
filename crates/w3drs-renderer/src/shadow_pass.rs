@@ -1,4 +1,7 @@
-use crate::{light_uniforms::LightUniforms, vertex_layout::VERTEX_BUFFER_LAYOUT};
+use crate::{
+    frame_uniforms::SHADOW_CASCADE_COUNT, light_uniforms::LightUniforms,
+    vertex_layout::VERTEX_BUFFER_LAYOUT,
+};
 use std::mem::size_of;
 
 pub const SHADOW_SIZE: u32 = 2048;
@@ -9,14 +12,16 @@ pub struct ShadowPass {
     /// Depth-only pipeline rendering scene from the light POV.
     pub depth_pipeline: wgpu::RenderPipeline,
     pub shadow_texture: wgpu::Texture,
-    /// View into `shadow_texture` — used as depth attachment in shadow pass
-    /// and as `texture_depth_2d` in the combined IBL+shadow bind group (group 3).
-    pub shadow_view: wgpu::TextureView,
+    /// 2D-array view sampled in PBR (`texture_depth_2d_array`).
+    pub shadow_array_view: wgpu::TextureView,
+    /// Per-cascade single-layer depth views used as depth attachments.
+    pub cascade_views: [wgpu::TextureView; SHADOW_CASCADE_COUNT],
     /// Comparison sampler for PCF — exposed so the engine can build group 3.
     pub comparison_sampler: wgpu::Sampler,
-    pub light_uniform_buffer: wgpu::Buffer,
-    /// Bind group for group(0) in the shadow depth pass (LightUniforms, VERTEX).
-    pub shadow_light_bind_group: wgpu::BindGroup,
+    /// One uniform buffer per cascade so each render pass sees its own matrix.
+    pub light_uniform_buffers: [wgpu::Buffer; SHADOW_CASCADE_COUNT],
+    /// One bind group per cascade referencing the corresponding buffer.
+    pub shadow_light_bind_groups: [wgpu::BindGroup; SHADOW_CASCADE_COUNT],
 }
 
 impl ShadowPass {
@@ -28,7 +33,7 @@ impl ShadowPass {
             size: wgpu::Extent3d {
                 width: SHADOW_SIZE,
                 height: SHADOW_SIZE,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: SHADOW_CASCADE_COUNT as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -37,17 +42,36 @@ impl ShadowPass {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let shadow_view = shadow_texture.create_view(&Default::default());
-
-        // ── light uniform buffer ─────────────────────────────────────────────
-        let light_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("light uniforms"),
-            size: size_of::<LightUniforms>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+        let shadow_array_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow map array view"),
+            format: Some(wgpu::TextureFormat::Depth32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            usage: Some(
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            ),
+            aspect: wgpu::TextureAspect::DepthOnly,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(SHADOW_CASCADE_COUNT as u32),
+        });
+        let cascade_views = std::array::from_fn(|i| {
+            shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("shadow map cascade view"),
+                format: Some(wgpu::TextureFormat::Depth32Float),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(
+                    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                ),
+                aspect: wgpu::TextureAspect::DepthOnly,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: i as u32,
+                array_layer_count: Some(1),
+            })
         });
 
-        // ── group 0 layout for shadow depth pass (LightUniforms, VERTEX only) ─
+        // ── per-cascade light uniform buffers ──────────────────────────────────
         let shadow_light_bg_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("shadow light bg layout"),
@@ -62,15 +86,26 @@ impl ShadowPass {
                     count: None,
                 }],
             });
-
-        let shadow_light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow light bind group"),
-            layout: &shadow_light_bg_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: light_uniform_buffer.as_entire_binding(),
-            }],
-        });
+        let light_uniform_buffers: [wgpu::Buffer; SHADOW_CASCADE_COUNT] =
+            std::array::from_fn(|i| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("light uniforms cascade {i}")),
+                    size: size_of::<LightUniforms>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            });
+        let shadow_light_bind_groups: [wgpu::BindGroup; SHADOW_CASCADE_COUNT] =
+            std::array::from_fn(|i| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("shadow light bind group cascade {i}")),
+                    layout: &shadow_light_bg_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: light_uniform_buffers[i].as_entire_binding(),
+                    }],
+                })
+            });
 
         // ── comparison sampler (PCF) — stored so engine can build group 3 ────
         let comparison_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -131,14 +166,33 @@ impl ShadowPass {
         Self {
             depth_pipeline,
             shadow_texture,
-            shadow_view,
+            shadow_array_view,
+            cascade_views,
             comparison_sampler,
-            light_uniform_buffer,
-            shadow_light_bind_group,
+            light_uniform_buffers,
+            shadow_light_bind_groups,
         }
     }
 
+    /// Write all cascade light uniforms in one go — safe with `queue.write_buffer`
+    /// because each cascade targets a separate GPU buffer.
+    pub fn update_cascade_lights(
+        &self,
+        queue: &wgpu::Queue,
+        cascades: &[LightUniforms; SHADOW_CASCADE_COUNT],
+    ) {
+        for (i, u) in cascades.iter().enumerate() {
+            queue.write_buffer(&self.light_uniform_buffers[i], 0, bytemuck::bytes_of(u));
+        }
+    }
+
+    /// Backward-compat: writes to cascade 0 only (used by hdr-ibl-skybox).
     pub fn update_light(&self, queue: &wgpu::Queue, uniforms: &LightUniforms) {
-        queue.write_buffer(&self.light_uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+        queue.write_buffer(&self.light_uniform_buffers[0], 0, bytemuck::bytes_of(uniforms));
+    }
+
+    #[inline]
+    pub fn cascade_view(&self, cascade_idx: usize) -> &wgpu::TextureView {
+        &self.cascade_views[cascade_idx]
     }
 }

@@ -24,6 +24,7 @@ use w3drs_renderer::{
     GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures,
     PostProcessPass, RenderState, ShadowPass, TonemapParams, DEPTH_FORMAT, HDR_FORMAT,
     IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE,
+    SHADOW_CASCADE_COUNT,
 };
 use winit::{
     application::ApplicationHandler,
@@ -776,12 +777,17 @@ impl State {
             );
         }
 
-        let (view_proj, _) = camera_view_proj(&self.world);
+        // `camera_view_proj` returns `(view, projection)` — combine them so the
+        // cull / Hi-Z passes receive `projection * view` (clip-space matrix).
+        // Cull is disabled in this viewer, but keep the matrix correct so the
+        // bound resource is well-defined.
+        let (cam_view, cam_proj) = camera_view_proj(&self.world);
+        let cull_vp = cam_proj * cam_view;
         self.context.queue.write_buffer(
             &self.cull_pass.cull_uniform_buf,
             0,
             bytemuck::bytes_of(&CullUniforms {
-                view_proj: view_proj.to_cols_array_2d(),
+                view_proj: cull_vp.to_cols_array_2d(),
                 screen_size: [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
                 entity_count,
                 mip_levels: self.hiz_pass.mip_count,
@@ -790,7 +796,7 @@ impl State {
             }),
         );
         self.hiz_pass
-            .update_camera(&self.context.queue, view_proj.to_cols_array_2d());
+            .update_camera(&self.context.queue, cull_vp.to_cols_array_2d());
 
         let (view, projection, cam_pos) = world_active_camera(&self.world);
         let inv_vp = (projection * view).inverse();
@@ -858,7 +864,7 @@ impl State {
                 label: Some("shadow"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_pass.shadow_view,
+                    view: self.shadow_pass.cascade_view(0),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -869,7 +875,7 @@ impl State {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[0], &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
@@ -1098,7 +1104,8 @@ fn build_frame_uniforms(
         ambient_intensity: 0.12,
         total_time,
         _pad2: [0.0; 3],
-        light_view_proj: light.view_proj,
+        light_view_proj_cascades: [light.view_proj; SHADOW_CASCADE_COUNT],
+        shadow_cascade_splits: [1.0e6; SHADOW_CASCADE_COUNT],
         shadow_bias: light.shadow_bias,
         ibl_flags,
         ibl_diffuse_scale: 0.1,
@@ -1134,7 +1141,7 @@ fn build_env_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: wgpu::BindingResource::TextureView(&shadow.shadow_view),
+                resource: wgpu::BindingResource::TextureView(&shadow.shadow_array_view),
             },
             wgpu::BindGroupEntry {
                 binding: 5,

@@ -18,6 +18,12 @@ pub struct CullUniforms {
     pub _pad: [u32; 3],           // 12
 }
 
+/// Per-frame split breakdown of culling rejects (8 bytes / 2 atomics on GPU).
+///
+/// `[0] = frustum_rejected`, `[1] = hiz_rejected`.  CPU-readable layout so a
+/// COPY_SRC → MAP_READ readback decodes directly into `[u32; 2]`.
+pub const CULL_STATS_SIZE: u64 = 8;
+
 /// GPU resources for the Hi-Z occlusion-cull compute pass.
 pub struct CullPass {
     pipeline: wgpu::ComputePipeline,
@@ -30,6 +36,12 @@ pub struct CullPass {
     /// GPU-written indirect draw args — one `DrawIndexedIndirectArgs` per entity.
     /// instance_count = 0 (culled) or 1 (visible).
     pub entity_indirect_buf: wgpu::Buffer,
+    /// 2× u32 atomic counters: `[frustum_rejected, hiz_rejected]`. Cleared to
+    /// zero by `clear_stats()` at the start of every frame, incremented by
+    /// `atomicAdd` in the cull shader, copied to a readback staging buffer by
+    /// the caller for diagnostics. Splits the cull budget into "rejected by
+    /// GPU frustum reject" vs. "rejected by Hi-Z occlusion test".
+    pub cull_stats_buf: wgpu::Buffer,
 
     cull_bg: wgpu::BindGroup,
     hiz_bg: Option<wgpu::BindGroup>,
@@ -68,6 +80,16 @@ impl CullPass {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(CULL_STATS_SIZE),
                     },
                     count: None,
                 },
@@ -114,6 +136,18 @@ impl CullPass {
             mapped_at_creation: false,
         });
 
+        // 2× u32 atomic counters cleared every frame; COPY_SRC enables readback
+        // diagnostics, COPY_DST enables the cheap CPU-side `queue.write_buffer`
+        // zero-init in `clear_stats()`.
+        let cull_stats_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cull stats buf"),
+            size: CULL_STATS_SIZE,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
         let cull_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cull bg"),
             layout: &cull_bg_layout,
@@ -129,6 +163,10 @@ impl CullPass {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: entity_indirect_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: cull_stats_buf.as_entire_binding(),
                 },
             ],
         });
@@ -159,9 +197,18 @@ impl CullPass {
             cull_uniform_buf,
             entity_cull_buf,
             entity_indirect_buf,
+            cull_stats_buf,
             cull_bg,
             hiz_bg: None,
         }
+    }
+
+    /// Zero the 2× u32 atomic counters before each cull dispatch.
+    /// Must be called every frame *before* `encode()`, otherwise `atomicAdd`
+    /// in the cull shader keeps accumulating across frames.
+    pub fn clear_stats(&self, queue: &wgpu::Queue) {
+        let zero: [u32; 2] = [0, 0];
+        queue.write_buffer(&self.cull_stats_buf, 0, bytemuck::cast_slice(&zero));
     }
 
     /// Rebuild the Hi-Z bind group after `HizPass::resize()`.

@@ -18,14 +18,15 @@ use w3drs_ecs::{Scheduler, World};
 use w3drs_input::InputFrame;
 use w3drs_render_graph::{Pass, RenderGraphDocument};
 use w3drs_renderer::{
-    build_entity_list, build_frame_uniforms_for_world, camera_system, derive_shadow_batches,
+    active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
+    derive_shadow_batches,
     encode_render_graph_passes_v0_with_wgsl, encode_render_graph_passes_v0_with_wgsl_host,
-    light_uniforms_from_viewer, parse_render_graph_json, transform_system,
+    light_uniforms_for_cascades, parse_render_graph_json, transform_system,
     validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
     DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
     MaterialTextures, PostProcessPass, PreparedIbl, RenderGraphExecError, RenderGraphGpuRegistry,
     RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams,
-    MAX_CULL_ENTITIES, SHADOW_SIZE,
+    CULL_STATS_SIZE, MAX_CULL_ENTITIES, SHADOW_CASCADE_COUNT, SHADOW_SIZE,
 };
 
 use winit::window::Window;
@@ -118,12 +119,14 @@ fn parse_phase_b_cli() -> (Option<PathBuf>, String, RenderGraphSlot) {
     (json, readback, slot)
 }
 
+#[allow(dead_code)]
 struct ShadowGraphInViewer {
     doc: RenderGraphDocument,
     registry: RenderGraphGpuRegistry,
     shaders: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 struct PhaseBRenderGraphHook {
     doc: RenderGraphDocument,
     registry: RenderGraphGpuRegistry,
@@ -131,6 +134,7 @@ struct PhaseBRenderGraphHook {
     shadow: ShadowGraphInViewer,
 }
 
+#[allow(dead_code)]
 struct KhronosShadowHost<'a> {
     asset_registry: &'a AssetRegistry,
     shadow_batches: &'a [ShadowBatch],
@@ -197,7 +201,7 @@ enum AssetLoadResult {
 fn texture2d_gpu_shadow_map(sp: &ShadowPass) -> Texture2dGpu {
     Texture2dGpu {
         texture: sp.shadow_texture.clone(),
-        view: sp.shadow_view.clone(),
+        view: sp.cascade_view(0).clone(),
         format: wgpu::TextureFormat::Depth32Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         width: SHADOW_SIZE,
@@ -258,7 +262,7 @@ fn try_build_phase_b_hook(
         .ok()?;
     sreg.insert_buffer(
         "light_uniforms".to_string(),
-        shadow_pass.light_uniform_buffer.clone(),
+        shadow_pass.light_uniform_buffers[0].clone(),
     );
     sreg.insert_buffer(
         "pbr_instance_matrices".to_string(),
@@ -327,7 +331,26 @@ pub struct PbrState {
 
     // Readback + metrics
     readback_buf: wgpu::Buffer,
-    last_hiz_visible: u32,
+    /// 8-byte readback companion to `cull_pass.cull_stats_buf` —
+    /// `[frustum_rejected, hiz_rejected]` populated by atomicAdd in the cull
+    /// shader and copied to this buffer at the end of every frame.
+    /// Decoded on demand by `validate_hiz_now` (F5).
+    cull_stats_readback_buf: wgpu::Buffer,
+    /// Last *measured* visible count after the GPU cull pass (set on F5 /
+    /// `validate_hiz_now`). `None` = no measurement yet (no per-frame stall by
+    /// default). The companion `last_hiz_frustum` records the
+    /// `frustum_visible` value at the moment of the measurement, so we can
+    /// auto-invalidate the snapshot whenever the scene changes (e.g. switching
+    /// GLB sample, loading a new model).
+    last_hiz_visible: Option<u32>,
+    last_hiz_frustum: Option<u32>,
+    /// Last measured count of entities rejected by the GPU frustum reject
+    /// (behind camera, outside XY, past far). Counted via atomic in
+    /// `occlusion_cull.wgsl`. `None` = stale or never measured.
+    last_frustum_rejected: Option<u32>,
+    /// Last measured count of entities rejected by the Hi-Z occlusion test
+    /// (depth_near > hiz_depth_max). `None` = stale or never measured.
+    last_hiz_rejected: Option<u32>,
     potential_count: u32,
     frustum_visible: u32,
 
@@ -501,6 +524,16 @@ impl PbrState {
             mapped_at_creation: false,
         });
 
+        // 8-byte staging buffer for the [frustum_rejected, hiz_rejected]
+        // atomic counters; populated by a copy_buffer_to_buffer at the end of
+        // every frame, decoded on demand by validate_hiz_now (F5).
+        let cull_stats_readback_buf = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cull stats readback"),
+            size: CULL_STATS_SIZE,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
         // Phase B : CLI comme Khronos, sinon graphe par défaut du dépôt.
         let (rg_cli_path, rg_cli_readback, rg_cli_slot) = parse_phase_b_cli();
         let (phase_b_graph_path, rg_readback, render_graph_slot) = if let Some(p) = rg_cli_path {
@@ -572,7 +605,11 @@ impl PbrState {
             sample_idx: 0,
             model_entities: Vec::new(),
             readback_buf,
-            last_hiz_visible: 0,
+            cull_stats_readback_buf,
+            last_hiz_visible: None,
+            last_hiz_frustum: None,
+            last_frustum_rejected: None,
+            last_hiz_rejected: None,
             potential_count: 0,
             frustum_visible: 0,
             total_time: 0.0,
@@ -909,12 +946,13 @@ impl PbrState {
             );
         }
 
-        let (view_proj, _) = camera_view_proj(&self.world);
+        let (cam_view, cam_proj) = camera_view_proj(&self.world);
+        let cull_vp = cam_proj * cam_view;
         self.context.queue.write_buffer(
             &self.cull_pass.cull_uniform_buf,
             0,
             bytemuck::bytes_of(&CullUniforms {
-                view_proj: view_proj.to_cols_array_2d(),
+                view_proj: cull_vp.to_cols_array_2d(),
                 screen_size: [self.hiz_pass.width as f32, self.hiz_pass.height as f32],
                 entity_count,
                 mip_levels: self.hiz_pass.mip_count,
@@ -923,22 +961,37 @@ impl PbrState {
             }),
         );
         self.hiz_pass
-            .update_camera(&self.context.queue, view_proj.to_cols_array_2d());
+            .update_camera(&self.context.queue, cull_vp.to_cols_array_2d());
 
         self.render(entity_count, &sorted, &shadow_batches);
 
-        // Avoid a per-frame MAP_READ + Maintain::Wait stall in the interactive viewer.
-        // The exact Hi-Z count can be reintroduced behind a debug-only async readback.
-        self.last_hiz_visible = self.frustum_visible;
+        // Per-frame readback is intentionally NOT performed (it would require
+        // `Maintain::Wait` and stall the GPU). Use `validate_hiz_now` (F5) for
+        // an accurate measurement on demand.
 
-        // Monotonicity invariant: culling can only reduce draw count, never increase it.
-        // A violation here means a logic error in the cull pass or the ECS pipeline.
-        debug_assert!(
-            self.last_hiz_visible <= self.frustum_visible,
-            "Hi-Z culling emitted more draws than frustum: hiz={} frustum={}",
-            self.last_hiz_visible,
-            self.frustum_visible,
-        );
+        // Monotonicity invariant: culling can only reduce draw count, never
+        // increase it. The Hi-Z reading is a *snapshot* taken at F5; if the
+        // scene composition has since changed (sample swap, GLB reload) the
+        // snapshot is stale → discard it instead of asserting against an
+        // unrelated `frustum_visible`.
+        if let (Some(hiz), Some(measured_frust)) =
+            (self.last_hiz_visible, self.last_hiz_frustum)
+        {
+            if measured_frust == self.frustum_visible {
+                debug_assert!(
+                    hiz <= self.frustum_visible,
+                    "Hi-Z culling emitted more draws than frustum: hiz={hiz} frustum={}",
+                    self.frustum_visible,
+                );
+            } else {
+                // Scene changed since the last F5 measurement → drop the whole
+                // snapshot so the title shows "?" instead of stale numbers.
+                self.last_hiz_visible = None;
+                self.last_hiz_frustum = None;
+                self.last_frustum_rejected = None;
+                self.last_hiz_rejected = None;
+            }
+        }
         debug_assert!(
             self.frustum_visible <= self.potential_count,
             "Frustum culling emitted more draws than total: frustum={} total={}",
@@ -958,14 +1011,110 @@ impl PbrState {
             "bloom off"
         };
         let msaa = self.context.main_pass_msaa;
+        // post-frustum-GPU = pre-cull − frustum_rejected (cull shader's coarse
+        // 6-plane reject). post-Hi-Z = visible after both stages = drawn.
+        let post_frustum_str = match (self.last_hiz_frustum, self.last_frustum_rejected) {
+            (Some(pre), Some(fr)) => pre.saturating_sub(fr).to_string(),
+            _ => "?".to_string(),
+        };
+        let hiz_str = self
+            .last_hiz_visible
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "?".to_string());
         self.window.set_title(&format!(
-            "pbr-viewer | {} | {name} ({}/{}) | {mode} {pp} | MSAA {msaa}× | draws {} / vis {}",
+            "pbr-viewer | {} | {name} ({}/{}) | {mode} {pp} | MSAA {msaa}× | total {} / pre-cull {} / frust→{} / hiz→{} (F5)",
             self.model_hint,
             self.sample_idx + 1,
             KHRONOS_GLBS.len(),
-            self.last_hiz_visible,
+            self.potential_count,
             self.frustum_visible,
+            post_frustum_str,
+            hiz_str,
         ));
+    }
+
+    /// Synchronous one-shot readback of the indirect-args buffer **and** the
+    /// 2× u32 cull-stats atomics. Decodes the breakdown
+    /// `pre-cull → frustum-GPU → Hi-Z` from a single `Maintain::Wait`:
+    ///
+    /// - `pre-cull`         = `frustum_visible` (entities sent to GPU compute)
+    /// - `frustum_rejected` = stats[0]   (rejected by GPU 6-plane reject)
+    /// - `hiz_rejected`     = stats[1]   (rejected by Hi-Z occlusion test)
+    /// - `visible`          = sum of indirect `instance_count` fields
+    ///
+    /// The invariant
+    /// `visible + frustum_rejected + hiz_rejected = pre-cull`
+    /// is asserted in debug builds.
+    ///
+    /// Stalls the GPU briefly so it must be triggered manually (F5), never on
+    /// every frame.
+    pub fn validate_hiz_now(&mut self) {
+        let n = self.frustum_visible;
+        // ── stats readback (8 bytes, always meaningful even when n=0) ─────
+        let (frustum_rejected, hiz_rejected) = {
+            let slice = self.cull_stats_readback_buf.slice(..CULL_STATS_SIZE);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            self.context.device.poll(wgpu::Maintain::Wait);
+            let pair: [u32; 2] = {
+                let view = slice.get_mapped_range();
+                let s: &[u32] = bytemuck::cast_slice(&view);
+                [s[0], s[1]]
+            };
+            self.cull_stats_readback_buf.unmap();
+            (pair[0], pair[1])
+        };
+
+        if n == 0 {
+            self.last_hiz_visible = Some(0);
+            self.last_hiz_frustum = Some(0);
+            self.last_frustum_rejected = Some(frustum_rejected);
+            self.last_hiz_rejected = Some(hiz_rejected);
+            log::info!(
+                "Hi-Z validation: total={} pre-cull=0 — nothing to measure",
+                self.potential_count
+            );
+            return;
+        }
+
+        // ── indirect readback (sum of instance_count for first n entities) ─
+        let stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
+        let bytes = n as u64 * stride;
+        let slice = self.readback_buf.slice(..bytes);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.context.device.poll(wgpu::Maintain::Wait);
+        let visible: u32 = {
+            let view = slice.get_mapped_range();
+            let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
+            args.iter().map(|a| a.instance_count).sum()
+        };
+        self.readback_buf.unmap();
+
+        let post_frustum = n.saturating_sub(frustum_rejected);
+        log::info!(
+            "Cull validation: cull_enabled={} | total={} | pre-cull={} | -frustum={} → {} | -Hi-Z={} → {} | drawn={}",
+            self.gpu_occlusion,
+            self.potential_count,
+            n,
+            frustum_rejected,
+            post_frustum,
+            hiz_rejected,
+            visible,
+            visible,
+        );
+        debug_assert!(
+            visible <= n,
+            "cull-pass reported more draws ({visible}) than fed in ({n})"
+        );
+        debug_assert_eq!(
+            visible + frustum_rejected + hiz_rejected,
+            n,
+            "cull stats inconsistent: visible({visible}) + frustum({frustum_rejected}) + hiz({hiz_rejected}) ≠ pre-cull({n})"
+        );
+        self.last_hiz_visible = Some(visible);
+        self.last_hiz_frustum = Some(n);
+        self.last_frustum_rejected = Some(frustum_rejected);
+        self.last_hiz_rejected = Some(hiz_rejected);
+        self.window.request_redraw();
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -992,6 +1141,7 @@ impl PbrState {
         }
     }
 
+    #[allow(dead_code)]
     fn encode_shadow_data_driven(
         &self,
         enc: &mut wgpu::CommandEncoder,
@@ -1033,19 +1183,21 @@ impl PbrState {
         };
         let view = output.texture.create_view(&Default::default());
 
+        let (view_m, proj_m, cam_pos) = active_camera_vpc(&self.world);
+        let frame_uniforms = build_frame_uniforms_for_viewer(
+            view_m,
+            proj_m,
+            cam_pos,
+            self.total_time,
+            self.live_ibl_diffuse,
+            &self.viewer_light,
+        );
+        let (shadow_cascades, _splits) =
+            light_uniforms_for_cascades(view_m, proj_m, cam_pos, &self.viewer_light);
         self.context.queue.write_buffer(
             &self.render_state.frame_uniform_buffer,
             0,
-            bytemuck::bytes_of(&build_frame_uniforms_for_world(
-                &self.world,
-                self.total_time,
-                self.live_ibl_diffuse,
-                &self.viewer_light,
-            )),
-        );
-        self.shadow_pass.update_light(
-            &self.context.queue,
-            &light_uniforms_from_viewer(&self.viewer_light),
+            bytemuck::bytes_of(&frame_uniforms),
         );
 
         let indirect_stride = size_of::<DrawIndexedIndirectArgs>() as u64;
@@ -1068,10 +1220,16 @@ impl PbrState {
             );
         }
 
-        // 2. GPU cull (Hi‑Z ou tout dessiner si `cull_enabled == 0` dans le shader)
+        // 2. GPU cull (Hi‑Z ou tout dessiner si `cull_enabled == 0` dans le shader).
+        //    Reset the 2× u32 atomic stat counters before dispatch, otherwise
+        //    `atomicAdd` keeps accumulating across frames.
+        self.cull_pass.clear_stats(&self.context.queue);
         self.cull_pass.encode(&mut enc, entity_count);
 
-        // 3. Copy indirect buffer → readback staging
+        // 3. Copy indirect buffer + cull stats → readback staging.
+        //    The indirect buffer carries one DrawIndexedIndirectArgs per entity
+        //    (instance_count = 0/1). The 8-byte stats buffer carries
+        //    [frustum_rejected, hiz_rejected] populated by the cull shader.
         if entity_count > 0 {
             enc.copy_buffer_to_buffer(
                 &self.cull_pass.entity_indirect_buf,
@@ -1081,20 +1239,27 @@ impl PbrState {
                 entity_count as u64 * indirect_stride,
             );
         }
+        enc.copy_buffer_to_buffer(
+            &self.cull_pass.cull_stats_buf,
+            0,
+            &self.cull_stats_readback_buf,
+            0,
+            CULL_STATS_SIZE,
+        );
 
         if self.render_graph_slot == RenderGraphSlot::AfterCullReadback {
             self.encode_phase_b_graph(&mut enc);
         }
 
-        // 4. Shadow depth — B.7 data-driven si Phase B active, sinon [`ShadowPass`] classique.
-        if let Some(hook) = &self.phase_b_render_graph {
-            self.encode_shadow_data_driven(&mut enc, &hook.shadow, shadow_batches);
-        } else {
+        // 4. Shadow depth (CSM): upload all cascade uniforms once, render each cascade.
+        self.shadow_pass
+            .update_cascade_lights(&self.context.queue, &shadow_cascades);
+        for cascade_idx in 0..SHADOW_CASCADE_COUNT {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_pass.shadow_view,
+                    view: self.shadow_pass.cascade_view(cascade_idx),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -1105,7 +1270,7 @@ impl PbrState {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_group, &[]);
+            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
@@ -1823,7 +1988,7 @@ fn build_env_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: wgpu::BindingResource::TextureView(&shadow.shadow_view),
+                resource: wgpu::BindingResource::TextureView(&shadow.shadow_array_view),
             },
             wgpu::BindGroupEntry {
                 binding: 5,

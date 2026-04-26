@@ -79,6 +79,7 @@ impl ApplicationHandler for App {
                     KeyCode::ArrowLeft if !*repeat && !wants_kb => state.prev_sample(),
                     KeyCode::ArrowRight if !*repeat && !wants_kb => state.next_sample(),
                     KeyCode::Space if !*repeat && !wants_kb => state.toggle_gpu_occlusion(),
+                    KeyCode::F5 if !*repeat && !wants_kb => state.validate_hiz_now(),
                     _ => {}
                 }
             }
