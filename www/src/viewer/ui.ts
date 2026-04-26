@@ -121,7 +121,7 @@ export function mountViewerPanel(
     </section>
     <section class="w3d-section"><h3>Rendu</h3>
       <label class="w3d-row"><input type="checkbox" class="w3d-cull" />
-        Culling Hi-Z (Space)</label>
+        Culling Hi-Z (H, Build)</label>
       <p class="w3d-hint">Désactivé par défaut : le test Hi-Z par AABB peut cacher des morceaux «&nbsp;derrière&nbsp;» d’autres (ex. montre multi-mesh, vue du dessus).</p>
       <button type="button" class="w3d-btn w3d-reframe">Reframe camera (AABB)</button>
     </section>

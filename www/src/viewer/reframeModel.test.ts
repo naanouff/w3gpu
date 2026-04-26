@@ -4,7 +4,7 @@ import { reframeOnModelEntities } from './reframeModel.js';
 describe('reframeOnModelEntities', () => {
   it('passe un Uint32Array des entités modèle au moteur', () => {
     const reframe = vi.fn();
-    const engine = { reframeCameraAroundModelEntities: reframe } as import(
+    const engine = { reframeCameraAroundModelEntities: reframe } as unknown as import(
       '../../pkg/w3drs_wasm.js'
     ).W3drsEngine;
 

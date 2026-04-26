@@ -20,7 +20,9 @@ describe('cameraOrbit', () => {
     acc.wheel = 0.5;
 
     const apply = vi.fn();
-    const engine = { applyOrbitInput: apply } as import('../../pkg/w3drs_wasm.js').W3drsEngine;
+    const engine = { applyOrbitInput: apply } as unknown as import(
+      '../../pkg/w3drs_wasm.js'
+    ).W3drsEngine;
 
     applyOrbitAccumToEngine(engine, acc);
     expect(apply).toHaveBeenCalledWith(2, -1, 0, 0, 0, 0, 0.5);

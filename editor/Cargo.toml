@@ -1,0 +1,31 @@
+[package]
+name = "w3d-editor"
+edition.workspace = true
+version.workspace = true
+description = "Coquille shell de l’éditeur w3d (natif, egui/eframe)."
+
+[[bin]]
+name = "w3d-editor"
+path = "src/main.rs"
+
+[lib]
+name = "w3d_editor"
+path = "src/lib.rs"
+
+[dependencies]
+w3drs-assets = { path = "../crates/w3drs-assets" }
+w3drs-assistant-api = { path = "../crates/w3drs-assistant-api" }
+w3drs-assistant-http = { path = "../crates/w3drs-assistant-http", optional = true }
+eframe = { version = "0.33", default-features = true, features = [
+    "default_fonts",
+    "glow",
+] }
+egui = "0.33"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = []
+# Client HTTP vers un serveur type Ollama (optionnel, pas requis pour un shell vide).
+sidecar-ollama = ["dep:w3drs-assistant-http"]

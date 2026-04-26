@@ -4,7 +4,7 @@
 |-------|--------|
 | **ID** | `PHASE-B-EDITOR-UI` |
 | **Note** | **Périmètre éditeur** (shell, modes, parcours). [ROADMAP § Phase K](../ROADMAP.md) (section *Phase K*) ; **distinct** de [`PHASE-B`](phase-B-graphe-rendu-compute.md) (render graph + compute). |
-| **Roadmap** | [ROADMAP § Phase K](../ROADMAP.md) (éditeur natif, workspace, `www/` allégé) — ce ticket **détaille la référence visuelle et le découpage UI**. |
+| **Roadmap** | [ROADMAP § Phase K](../ROADMAP.md) (éditeur natif, workspace, `www/` allégé) — ce ticket **détaille la référence visuelle et le découpage UI**. **Priorité livraison : natif d’abord** ; `www/` aligné en second (allégé). |
 | **Statut** | À faire |
 | **Ticket parent / infrastructure** | [Phase K — Éditeur, workspaces, extensions](phase-K-editeur-workspaces.md) (workspace, extensions, thème / layout data-driven) |
 
@@ -20,7 +20,7 @@ L’**implémentation** cible l’**équivalence de flux** et de structure (rail
 
 - **Data-driven** : **thème** (clair/sombre, tokens) et **layout** (docking, panneaux) depuis **fichiers versionnés** — pas de palette ou disposition « uniquement dans le binaire » hors bootstrap minimal documenté.
 - **Multithreading** : file de commandes **moteur ↔ UI** **bornée** ; pas de blocage render sur l’UI (voir Phase K).
-- **Modularité** : moteur en **crates** ; shell éditeur consommateur via **API stable** ; `www/` = surface **allégée** de la **même ergonomie** (modes, flux) que l’éditeur natif.
+- **Modularité** : moteur en **crates** ; shell **natif** en tête de file pour les jalons ; consommation via **API stable** ; `www/` = surface **allégée** de la **même ergonomie** (modes, flux) **après** / en parallèle non bloquant, pas l’inverse.
 
 ## Écart architecture (existant → cible)
 
@@ -98,7 +98,7 @@ flowchart LR
 ## Definition of Ready (DOR)
 
 - [ ] **Maquette v3** + **`v3-hifi.css`** présents sous [`docs/design/`](../design/README.md) (déjà le cas) ; référence lue en revue.
-- [ ] **Ordre de priorité** des **jalons d’écran** (souvent : rail + Build + Play, puis Onboarding, Paint, Logic, transition) **écrit** dans le ticket ou l’issue fille.
+- [ ] **Ordre de priorité** des **jalons d’écran** : **d’abord sur l’éditeur natif** (souvent : rail + Build + Play, puis Onboarding, Paint, Logic, transition) ; **ensuite** / en parallèle le shell `www/` — **écrit** dans le ticket ou l’issue fille.
 - [ ] **Schéma** ou spec **fichier** thème + layout (même brouillon) s’il manque, ou tâche explicite d’en produire un avant le premier merge layout.
 - [ ] `cargo xtask check` vert sur la branche de base.
 - [ ] Cohérence confirmée avec [Phase K — DOR](phase-K-editeur-workspaces.md#definition-of-ready-dor) pour workspace / extensions (jalons communs non dupliqués inutilement).
@@ -107,7 +107,7 @@ flowchart LR
 
 ## Definition of Done (DOD)
 
-- [ ] Pour chaque **jalon** livré : **tests** (Rust et/ou TypeScript) exécutant le **code modifié** (politique [CONTRIBUTING — Testing](../../CONTRIBUTING.md#testing-policy)) ; **E2E** `www/` (thirtyfour / chromiumoxide) si le jalon touche le shell web ; **tests client natif** si le jalon touche l’**éditeur natif** / `examples/` concerné.
+- [ ] Pour chaque **jalon** livré : **tests** (Rust et/ou TypeScript) exécutant le **code modifié** (politique [CONTRIBUTING — Testing](../../CONTRIBUTING.md#testing-policy)) ; en priorité **tests client natif** / `examples/` quand le jalon est l’éditeur **natif** ; **E2E** `www/` (thirtyfour / chromiumoxide) si le jalon touche **aussi** le shell web.
 - [ ] Aucun **flux** de la section *Périmètre* marqué *fait* **sans** critère de reproductibilité (fixture, config, test).
 - [ ] Mise à jour de [`docs/journal.md`](../journal.md) lors d’un jalon **significatif** (stack UI, preuve d’écran, lien PR).
 

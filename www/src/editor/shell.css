@@ -1,0 +1,395 @@
+/* w3d shell www — inspired by Mode-based v3 hi-fi, tokens from editor-ui.json (apparence) */
+
+:root {
+  --w3d-rail: 72px;
+  --w3d-paper: #1c1b18;
+  --w3d-ink: #e8e2d5;
+  --w3d-ink-2: #8b8377;
+  --w3d-line: #2e2b27;
+  --w3d-chrome: #1c1b18;
+  --w3d-panel: #1f1d1a;
+  --w3d-hud: rgba(12, 11, 9, 0.55);
+}
+
+html.w3d-ui-light {
+  --w3d-paper: #faf8f5;
+  --w3d-ink: #1f1b16;
+  --w3d-ink-2: #7d7569;
+  --w3d-line: #ddd5c6;
+  --w3d-chrome: #f3efe9;
+  --w3d-panel: #ffffff;
+  --w3d-hud: rgba(250, 248, 245, 0.6);
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+#w3d-shell-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--w3d-ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--w3d-paper);
+}
+
+#w3d-app-wrap,
+.w3d-app-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--w3d-paper, #1c1b18);
+}
+
+.w3d-editor {
+  display: grid;
+  grid-template-columns: var(--w3d-rail) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+.w3d-editor--play {
+  /* Rail plus sombre en mode Play (maquette) */
+  --w3d-rail-skin: #100f0d;
+}
+
+.w3d-editor--play .w3d-rail {
+  background: var(--w3d-rail-skin);
+  border-color: #25231f;
+}
+
+/* Left rail */
+.w3d-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px 16px;
+  border-right: 1px solid var(--w3d-line);
+  background: var(--w3d-chrome);
+  z-index: 2;
+}
+
+.w3d-rail__brand {
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.1;
+  padding: 0 0 8px;
+  width: 100%;
+  text-align: center;
+  border-bottom: 1px solid var(--w3d-line);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+
+.w3d-rail__btn {
+  width: 100%;
+  max-width: 56px;
+  padding: 8px 0 6px;
+  margin: 0;
+  border: 1px solid var(--w3d-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w3d-ink);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+}
+
+.w3d-rail__btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.w3d-rail__name {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--w3d-ink-2);
+}
+
+.w3d-rail__key {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 8px;
+  color: var(--w3d-ink-2);
+  border: 1px solid var(--w3d-line);
+  border-radius: 2px;
+  padding: 0 2px;
+  line-height: 1.2;
+}
+
+.w3d-rail__btn[aria-pressed="true"] {
+  background: var(--w3d-ink);
+  color: var(--w3d-paper);
+  border-color: var(--w3d-ink);
+}
+.w3d-rail__btn[aria-pressed="true"] .w3d-rail__name,
+.w3d-rail__btn[aria-pressed="true"] .w3d-rail__key {
+  color: var(--w3d-paper);
+  border-color: color-mix(in oklab, var(--w3d-paper) 50%, transparent);
+}
+.w3d-rail__btn[aria-pressed="true"] svg {
+  stroke: var(--w3d-paper);
+}
+.w3d-rail__btn:hover {
+  filter: brightness(1.08);
+}
+
+/* Stage (column) */
+.w3d-stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--w3d-paper);
+}
+
+.w3d-stage__head {
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--w3d-line);
+  background: var(--w3d-chrome);
+  flex: 0 0 auto;
+}
+
+.w3d-stage__title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.w3d-stage__crumb {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--w3d-ink-2);
+}
+
+.w3d-stage__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grille 3 col (Build) vs viewport seul (Play, autres) */
+.w3d-surface {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-items: stretch;
+  position: relative;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "view";
+}
+
+.w3d-editor--build .w3d-surface {
+  grid-template-columns: 180px minmax(0, 1fr) 300px;
+  grid-template-rows: 1fr;
+  grid-template-areas: "out view ins";
+  gap: 0;
+}
+@media (max-width: 900px) {
+  .w3d-editor--build .w3d-surface {
+    grid-template-columns: 1fr;
+    grid-template-areas: "view";
+  }
+  .w3d-editor--build .w3d-outliner { display: none; }
+  .w3d-editor--build .w3d-inspector { display: none; }
+}
+
+.w3d-outliner { grid-area: out; }
+.w3d-viewport { grid-area: view; }
+.w3d-inspector { grid-area: ins; }
+
+/* Hors Build : seule la cellule centrale, panneaux latéraux cachés */
+.w3d-editor--build .w3d-outliner,
+.w3d-editor--build .w3d-inspector { display: flex; }
+.w3d-editor:not(.w3d-editor--build) .w3d-outliner,
+.w3d-editor:not(.w3d-editor--build) .w3d-inspector { display: none; }
+
+/* Build: outliner + viewport + inspector (legacy class removed) */
+.w3d-build { display: none; }
+
+.w3d-outliner {
+  border-right: 1px solid var(--w3d-line);
+  background: var(--w3d-panel);
+  font-size: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.w3d-outliner h3 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--w3d-ink-2);
+  margin: 0 0 4px;
+}
+
+.w3d-outliner__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--w3d-ink);
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+.w3d-outliner__row--sel {
+  background: #3a2a1c;
+}
+
+.w3d-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #0f0e0c;
+}
+
+/* Inspector (droit) — panneau existant s’y greffe */
+.w3d-inspector {
+  border-left: 1px solid var(--w3d-line);
+  background: var(--w3d-panel);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+#w3d-footer {
+  padding: 4px 12px 6px 16px;
+  font-size: 11px;
+  color: var(--w3d-ink-2);
+  border-top: 1px solid var(--w3d-line);
+  background: var(--w3d-chrome);
+  flex: 0 0 auto;
+}
+
+#status {
+  font-size: 11px;
+  color: var(--w3d-ink-2);
+}
+
+/* Placeholder modes (non-Build) */
+.w3d-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 200px;
+  color: var(--w3d-ink-2);
+  font-size: 0.95rem;
+}
+
+/* Play: HUD + rail plus sombre (surface inchangé : même canvas) */
+.w3d-play__hud {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--w3d-hud);
+  color: #f0e8dc;
+  font-size: 12px;
+  pointer-events: none;
+  border: 1px solid #3d3933;
+}
+
+.w3d-play__hud kbd {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  border: 1px solid #555;
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-left: 4px;
+}
+
+/* Bande d’intention (modes hors Build/Play) : au-dessus du viewport, sans couper le rendu */
+.w3d-mode-overlay {
+  position: absolute;
+  z-index: 2;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(12, 10, 8, 0.7);
+  color: #d8d0c4;
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}
+.w3d-editor--build .w3d-mode-overlay,
+.w3d-editor--play .w3d-mode-overlay { display: none; }
+.w3d-editor--play .w3d-mode-overlay[hidden] { display: none !important; }
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.canvas:active {
+  cursor: grabbing;
+}
+
+/* Panneau viewer hérité (classes existantes) */
+.w3d-panel {
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px 20px;
+  font-size: 12px;
+}
+
+.w3d-panel__title {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+/* Bouton flottant IA (jalon visuel) */
+.w3d-ai-fab {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--w3d-line);
+  background: var(--w3d-panel);
+  color: var(--w3d-ink);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+}
+.w3d-editor--play .w3d-ai-fab { opacity: 0.4; }
+.w3d-ai-fab:hover { filter: brightness(1.1); }

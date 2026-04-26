@@ -18,6 +18,7 @@ Les identifiants `<id>` suivent les tickets (`phase-a`, `phase-b`, … `phase-l`
 |-------|---------|------|
 | A | [`phase-a/`](phase-a/) | DOR : README + manifeste + chemins documentés |
 | B | [`phase-b/`](phase-b/) | Jalon v0 : [`render_graph.json`](phase-b/render_graph.json) + shaders + parseur `w3drs-render-graph` |
+| K | [`phase-k/`](phase-k/) | Jalon v0 : [`editor-ui.json`](phase-k/editor-ui.json) (shell `www/`, thème + rail 8 modes) — voir [Phase K](../../docs/tickets/phase-K-editeur-workspaces.md) |
 
 ## Rôle
 

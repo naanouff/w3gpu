@@ -30,6 +30,7 @@ crates/
 examples/
   khronos-pbr-sample/  # Desktop viewer (winit) — seven Phase A GLB + orbit + IBL
   phase-b-graph/        # Headless: render graph JSON + checksum (Phase B fixture)
+editor/             # w3d-editor: shell auteur natif (egui) — coquille phase-k
 www/                # Vite project consuming the WASM package
   public/           # Static assets tracked via Git LFS (*.glb, *.gltf, *.bin, *.hdr)
 xtask/              # cargo xtask runner
@@ -56,7 +57,8 @@ git lfs pull          # download tracked assets after cloning
 
 ```bash
 cargo xtask www      # build WASM + start Vite dev server (http://localhost:5173)
-cargo xtask client   # build + run the native desktop client
+cargo xtask client   # build + run the native PBR viewer (khronos-pbr-sample)
+cargo xtask editor   # build + run the w3d-editor shell (egui, fixture phase-k)
 ```
 
 Both commands handle all build steps automatically. `cargo xtask www` also runs `npm install` if `node_modules` is missing. On **Windows**, `xtask` appelle **`npm.cmd`** (évite le shim `npm.ps1` bloqué par la politique d’exécution PowerShell). TypeScript (Vitest) dans `www/` : `cd www && npm test` — voir [Testing policy](CONTRIBUTING.md#testing-policy) dans [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,0 +1,10 @@
+---
+description: Priorité éditeur natif (shell w3d) vs www
+alwaysApply: true
+---
+
+# w3drs — priorité éditeur natif
+
+- **Ordre de livraison** : les jalons **shell / workspace / thème / layout** de l’éditeur ciblent **d’abord le client natif** (stack UI à trancher, réf. visuelle GPUI·Zed-like, warm gray + ambre *Rust* — `docs/design/v3-hifi.css`, `fixtures/phases/phase-k/`, voir [ROADMAP — Phase K](docs/ROADMAP.md)).
+- Le shell **`www/`** reste **allégé** : parité d’**ergonomie** (modes, flux) et CI WASM / E2E, **sans** remplacer le natif sur la feuille de route.
+- Toute tâche “éditeur” : privilégier **crates + binaire natif** (`khronos-pbr-sample` → futur hôte) avant d’étendre **uniquement** le web, sauf contrainte explicite (bug WASM, E2E).

@@ -5,7 +5,8 @@
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "vitest.config.ts", "playwright.config.ts", "e2e/**/*.ts"]
 }

@@ -214,6 +214,8 @@ Référence w3dts : `HYBRID_RASTER_PATHTRACE_PLAN.md`.
 
 ## Phase K — Éditeur natif, workspaces, extensions, DX développeur
 
+**Priorité d’implémentation (produit) :** les **jalons shell / workspace / thème** sont livrés **d’abord sur l’éditeur natif** (client desktop, stack UI à trancher — cible visuelle : dense / premium *dev-tool* type **GPUI·Zed**, warm gray + **ambre** *Rust* ; maquette : [v3 hi-fi `docs/design/`](design/README.md)). Le shell **`www/`** reste la **surface allégée** de la même ergonomie (parité de flux) et le chemin **WASM** pour démo / CI, **sans précéder** le natif sur l’ordre de livraison des écrans.
+
 - [ ] **Modèle projet** : l’éditeur natif travaille sur un **workspace** (répertoire racine du projet, aligné sur la structure décrite dans [Goals.md](Goals.md)) : assets sources, scènes logiques, shaders, caches, sortie `dist/*.w3db` — pas uniquement « un fichier ouvert » sans contexte de dossier.
 - [ ] **Référence UX** : maquette *mode-based* `Mode-based v2.html` (w3gpu editor) — copie versionnée sous [`docs/design/`](design/README.md) ; le dossier **`www/`** cible une **version allégée** de la même ergonomie (modes, flux) pour le shell web.
 - [ ] **Shell d’édition** : UI native (stack à trancher : ex. winit + kit UI ou Tauri) branchée sur les crates moteur ; shell **`www/`** allégé en parallèle pour démo / édition légère dans le navigateur.

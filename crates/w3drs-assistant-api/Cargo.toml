@@ -1,0 +1,10 @@
+[package]
+name = "w3drs-assistant-api"
+edition.workspace = true
+version.workspace = true
+description = "API d’abstraction pour l’assistant IA (Noop, streaming, config data-driven) — indépendante du moteur."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

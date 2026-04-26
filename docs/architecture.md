@@ -62,7 +62,7 @@ flowchart LR
 | Aspect | Décision / direction |
 |---------|----------------------|
 | **Modèle projet** | **Workspace** sur disque (voir [Goals.md](Goals.md)) : `assets/`, `src/`, `shaders/`, `dist/*.w3db`, `.w3cache/`. |
-| **UI** | Shell **natif** (stack à trancher) + **`www/`** allégé pour démo / validation web ; maquette UX : [design/README.md](design/README.md). |
+| **UI** | **Priorité de livraison :** shell **natif** d’abord (même référence UX) ; **`www/`** allégé ensuite / en parallèle pour démo / validation web / WASM ; maquette : [design/README.md](design/README.md). |
 | **Extensions** | Plugins éditeur + pont moteur : voir [Architecture plugins (modulaire)](#architecture-plugins-modulaire) ; contrat type `register_engine(api)` ; **multithread** ; pas de logique gameplay dans le crate renderer. |
 | **Compilateur** | Commande **Build / Compiler l’expérience** : voir [Compilateur & livrables](#compilateur--livrables) — sorties exe natif, projet **Node.js / React**, ou **page packagée** (type build Web Unity). |
 | **Tests** | Scènes de référence par phase : [`fixtures/phases/`](../fixtures/phases/README.md) + tickets [`tickets/`](tickets/README.md). |

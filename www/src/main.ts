@@ -1,4 +1,7 @@
 import init, { W3drsEngine, w3drsValidateRenderGraphV0 } from '../pkg/w3drs_wasm.js';
+import editorUiJson from '../../fixtures/phases/phase-k/editor-ui.json' with { type: 'json' };
+import { parseEditorUiV1 } from './editor/editorConfig.js';
+import { mountEditorShell } from './editor/mountEditorShell.js';
 import { loadHdrWithTimings } from './hdrLoadTimings.js';
 import { DEFAULT_LIVE, type LivePhaseA } from './viewer/phaseAConfig.js';
 import {
@@ -11,7 +14,10 @@ import { type SceneHandles, buildViewerScene } from './viewer/scene.js';
 import { mountViewerPanel, type LightParams, type ViewerPanelCallbacks } from './viewer/ui.js';
 
 const status = document.getElementById('status')!;
-const side = document.getElementById('w3d-side')!;
+const shellHost = document.getElementById('w3d-shell-host')!;
+const editorDoc = parseEditorUiV1(editorUiJson);
+const shell = mountEditorShell(shellHost, editorDoc, 'build');
+const side = shell.sidePanelHost;
 
 type ViewerModel = { id: string; url: string };
 type ViewerManifest = { version: number; models: ViewerModel[] };
@@ -94,10 +100,11 @@ function updateStatusLine(): void {
   if (el) {
     el.checked = cullEnabled;
   }
+  const mode = shell.getMode();
   status.textContent =
     `w3drs v${W3drsEngine.version()}  ${lastModelHint}` +
-    `— Hi-Z: ${c}  [Space]  ←/→ modèles  ` +
-    '— Caméra: gauche orbite, droit/milieu pan, molette zoom  ';
+    `— mode: ${String(mode)} — Hi-Z: ${c}  [H]  ←/→ modèles  ` +
+    '— B/P/…/Espace modes · Cam: orbite / pan / zoom  ';
 }
 
 function canvasAspect(): number {
@@ -228,7 +235,7 @@ async function main(): Promise<void> {
   const rebuildFromGltf = async (bytes: Uint8Array, hint: string): Promise<void> => {
     status.textContent = 'Chargement GLB…';
     engine.clearSceneForNewGltf();
-    const ids = engine.load_gltf(bytes);
+    const ids = Array.from(engine.load_gltf(bytes));
     if (ids.length < 2) {
       throw new Error('No primitives in GLB');
     }
@@ -296,7 +303,16 @@ async function main(): Promise<void> {
   updateStatusLine();
 
   document.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+      return;
+    }
+    if (e.code === 'Escape' && shell.getMode() === 'play') {
+      e.preventDefault();
+      shell.setMode('build');
+      updateStatusLine();
+      return;
+    }
+    if ((e.key === 'h' || e.key === 'H') && shell.getMode() === 'build') {
       cullEnabled = !cullEnabled;
       engine.set_cull_enabled(cullEnabled);
       const box = document.querySelector<HTMLInputElement>('.w3d-cull');
@@ -307,11 +323,16 @@ async function main(): Promise<void> {
       e.preventDefault();
       return;
     }
-    if (e.code === 'ArrowLeft') {
+    const m0 = shell.getMode();
+    shell.onKeyNavigateMode(e);
+    if (m0 !== shell.getMode()) {
+      updateStatusLine();
+    }
+    if (e.code === 'ArrowLeft' && (shell.getMode() === 'build' || shell.getMode() === 'play')) {
       goAdjacentModel(nModels, -1);
       e.preventDefault();
     }
-    if (e.code === 'ArrowRight') {
+    if (e.code === 'ArrowRight' && (shell.getMode() === 'build' || shell.getMode() === 'play')) {
       goAdjacentModel(nModels, 1);
       e.preventDefault();
     }

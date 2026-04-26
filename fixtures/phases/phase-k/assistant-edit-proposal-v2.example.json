@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "summary": "Ajoute une ligne de test dans pbr.wgsl (exemple, non appliqué).",
+  "ops": [
+    {
+      "op": "stringReplace",
+      "path": "shaders/pbr.wgsl",
+      "search": "// w3d placeholder",
+      "replace": "// w3d placeholder\n// assistant proposal example"
+    },
+    {
+      "op": "fileReplace",
+      "path": "shaders/pbr.wgsl",
+      "range": { "lines": { "startLine": 1, "endLine": 1 } },
+      "newText": "// (example range replace, rejectable)\n"
+    }
+  ]
+}

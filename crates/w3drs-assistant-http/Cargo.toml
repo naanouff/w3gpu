@@ -1,0 +1,16 @@
+[package]
+name = "w3drs-assistant-http"
+edition.workspace = true
+version.workspace = true
+description = "Backend assistant HTTP (API chat Ollama) — fil de fond, **option** du binaire w3d-editor."
+
+[dependencies]
+w3drs-assistant-api = { path = "../w3drs-assistant-api" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ureq = { version = "2.10" }
+
+[dev-dependencies]
+w3drs-assistant-api = { path = "../w3drs-assistant-api" }
+serde = { workspace = true }
+serde_json = { workspace = true }

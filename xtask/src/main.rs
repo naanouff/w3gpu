@@ -8,7 +8,8 @@ fn main() {
         eprintln!();
         eprintln!("Tasks:");
         eprintln!("  www          Build WASM then start Vite dev server");
-        eprintln!("  client       Build and run the native desktop client");
+        eprintln!("  client       Build and run the native desktop client (khronos-pbr-sample)");
+        eprintln!("  editor       Build and run the w3d-editor shell (egui, coquille auteur)");
         eprintln!("  hdr-skybox   Build and run hdr-ibl-skybox (HDR sky + chrome sphere)");
         eprintln!("  check        cargo check for all targets (native + wasm32)");
         eprintln!("  setup-hooks  Install .githooks/pre-commit into .git/hooks");
@@ -20,12 +21,13 @@ fn main() {
     match task.as_str() {
         "www" => run_www(&root),
         "client" => run_client(&root),
+        "editor" => run_editor(&root),
         "hdr-skybox" => run_hdr_skybox(&root),
         "check" => run_check(&root),
         "setup-hooks" => setup_hooks(&root),
         other => {
             eprintln!("Unknown task: '{other}'");
-            eprintln!("Available tasks: www, client, hdr-skybox, check, setup-hooks");
+            eprintln!("Available tasks: www, client, editor, hdr-skybox, check, setup-hooks");
             std::process::exit(1);
         }
     }
@@ -72,6 +74,16 @@ fn run_client(root: &Path) {
             .args(["run", "-p", "khronos-pbr-sample", "--release"])
             .current_dir(root),
         "cargo run khronos-pbr-sample",
+    );
+}
+
+fn run_editor(root: &Path) {
+    println!("==> Building and running w3d-editor (shell)...");
+    run(
+        Command::new("cargo")
+            .args(["run", "-p", "w3d-editor", "--release"])
+            .current_dir(root),
+        "cargo run w3d-editor",
     );
 }
 

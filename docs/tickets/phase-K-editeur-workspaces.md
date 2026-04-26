@@ -6,11 +6,30 @@
 | **Roadmap** | [ROADMAP § Phase K](../ROADMAP.md) |
 | **Statut** | À faire |
 
+## Ordre de priorité (produit)
+
+- **Implémentation d’abord côté éditeur natif** (binaire desktop, intégration moteur `wgpu` / chemin `cargo xtask client` → évolution vers l’hôte auteur) : workspace, shell mode-based, thème & layout data-driven, bus UI ↔ moteur.
+- **`www/`** : **même** ergonomie cible en **allégé** (second sur l’ordre de *ship* des jalons ; utile parité WASM, démo, E2E navigateur). Ne **remplace** pas le natif sur la feuille de route produit.
+
 ## Axes prioritaires
 
 - **Data-driven** : **thème** et **layout** éditeur depuis fichiers ; workspaces comme dans [Goals.md](../Goals.md) ; bake `.w3db` scriptable.
 - **Multithreading** : UI thread vs moteur : file de commandes **bornée** ; tests de pression sans deadlock.
 - **Modularité** : **moteur** en crates ; **éditeur** consommateur via API stable ; extensions `register_engine(api)` isolées (dylib ou modules — choix documenté).
+
+## Viewport 3D natif (sous-tâche technique)
+
+Objectif : afficher le rendu moteur dans le **panneau central** de l’éditeur (`editor/`, binaire `w3d-editor`), sur la **même** logique d’`encode` que le viewer de référence.
+
+| Sujet | Détails |
+|-------|--------|
+| **Alignement de versions** | Le workspace impose **`wgpu = 24`** ([`Cargo.toml`](../Cargo.toml)). Tout binaire embarquant `w3drs-renderer` *et* l’UI doit n’embarquer **qu’une** génération `wgpu` (et transitoirement une pile **`windows` / `windows_core`** cohérente côté DX12). Toute hausse (ex. pour suivre `eframe`/`egui_wgpu` récents) est un **bump monorepo**, pas seulement du crate `editor/`. |
+| **Stack UI cible** | Passez **`eframe`** en backend **wgpu** (désactiver *glow* sur `w3d-editor` quand on branchera le moteur), puis *paint callback* / surface (`egui_wgpu` ou rendu cible + `egui::Image`). Référence d’intégration : exemple **custom3d** egui, et pipeline terrain **`examples/khronos-pbr-sample`** + `crates/w3drs-renderer`. |
+| **État actuel** | Pas de `wgpu` dans `editor/` : raccord **données** Phase A seulement (`src/motor.rs` → `fixtures/.../phase-a/.../default.json` via `w3drs-assets`), texte d’état au centre. |
+
+**DOR partiel (viewport)** : plan de migration `wgpu` (PR dédiée ou plan dans journal) + critère de non-régression `cargo xtask` / `khronos-pbr-sample`.
+
+**DOD partiel (viewport)** : aire centrale = au moins une frame 3D (même scène témoin que le shortlist Khronos) sans crash ; test d’intégration minimal (headless ou golden selon l’infra).
 
 ## Écart architecture (existant → cible)
 

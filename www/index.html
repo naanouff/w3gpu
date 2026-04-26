@@ -1,81 +1,20 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="w3d-ui-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>w3drs — viewer</title>
+  <title>w3d — w3drs editor (shell)</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #111;
-      min-height: 100vh;
-      color: #e0e0e0;
-      font-family: "Segoe UI", system-ui, sans-serif;
-    }
-    #w3d-layout {
-      display: flex;
-      flex: 1;
-      min-height: 100vh;
-    }
-    #w3d-canvas-wrap {
-      position: relative;
-      flex: 1;
-      min-width: 0;
-    }
-    #w3d-canvas-wrap #w3d-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-    }
-    #w3d-side {
-      width: 320px;
-      flex-shrink: 0;
-    }
-    .w3d-panel {
-      max-height: 100vh;
-      overflow-y: auto;
-      background: #1a1a1e;
-      border-left: 1px solid #2a2a32;
-      padding: 10px 12px 20px;
-      font-size: 12px;
-    }
-    .w3d-panel__title {
-      font-size: 14px;
-      margin-bottom: 10px;
-    }
-    .w3d-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 10px 0 6px; }
-    .w3d-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
-    .w3d-row input[type=range] { flex: 1; min-width: 80px; }
-    .w3d-row input.w3d-file { font-size: 11px; }
-    .w3d-row select { flex: 1; background: #222; color: #e0e0e0; border: 1px solid #333; }
-    .w3d-val { min-width: 2.2rem; text-align: right; color: #feb137; }
-    .w3d-hint { font-size: 10px; color: #666; margin: 2px 0; line-height: 1.3; }
-    .w3d-canvas {
-      touch-action: none;
-      cursor: grab;
-    }
-    .w3d-canvas:active {
-      cursor: grabbing;
-    }
-    #w3d-footer {
-      padding: 4px 12px 8px;
-    }
-    #w3d-footer, #status {
-      font-size: 11px;
-    }
   </style>
 </head>
 <body>
-  <div id="w3d-layout">
-    <div id="w3d-canvas-wrap" aria-label="Rendu 3D">
-      <canvas class="w3d-canvas" id="w3drs-canvas" width="800" height="600"></canvas>
+  <div class="w3d-app-wrap" id="w3d-app-wrap">
+    <div id="w3d-shell-host" aria-label="Hôte shell éditeur"></div>
+    <div id="w3d-footer">
+      <div id="status">Initializing…</div>
     </div>
-    <div id="w3d-side"></div>
-  </div>
-  <div id="w3d-footer">
-    <div id="status">Initializing…</div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

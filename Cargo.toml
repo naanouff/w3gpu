@@ -9,11 +9,14 @@ members = [
     "crates/w3drs-render-graph",
     "crates/w3drs-assets",
     "crates/w3drs-wasm",
+    "crates/w3drs-assistant-api",
+    "crates/w3drs-assistant-http",
     "examples/khronos-pbr-sample",
     "examples/pbr-viewer",
     "examples/hdr-ibl-skybox",
     "examples/hdr-ibl-bench",
     "examples/phase-b-graph",
+    "editor",
     "xtask",
 ]
 

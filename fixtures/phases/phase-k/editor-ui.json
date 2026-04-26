@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "shell": {
+    "appearance": "dark",
+    "layout": {
+      "railWidthCssPx": 72
+    }
+  },
+  "stage": {
+    "title": "Caveat",
+    "defaultBreadcrumb": "w3d · build · pbr sample"
+  },
+  "modes": [
+    { "id": "build", "label": "Build", "keyHint": "B" },
+    { "id": "paint", "label": "Paint", "keyHint": "P" },
+    { "id": "sculpt", "label": "Sculpt", "keyHint": "S" },
+    { "id": "logic", "label": "Logic", "keyHint": "L" },
+    { "id": "animate", "label": "Anim", "keyHint": "A" },
+    { "id": "light", "label": "Light", "keyHint": "I" },
+    { "id": "play", "label": "Play", "keyHint": "␣" },
+    { "id": "ship", "label": "Ship", "keyHint": "" }
+  ]
+}
