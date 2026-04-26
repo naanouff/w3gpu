@@ -7,9 +7,13 @@ La première maquette de l’**éditeur natif** Rust / w3gpu repose sur le fichi
 - **Référence hors dépôt (exemple)** : `c:\Users\utilisateur\Downloads\w3gpu editor\Mode-based v2.html`
 - **Dans ce dépôt** : placer une copie nommée `mode-based-v2.html` dans ce dossier (`docs/design/`) pour que les revues de code et la CI puissent s’y référer sans chemin absolu machine.
 
+## Maquette native « mode-based » v3 (hi-fi)
+
+L’itération **fidelity** (structure de flux, rail à **8 modes**, parcours **onboarding** → **build** → **play**, panneau **IA**, *nudge* de mode) est décrite dans **`Mode-based v3 hi-fi.html`**, avec les styles **`v3-hifi.css`**, dans ce même dossier. Le cadrage d’implémentation UI/UX côté dépôt : [ticket Phase B — éditeur UI/UX](../tickets/phase-B-editor-ui-ux-implementation.md) (`PHASE-B-EDITOR-UI`).
+
 ## Déclinaison web (`www/`)
 
-Le shell **`www/`** implémente une **version allégée** de cette ergonomie (mêmes idées de **modes** et de structure d’UI, surface réduite pour navigateur + WASM). Les écarts par rapport à la maquette HTML doivent être documentés dans les PR qui touchent l’UI web.
+Le shell **`www/`** implémente une **version allégée** de cette ergonomie (mêmes idées de **modes** et de structure d’UI, surface réduite pour navigateur + WASM) par rapport à la ref **v3** ou **v2** selon l’avancement. Les écarts par rapport à la maquette HTML doivent être documentés dans les PR qui touchent l’UI web.
 
 ## Tests
 

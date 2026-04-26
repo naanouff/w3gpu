@@ -63,7 +63,10 @@ pub fn light_uniforms_for_cascades(
     projection: Mat4,
     cam_pos: Vec3,
     s: &ViewerLightState,
-) -> ([LightUniforms; SHADOW_CASCADE_COUNT], [f32; SHADOW_CASCADE_COUNT]) {
+) -> (
+    [LightUniforms; SHADOW_CASCADE_COUNT],
+    [f32; SHADOW_CASCADE_COUNT],
+) {
     let (cam_near, cam_far) = extract_near_far_from_projection(projection);
     let inv_vp = (projection * view).inverse();
     let light_dir = s.normalized_light_dir();
@@ -118,7 +121,9 @@ pub fn light_uniforms_for_cascades(
         max_ls.y += xy_pad;
 
         let near = (-max_ls.z).max(s.shadow_z_near.max(0.01));
-        let far = (-min_ls.z + radius * 0.5).max(near + 1.0).min(s.shadow_z_far.max(near + 1.0));
+        let far = (-min_ls.z + radius * 0.5)
+            .max(near + 1.0)
+            .min(s.shadow_z_far.max(near + 1.0));
         let light_proj = Mat4::orthographic_rh(min_ls.x, max_ls.x, min_ls.y, max_ls.y, near, far);
         uniforms[i] = LightUniforms {
             view_proj: (light_proj * light_view).to_cols_array_2d(),

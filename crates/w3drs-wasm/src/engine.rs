@@ -5,18 +5,20 @@ use w3drs_assets::{
     load_from_bytes, load_hdr_from_bytes, parse_phase_a_viewer_config_str_or_default, primitives,
     AlphaMode, Material, PhaseAVariant, PhaseAViewerConfig, ViewerLightState,
 };
+use w3drs_camera_controller::OrbitController;
 use w3drs_ecs::{
     components::{CameraComponent, CulledComponent, RenderableComponent, TransformComponent},
     Scheduler, World,
 };
+use w3drs_input::{InputFrame, PointerDelta};
 use w3drs_render_graph::parse_render_graph_json;
 use w3drs_renderer::{
     active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
     derive_shadow_batches, light_uniforms_for_cascades, run_graph_v0_checksum_from_wgsl,
     transform_system, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
-    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext,
-    IblGenerationSpec, MaterialTextures, PostProcessPass, RenderGraphExecError, RenderState,
-    ShadowPass, TonemapParams, SHADOW_CASCADE_COUNT,
+    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
+    MaterialTextures, PostProcessPass, RenderGraphExecError, RenderState, ShadowPass,
+    TonemapParams, SHADOW_CASCADE_COUNT,
 };
 
 use wasm_bindgen::prelude::*;
@@ -74,6 +76,10 @@ pub struct W3drsEngine {
     total_time: f32,
     phase_a_viewer: PhaseAViewerConfig,
     viewer_light: ViewerLightState,
+    /// Même modèle que `pbr-viewer` / Khronos (orbite + pan + molette).
+    orbit: OrbitController,
+    /// Entité caméra (donnée par le dernier `add_camera`).
+    orbit_camera_entity: Option<u32>,
 }
 
 #[wasm_bindgen]
@@ -169,10 +175,15 @@ impl W3drsEngine {
             cull_pass,
             hdr_target,
             post_process,
-            cull_enabled: true,
+            // Viewer web : défaut off — le cull GPU par Aabb + Hi-Z rejette souvent des sous-meshes
+            // valides (trous / concavité) sur glTF denses. Le natif pbr laisse l’utilisateur trancher
+            // via case à cocher ; ici mêmes sémantiques, défaut sûr pour l’intégrité des assets.
+            cull_enabled: false,
             total_time: 0.0,
             phase_a_viewer,
             viewer_light,
+            orbit: OrbitController::new(6.0, 0.22, 0.0, Vec3::ZERO),
+            orbit_camera_entity: None,
         })
     }
 
@@ -225,8 +236,38 @@ impl W3drsEngine {
     }
 
     pub fn add_camera(&mut self, entity: u32, fov_degrees: f32, aspect: f32, near: f32, far: f32) {
+        self.orbit_camera_entity = Some(entity);
         self.world
             .add_component(entity, CameraComponent::new(fov_degrees, aspect, near, far));
+    }
+
+    /// Synchronise l’orbite sur la position actuelle de la caméra, cible implicite **origine** (comme le
+    /// `set_transform` initial du `buildViewerScene` web). À appeler **après** le placement de la caméra.
+    #[wasm_bindgen(js_name = w3drsSyncOrbitFromCamera)]
+    pub fn w3drs_sync_orbit_from_camera(&mut self, camera_entity: u32) {
+        self.orbit_camera_entity = Some(camera_entity);
+        self.sync_orbit_from_camera_look_at_target(camera_entity, Vec3::ZERO);
+    }
+
+    /// Entrées d’une frame, comme `InputFrame` côté natif : déplacements de pointeur (pixels) + molette (lignes signées).
+    /// Gauche = orbite, droit / milieu = pan, molette = zoom.
+    #[wasm_bindgen(js_name = applyOrbitInput)]
+    pub fn apply_orbit_input(
+        &mut self,
+        primary_dx: f32,
+        primary_dy: f32,
+        secondary_dx: f32,
+        secondary_dy: f32,
+        middle_dx: f32,
+        middle_dy: f32,
+        wheel_lines: f32,
+    ) {
+        let mut f = InputFrame::default();
+        f.primary_drag = PointerDelta::new(primary_dx, primary_dy);
+        f.secondary_drag = PointerDelta::new(secondary_dx, secondary_dy);
+        f.middle_drag = PointerDelta::new(middle_dx, middle_dy);
+        f.wheel_lines = wheel_lines;
+        self.orbit.apply_input(&f);
     }
 
     // ── asset API ────────────────────────────────────────────────────────────
@@ -475,6 +516,8 @@ impl W3drsEngine {
     #[wasm_bindgen(js_name = clearSceneForNewGltf)]
     pub fn clear_scene_for_new_gltf(&mut self) {
         self.world = World::new();
+        self.orbit = OrbitController::new(6.0, 0.22, 0.0, Vec3::ZERO);
+        self.orbit_camera_entity = None;
         self.asset_registry
             .reset_in_place(&self.context.device, &self.context.queue);
         self.asset_registry.upload_material(
@@ -485,40 +528,45 @@ impl W3drsEngine {
         );
     }
 
-    /// Recadre la caméra active sur l’union des AABB en scène (même esprit que le viewer natif).
+    /// Recadre l’orbite sur l’union de **tous** les `RenderableComponent` (sol / mur inclus si présents).
     #[wasm_bindgen(js_name = reframeCamera)]
     pub fn reframe_camera(&mut self) {
-        // `world_matrix` à jour avant mesure des AABB.
+        self.reframe_on_bounds_impl(|this| this.scene_world_bounds());
+    }
+
+    /// Comme `pbr_viewer::reframe_camera_on_scene` : union des AABB des **entités modèle** uniquement
+    /// (même sémantique qu’un viewer sans décor).
+    #[wasm_bindgen(js_name = reframeCameraAroundModelEntities)]
+    pub fn reframe_camera_around_model_entities(&mut self, model_entity_ids: &[u32]) {
+        if model_entity_ids.is_empty() {
+            return;
+        }
+        self.reframe_on_bounds_impl(|this| {
+            this.scene_world_bounds_for_entity_ids(model_entity_ids)
+        });
+    }
+
+    fn reframe_on_bounds_impl(&mut self, bounds: impl FnOnce(&mut Self) -> Option<(Vec3, f32)>) {
         transform_system(&mut self.world, 0.0, 0.0);
-        let Some((center, radius)) = self.scene_world_bounds() else {
+        let Some((center, radius)) = bounds(self) else {
             return;
         };
         let Some((cam_entity, fov_y, aspect)) = self.active_camera_entity_fov_aspect() else {
             return;
         };
-        let dist = fit_distance_for_radius(radius, fov_y, aspect).clamp(0.35, 200.0);
-        let pitch = 0.22f32;
-        let y = dist * pitch.sin();
-        let z = dist * pitch.cos();
-        let eye = center + Vec3::new(0.0, y, z);
-        let (_, rot, _) = Mat4::look_at_rh(eye, center, Vec3::Y)
-            .inverse()
-            .to_scale_rotation_translation();
-        if let Some(t) = self
-            .world
-            .get_component_mut::<TransformComponent>(cam_entity)
-        {
-            t.position = eye;
-            t.rotation = rot;
-            t.update_local_matrix();
-        }
+        self.orbit_camera_entity = Some(cam_entity);
+        self.orbit
+            .reframe(center, radius, fov_y.to_degrees(), aspect);
+        self.update_orbit_camera();
     }
 
     /// Phase **B.5** : exécute le graphe v0 sur le **même** `Device` / `Queue` que le viewer, avec
     /// les sources WGSL fournies en JSON : `{"shaders/foo.wgsl": "…wgsl…"}` (clés = chemins du document).
     /// Retourne le checksum FNV-1a 64 bits (décimal, string) de la texture `readback_id` (`Rgba16Float`).
+    /// **Async** (Promise côté JS) : requis car sur WebGPU le mapping buffer ne suit pas
+    /// `Device::poll(Wait)`; le `.await` cède l’exécuteur (microtâches).
     #[wasm_bindgen(js_name = w3drsPhaseBGraphRunChecksum)]
-    pub fn phase_b_graph_run_checksum(
+    pub async fn phase_b_graph_run_checksum(
         &self,
         graph_json: &str,
         wgsl_map_json: &str,
@@ -543,6 +591,7 @@ impl W3drsEngine {
             &[],
             &mut load,
         )
+        .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(format!("{sum}"))
     }
@@ -550,6 +599,7 @@ impl W3drsEngine {
     // ── frame ─────────────────────────────────────────────────────────────────
 
     pub fn tick(&mut self, delta_time: f32) {
+        self.update_orbit_camera();
         self.total_time += delta_time;
         self.scheduler
             .run(&mut self.world, delta_time, self.total_time);
@@ -693,7 +743,11 @@ impl W3drsEngine {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
+            rp.set_bind_group(
+                0,
+                &self.shadow_pass.shadow_light_bind_groups[cascade_idx],
+                &[],
+            );
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {
@@ -810,11 +864,58 @@ impl W3drsEngine {
             })
     }
 
+    /// Met à jour la `TransformComponent` de la caméra d’orbite (comme `pbr_state::update_orbit_camera`).
+    fn update_orbit_camera(&mut self) {
+        let Some(e) = self.orbit_camera_entity else {
+            return;
+        };
+        let pose = self.orbit.pose();
+        if let Some(t) = self.world.get_component_mut::<TransformComponent>(e) {
+            pose.write_transform(t);
+        }
+    }
+
+    /// Cible d’intérêt (monde) pour reconstituer l’orbite à partir d’un `eye` (position caméra).
+    fn sync_orbit_from_camera_look_at_target(&mut self, camera_entity: u32, target: Vec3) {
+        transform_system(&mut self.world, 0.0, 0.0);
+        let Some(t) = self
+            .world
+            .get_component::<TransformComponent>(camera_entity)
+        else {
+            return;
+        };
+        let eye = t.position;
+        let to_eye = eye - target;
+        let dist = to_eye.length().max(0.35);
+        if dist < 1e-3 {
+            return;
+        }
+        let dir = to_eye / dist;
+        let pitch = dir.y.clamp(-1.0, 1.0).asin();
+        let yaw = dir.x.atan2(dir.z);
+        self.orbit = OrbitController::new(dist, pitch, yaw, target);
+        self.update_orbit_camera();
+    }
+
     fn scene_world_bounds(&self) -> Option<(Vec3, f32)> {
+        self.scene_union_bounds(
+            self.world
+                .query_entities::<RenderableComponent>()
+                .into_iter(),
+        )
+    }
+
+    /// Même formule que `pbr_state::scene_world_bounds` : union AABB (identité modèle) pour un
+    /// sous-ensemble d’entités (ex. primitives GLB seules, sans sol / paroi).
+    fn scene_world_bounds_for_entity_ids(&self, entity_ids: &[u32]) -> Option<(Vec3, f32)> {
+        self.scene_union_bounds(entity_ids.iter().copied())
+    }
+
+    fn scene_union_bounds(&self, entities: impl Iterator<Item = u32>) -> Option<(Vec3, f32)> {
         let mut mn = Vec3::splat(f32::MAX);
         let mut mx = Vec3::splat(f32::MIN);
         let mut any = false;
-        for entity in self.world.query_entities::<RenderableComponent>() {
+        for entity in entities {
             let Some(r) = self.world.get_component::<RenderableComponent>(entity) else {
                 continue;
             };
@@ -966,13 +1067,6 @@ fn build_env_bind_group(
             },
         ],
     })
-}
-
-fn fit_distance_for_radius(radius: f32, fov_y_radians: f32, aspect: f32) -> f32 {
-    let half_v = (fov_y_radians * 0.5).clamp(0.05, 1.4);
-    let half_h = (half_v.tan() * aspect.max(0.1)).atan();
-    let fit_half = half_v.min(half_h).max(0.05);
-    (radius / fit_half.tan()) * 1.05
 }
 
 fn get_canvas(id: &str) -> Result<web_sys::HtmlCanvasElement, JsValue> {

@@ -260,7 +260,7 @@ fn phase_b_b6_b7_raster_depth_mesh_host_hooks_and_depth_encode() {
     let mut load =
         |rel: &str| std::fs::read_to_string(dir.join(rel)).map_err(RenderGraphExecError::from);
     let mut host = B67TestHost::default();
-    run_graph_v0_checksum_with_registry_wgsl_host(
+    futures_executor::block_on(run_graph_v0_checksum_with_registry_wgsl_host(
         &gpu.device,
         &gpu.queue,
         &doc,
@@ -269,7 +269,7 @@ fn phase_b_b6_b7_raster_depth_mesh_host_hooks_and_depth_encode() {
         &[],
         &mut load,
         &mut host,
-    )
+    ))
     .expect("graph with raster_depth_mesh + readback");
     assert_eq!(host.ecs_labels, &["b6_test_before", "b6_test_after"]);
     assert_eq!(host.depth_pass_draw_calls, 1);

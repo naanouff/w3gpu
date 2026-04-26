@@ -1,7 +1,13 @@
 import init, { W3drsEngine, w3drsValidateRenderGraphV0 } from '../pkg/w3drs_wasm.js';
 import { loadHdrWithTimings } from './hdrLoadTimings.js';
 import { DEFAULT_LIVE, type LivePhaseA } from './viewer/phaseAConfig.js';
-import { buildViewerScene } from './viewer/scene.js';
+import {
+  applyOrbitAccumToEngine,
+  bindOrbitInputToCanvas,
+  createOrbitInputAccumulator,
+} from './viewer/cameraOrbit.js';
+import { reframeOnModelEntities } from './viewer/reframeModel.js';
+import { type SceneHandles, buildViewerScene } from './viewer/scene.js';
 import { mountViewerPanel, type LightParams, type ViewerPanelCallbacks } from './viewer/ui.js';
 
 const status = document.getElementById('status')!;
@@ -13,7 +19,8 @@ type ViewerManifest = { version: number; models: ViewerModel[] };
 const FALLBACK_URL = '/damaged_helmet_source_glb.glb';
 const FALLBACK_ID  = 'damaged_helmet_gate';
 
-let cullEnabled   = true;
+// Par défaut : Hi-Z off (cull Aabb+Hi-Z trop agressif sur scènes multi-mesh concaves ; voir panneau)
+let cullEnabled   = false;
 let lastModelHint = '';
 let nModels       = 1;
 let lastHdrBytes: Uint8Array | null  = null;
@@ -89,7 +96,8 @@ function updateStatusLine(): void {
   }
   status.textContent =
     `w3drs v${W3drsEngine.version()}  ${lastModelHint}` +
-    `— Hi-Z: ${c}  [Space]  ←/→ modèles  `;
+    `— Hi-Z: ${c}  [Space]  ←/→ modèles  ` +
+    '— Caméra: gauche orbite, droit/milieu pan, molette zoom  ';
 }
 
 function canvasAspect(): number {
@@ -138,11 +146,11 @@ async function main(): Promise<void> {
         }
         wgsl[relp] = await sh.text();
       }
-      const sum = engine.w3drsPhaseBGraphRunChecksum(
+      const sum: string = await engine.w3drsPhaseBGraphRunChecksum(
         phaseBJsonText,
         JSON.stringify(wgsl),
         'hdr_color',
-      ) as string;
+      );
       console.info(
         `[w3drs] Phase B.5: GPU graph checksum = ${String(sum)} (w3drsPhaseBGraphRunChecksum)`,
       );
@@ -215,6 +223,8 @@ async function main(): Promise<void> {
     stats.free();
   };
 
+  let lastGltfScene: SceneHandles | null = null;
+
   const rebuildFromGltf = async (bytes: Uint8Array, hint: string): Promise<void> => {
     status.textContent = 'Chargement GLB…';
     engine.clearSceneForNewGltf();
@@ -224,7 +234,9 @@ async function main(): Promise<void> {
     }
     const canvas = document.getElementById('w3drs-canvas') as HTMLCanvasElement;
     const aspect = canvas.width / Math.max(1, canvas.height);
-    buildViewerScene(engine, ids, aspect);
+    lastGltfScene = buildViewerScene(engine, ids, aspect);
+    // Comme `pbr_state::reframe_camera_on_scene` (union AABB des meshes GLB seuls).
+    reframeOnModelEntities(engine, lastGltfScene.modelEntities);
     lastModelHint = hint;
     updateStatusLine();
   };
@@ -251,7 +263,11 @@ async function main(): Promise<void> {
       updateStatusLine();
     },
     onReframe: () => {
-      engine.reframeCamera();
+      if (lastGltfScene !== null) {
+        reframeOnModelEntities(engine, lastGltfScene.modelEntities);
+      } else {
+        engine.reframeCamera();
+      }
     },
     onLight: (p) => {
       applyLight(engine, p);
@@ -313,10 +329,15 @@ async function main(): Promise<void> {
   window.addEventListener('resize', onResize);
   onResize();
 
+  const canvas3d  = document.getElementById('w3drs-canvas') as HTMLCanvasElement;
+  const orbitAcc  = createOrbitInputAccumulator();
+  bindOrbitInputToCanvas(canvas3d, orbitAcc);
+
   let prev = performance.now();
   const frame = (now: number): void => {
     const dt = (now - prev) / 1000;
     prev     = now;
+    applyOrbitAccumToEngine(engine, orbitAcc);
     engine.tick(dt);
     requestAnimationFrame(frame);
   };

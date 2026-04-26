@@ -19,19 +19,20 @@ use w3drs_input::InputFrame;
 use w3drs_render_graph::{Pass, RenderGraphDocument};
 use w3drs_renderer::{
     active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
-    derive_shadow_batches,
-    encode_render_graph_passes_v0_with_wgsl, encode_render_graph_passes_v0_with_wgsl_host,
-    light_uniforms_for_cascades, parse_render_graph_json, transform_system,
-    validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
-    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
-    MaterialTextures, PostProcessPass, PreparedIbl, RenderGraphExecError, RenderGraphGpuRegistry,
-    RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams,
-    CULL_STATS_SIZE, MAX_CULL_ENTITIES, SHADOW_CASCADE_COUNT, SHADOW_SIZE,
+    derive_shadow_batches, encode_render_graph_passes_v0_with_wgsl,
+    encode_render_graph_passes_v0_with_wgsl_host, light_uniforms_for_cascades,
+    parse_render_graph_json, transform_system, validate_render_graph_exec_v0, AssetRegistry,
+    BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, GpuContext,
+    HdrTarget, HizPass, IblContext, IblGenerationSpec, MaterialTextures, PostProcessPass,
+    PreparedIbl, RenderGraphExecError, RenderGraphGpuRegistry, RenderGraphV0Host, RenderState,
+    ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams, CULL_STATS_SIZE, MAX_CULL_ENTITIES,
+    SHADOW_CASCADE_COUNT, SHADOW_SIZE,
 };
 
 use winit::window::Window;
 
 /// Sept GLB de référence Phase A / Khronos (chemins relatifs à la racine du workspace).
+/// Ordre aligné sur `www/public/phase-a/viewer-manifest.json` (cycle ←/→ côté web).
 const KHRONOS_GLBS: &[(&str, &str)] = &[
     ("DamagedHelmet", "www/public/damaged_helmet_source_glb.glb"),
     (
@@ -974,9 +975,7 @@ impl PbrState {
         // scene composition has since changed (sample swap, GLB reload) the
         // snapshot is stale → discard it instead of asserting against an
         // unrelated `frustum_visible`.
-        if let (Some(hiz), Some(measured_frust)) =
-            (self.last_hiz_visible, self.last_hiz_frustum)
-        {
+        if let (Some(hiz), Some(measured_frust)) = (self.last_hiz_visible, self.last_hiz_frustum) {
             if measured_frust == self.frustum_visible {
                 debug_assert!(
                     hiz <= self.frustum_visible,
@@ -1270,7 +1269,11 @@ impl PbrState {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
+            rp.set_bind_group(
+                0,
+                &self.shadow_pass.shadow_light_bind_groups[cascade_idx],
+                &[],
+            );
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {

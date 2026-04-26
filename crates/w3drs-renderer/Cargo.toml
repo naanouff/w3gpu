@@ -11,6 +11,11 @@ glam.workspace = true
 bytemuck.workspace = true
 log.workspace = true
 thiserror.workspace = true
+# async readback: WebGPU n’honore pas `Device::poll(Wait)`; `map_async` → oneshot + await.
+futures-channel = { version = "0.3.31", default-features = false, features = [
+    "alloc", "std",
+] }
+futures-executor = { version = "0.3.31", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 pollster = "0.4"

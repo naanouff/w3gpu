@@ -7,10 +7,11 @@ export type SceneHandles = {
   floorEntity: number;
 };
 
-const S = Math.SQRT1_2;
-
 /**
- * Caméra, primitives GLB (même origine, pose 90° X), sol + paroi.
+ * Même scène d’esprit que le viewer natif : caméra + orbite 6/0,22/0
+ * (sans forcer de pose manuelle : le premier `tick` / `reframe` alignent l’Œil),
+ * primitives GLB avec `TransformComponent` **identité** (comme `pbr_state::upload_primitives`),
+ * sol + paroi décoratifs (hors AABB de recadrage, voir `reframeOnModelEntities` dans `main`).
  */
 export function buildViewerScene(
   engine: W3drsEngine,
@@ -18,27 +19,17 @@ export function buildViewerScene(
   aspect: number,
 ): SceneHandles {
   const cam = engine.create_entity();
-  engine.add_camera(cam, 60.0, aspect, 0.1, 200.0);
-  const pitch = Math.atan2(-5, 16);
-  engine.set_transform(
-    cam,
-    0,
-    5,
-    16,
-    Math.sin(pitch / 2),
-    0,
-    0,
-    Math.cos(pitch / 2),
-    1,
-    1,
-    1,
-  );
+  // `pbr_state::new` : 60° FOV, near 0.1, far 300, transform caméra par défaut (identité) puis orbit.
+  engine.set_transform(cam, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1);
+  engine.add_camera(cam, 60.0, aspect, 0.1, 300.0);
+  // Pas de `w3drsSyncOrbitFromCamera` ici : l’`OrbitController` post-`clearSceneForNewGltf`
+  // est déjà `new(6, 0.22, 0, ZERO)` comme le natif.
 
   const modelEntities: number[] = [];
   for (let i = 0; i + 1 < glbPairIds.length; i += 2) {
     const e = engine.create_entity();
     engine.set_mesh_renderer(e, glbPairIds[i]!, glbPairIds[i + 1]!);
-    engine.set_transform(e, 0, 0, 0, S, 0, 0, S, 1, 1, 1);
+    engine.set_transform(e, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1);
     modelEntities.push(e);
   }
 

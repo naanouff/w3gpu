@@ -12,8 +12,8 @@ test.describe('Mesures HDR (viewer www)', () => {
     if (!hasWebGPU) {
       testInfo.skip();
     }
-    // Modèle léger (deuxième entrée du manifeste web) pour limiter le temps de chargement.
-    await page.goto('/?m=1', { waitUntil: 'load', timeout: 60_000 });
+    // TextureTransformTest (index 5, manifeste aligné pbr-viewer) — modèle ciblé plutôt que lourd.
+    await page.goto('/?m=5', { waitUntil: 'load', timeout: 60_000 });
     await page.waitForFunction(
       () => {
         const w = window as Window & { w3drsHdrLoadTimings?: { ok?: boolean } };

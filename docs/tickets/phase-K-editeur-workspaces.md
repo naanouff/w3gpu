@@ -20,7 +20,7 @@
 
 ## Périmètre
 
-Workspace, maquette Mode-based v2, shell natif + `www/` allégé, extensions, debug overlays.
+Workspace, maquettes *mode-based* ([`docs/design/`](../design/README.md) v2 + [**v3 hi-fi** (ticket UI/UX)](phase-B-editor-ui-ux-implementation.md)), shell natif + `www/` allégé, extensions, debug overlays.
 
 
 ## Scène ou projet de test (validation fonctionnelle)
@@ -61,7 +61,7 @@ Spec de `fixtures/phases/phase-k/` : **workspace** + extension **hello**.
 
 ## Definition of Ready (DOR)
 
-- [ ] Maquette [`docs/design/`](../design/README.md) présente dans le dépôt.
+- [ ] Maquette(s) [`docs/design/`](../design/README.md) présente(s) dans le dépôt, dont la **v3 hi-fi** pour l’**implémentation UI/UX** détaillée dans le ticket [PHASE-B-EDITOR-UI](phase-B-editor-ui-ux-implementation.md).
 - [ ] **Workspace exemple** versionné sous `examples/` ou `fixtures/editor-workspace/` avec arborescence Goals.
 - [ ] API extension **draft** en `docs/` ou ADR.
 

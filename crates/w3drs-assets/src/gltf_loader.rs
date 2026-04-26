@@ -109,7 +109,10 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Vec<GltfPrimitive>, GltfError> {
     Ok(result)
 }
 
-fn extract_raw_image_bytes(img: &gltf::Image<'_>, buffers: &[gltf::buffer::Data]) -> Option<Vec<u8>> {
+fn extract_raw_image_bytes(
+    img: &gltf::Image<'_>,
+    buffers: &[gltf::buffer::Data],
+) -> Option<Vec<u8>> {
     match img.source() {
         gltf::image::Source::View { view, .. } => {
             let buf = buffers.get(view.buffer().index())?;

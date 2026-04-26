@@ -120,7 +120,9 @@ export function mountViewerPanel(
         <span class="w3d-val" data-lv="sb">${light.shadowBias.toFixed(4)}</span></label>
     </section>
     <section class="w3d-section"><h3>Rendu</h3>
-      <label class="w3d-row"><input type="checkbox" class="w3d-cull" checked /> Culling Hi-Z (Space)</label>
+      <label class="w3d-row"><input type="checkbox" class="w3d-cull" />
+        Culling Hi-Z (Space)</label>
+      <p class="w3d-hint">Désactivé par défaut : le test Hi-Z par AABB peut cacher des morceaux «&nbsp;derrière&nbsp;» d’autres (ex. montre multi-mesh, vue du dessus).</p>
       <button type="button" class="w3d-btn w3d-reframe">Reframe camera (AABB)</button>
     </section>
   `;
@@ -215,8 +217,8 @@ export function mountViewerPanel(
     c.onIblTierChanged();
   });
 
-  // Apply initial
+  // Apply initial (ne pas forcer c.onCull(true) : la case reflète l’état, aligné sur le moteur défaut)
   pushPhaseA();
   syncLightFromDom();
-  c.onCull(true);
+  c.onCull(root.querySelector<HTMLInputElement>('.w3d-cull')!.checked);
 }

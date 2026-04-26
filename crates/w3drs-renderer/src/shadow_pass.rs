@@ -188,7 +188,11 @@ impl ShadowPass {
 
     /// Backward-compat: writes to cascade 0 only (used by hdr-ibl-skybox).
     pub fn update_light(&self, queue: &wgpu::Queue, uniforms: &LightUniforms) {
-        queue.write_buffer(&self.light_uniform_buffers[0], 0, bytemuck::bytes_of(uniforms));
+        queue.write_buffer(
+            &self.light_uniform_buffers[0],
+            0,
+            bytemuck::bytes_of(uniforms),
+        );
     }
 
     #[inline]

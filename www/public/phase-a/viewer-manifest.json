@@ -1,14 +1,34 @@
 {
   "version": 1,
-  "comment": "Chemins URL pour le viewer Vite (www/). Aligné sémantiquement sur fixtures/phases/phase-a/manifest.json (ids). Ajouter un modèle = copier le .glb sous public/ (ex. phase-a/glb/…) + entrée ici. Query ?m=<index> pour choisir l’index (0-based).",
+  "comment": "Même ordre d’échantillons que `examples/pbr-viewer` (KHRONOS_GLBS) : casque en public, six GLB Phase A servis par Vite sur /phase-a-gate/ (dev + copie en dist à vite build) depuis fixtures/phases/phase-a/glb. Query ?m=<index> 0-based (flèches).",
   "models": [
     {
       "id": "damaged_helmet_gate",
       "url": "/damaged_helmet_source_glb.glb"
     },
     {
+      "id": "anisotropy_barn_lamp",
+      "url": "/phase-a-gate/AnisotropyBarnLamp.glb"
+    },
+    {
+      "id": "clearcoat_car_paint",
+      "url": "/phase-a-gate/ClearCoatCarPaint.glb"
+    },
+    {
+      "id": "clearcoat_wicker",
+      "url": "/phase-a-gate/ClearcoatWicker.glb"
+    },
+    {
+      "id": "ior_test_grid",
+      "url": "/phase-a-gate/IORTestGrid.glb"
+    },
+    {
       "id": "texture_transform_test",
-      "url": "/phase-a/glb/TextureTransformTest.glb"
+      "url": "/phase-a-gate/TextureTransformTest.glb"
+    },
+    {
+      "id": "metal_rough_spheres",
+      "url": "/phase-a-gate/MetalRoughSpheres.glb"
     }
   ]
 }

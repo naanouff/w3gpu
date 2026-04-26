@@ -66,8 +66,8 @@ pub struct AssetRegistry {
     // 1×1 fallback texture views
     pub white_view: wgpu::TextureView,       // albedo fallback
     pub flat_normal_view: wgpu::TextureView, // normal fallback [128,128,255,255]
-    pub default_mr_view: wgpu::TextureView,  // metallic-roughness fallback [0,255,255,255] (G=R=1→no scale)
-    pub black_view: wgpu::TextureView,       // emissive fallback
+    pub default_mr_view: wgpu::TextureView, // metallic-roughness fallback [0,255,255,255] (G=R=1→no scale)
+    pub black_view: wgpu::TextureView,      // emissive fallback
     /// Default anisotropy texel per Khronos spec: direction (1,0), strength 1 → RGB linear (1,0.5,1).
     pub default_aniso_view: wgpu::TextureView,
     /// Clearcoat roughness multiplier when no texture: G = 1.0 (`Rgba8Unorm` (0,255,0,255)).

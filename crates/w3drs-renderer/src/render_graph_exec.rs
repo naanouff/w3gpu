@@ -16,6 +16,10 @@ use std::num::NonZeroU64;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
+use futures_channel::oneshot;
+#[cfg(not(target_arch = "wasm32"))]
+use futures_executor::block_on;
+
 use w3drs_render_graph::{validate_exec_v0, Pass, RenderGraphDocument, Resource};
 use wgpu::util::DeviceExt;
 
@@ -189,6 +193,10 @@ pub enum RenderGraphExecError {
     Io(#[from] std::io::Error),
     #[error("WGSL not provided for {rel:?} (in-memory loader)")]
     WgslNotFound { rel: String },
+    #[error("v0 readback: buffer map oneshot dropped (internal)")]
+    ReadbackMapOneshotDropped,
+    #[error("v0 readback: buffer map async failed: {0}")]
+    ReadbackBufferMapFailed(#[source] wgpu::BufferAsyncError),
 }
 
 impl From<w3drs_render_graph::RenderGraphValidateError> for RenderGraphExecError {
@@ -1495,7 +1503,7 @@ pub fn encode_render_graph_passes_v0(
 /// Full graph run (encode + readback checksum) with a **custom** WGSL resolver (WASM, tests, or
 /// in-memory maps), hooks **B.6** / **B.7** (`RenderGraphV0Host`). Même sémantique que
 /// [`run_graph_v0_checksum_with_registry_wgsl`] avec `NoopRenderGraphV0Host`.
-pub fn run_graph_v0_checksum_with_registry_wgsl_host(
+pub async fn run_graph_v0_checksum_with_registry_wgsl_host(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     doc: &RenderGraphDocument,
@@ -1524,11 +1532,11 @@ pub fn run_graph_v0_checksum_with_registry_wgsl_host(
         host,
     )?;
 
-    run_graph_v0_readback_and_checksum(device, queue, readback_id, registry, encoder)
+    run_graph_v0_readback_and_checksum(device, queue, readback_id, registry, encoder).await
 }
 
 /// Sans hooks hôte (compatible code existant).
-pub fn run_graph_v0_checksum_with_registry_wgsl(
+pub async fn run_graph_v0_checksum_with_registry_wgsl(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     doc: &RenderGraphDocument,
@@ -1548,10 +1556,11 @@ pub fn run_graph_v0_checksum_with_registry_wgsl(
         load_wgsl,
         &mut n,
     )
+    .await
 }
 
 /// Allocate resources + run checksum (no `shader_root` on disk) — e.g. browser fetches JSON + WGSL.
-pub fn run_graph_v0_checksum_from_wgsl(
+pub async fn run_graph_v0_checksum_from_wgsl(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     doc: &RenderGraphDocument,
@@ -1569,6 +1578,7 @@ pub fn run_graph_v0_checksum_from_wgsl(
         pre_writes,
         load_wgsl,
     )
+    .await
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1586,7 +1596,7 @@ pub fn run_graph_v0_checksum_with_registry_pre_writes(
     let mut load = |rel: &str| {
         std::fs::read_to_string(shader_root.join(rel)).map_err(RenderGraphExecError::from)
     };
-    run_graph_v0_checksum_with_registry_wgsl(
+    block_on(run_graph_v0_checksum_with_registry_wgsl(
         device,
         queue,
         doc,
@@ -1594,10 +1604,10 @@ pub fn run_graph_v0_checksum_with_registry_pre_writes(
         registry,
         pre_writes,
         &mut load,
-    )
+    ))
 }
 
-fn run_graph_v0_readback_and_checksum(
+async fn run_graph_v0_readback_and_checksum(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     readback_id: &str,
@@ -1643,12 +1653,25 @@ fn run_graph_v0_readback_and_checksum(
     );
 
     queue.submit(std::iter::once(encoder.finish()));
+    // Soumet la copie sur la file (natif) ; côté Web, `poll` n’y fait pas le mapping — voir le .await
+    // ci-dessous.
     device.poll(wgpu::Maintain::Wait);
 
-    readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::Maintain::Wait);
-    let slice = readback.slice(..);
-    let data = slice.get_mapped_range();
+    let (tx, rx) = oneshot::channel();
+    readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Natif: le callback s’exécute pendant le poll, avant le await.
+        device.poll(wgpu::Maintain::Wait);
+    }
+    let map_res = rx
+        .await
+        .map_err(|_| RenderGraphExecError::ReadbackMapOneshotDropped)?;
+    map_res.map_err(RenderGraphExecError::ReadbackBufferMapFailed)?;
+
+    let data = readback.slice(..).get_mapped_range();
     let sum = fnv1a64(&data);
     drop(data);
     readback.unmap();

@@ -57,6 +57,7 @@ Les outils doivent permettre une **revalidation** sur machine propre ou en CI sa
 | Transverse | [phase-transverses.md](phase-transverses.md) | Data-driven, multithreading, modularité (gates) |
 | A | [phase-A-pbr-materiaux-gltf.md](phase-A-pbr-materiaux-gltf.md) | Parité rendu PBR / glTF |
 | B | [phase-B-graphe-rendu-compute.md](phase-B-graphe-rendu-compute.md) | Render graph + compute |
+| B (éditeur) | [phase-B-editor-ui-ux-implementation.md](phase-B-editor-ui-ux-implementation.md) | **UI/UX** éditeur (maquette [Mode-based v3 hi-fi](../design/Mode-based%20v3%20hi-fi.html)) — **ID** `PHASE-B-EDITOR-UI` ; **pas** le render graph (`PHASE-B`) — aligné [Phase K](phase-K-editeur-workspaces.md) |
 | C | [phase-C-animation-peau.md](phase-C-animation-peau.md) | Animation & skinning |
 | D | [phase-D-format-w3db-streaming.md](phase-D-format-w3db-streaming.md) | `.w3db` & streaming |
 | E | [phase-E-physique-interaction.md](phase-E-physique-interaction.md) | Physique & interaction |
@@ -67,6 +68,8 @@ Les outils doivent permettre une **revalidation** sur machine propre ou en CI sa
 | J | [phase-J-reseau-gameplay.md](phase-J-reseau-gameplay.md) | Réseau & gameplay |
 | K | [phase-K-editeur-workspaces.md](phase-K-editeur-workspaces.md) | Éditeur natif & workspaces |
 | L | [phase-L-industrialisation.md](phase-L-industrialisation.md) | Prod, CI, sécurité, livraisons |
+
+*Deux entrées **B*** : le ticket **render graph** ([`PHASE-B`](phase-B-graphe-rendu-compute.md)) relève de la [Roadmap § B](../ROADMAP.md#phase-b--graphe-de-rendu--compute-équivalent-rendergraph-w3dts). Le ticket **[éditeur UI/UX](phase-B-editor-ui-ux-implementation.md)** (ID `PHASE-B-EDITOR-UI`) décrit l’implémentation UI/UX de la maquette w3d **v3 hi-fi** et se rattache surtout à la [Phase K](../ROADMAP.md) (*Éditeur natif, workspaces…*).
 
 ## Scène ou projet de test (obligatoire par ticket / phase)
 

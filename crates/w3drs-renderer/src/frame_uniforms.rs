@@ -21,10 +21,10 @@ pub struct FrameUniforms {
     pub _pad2: [f32; 3],                    // offset 244
     // Cascaded shadow maps (CSM): 4 light-space matrices + 4 split distances.
     pub light_view_proj_cascades: [[[f32; 4]; 4]; SHADOW_CASCADE_COUNT], // offset 256
-    pub shadow_cascade_splits: [f32; SHADOW_CASCADE_COUNT],              // offset 512 (view-space Z distances, positive)
-    pub shadow_bias: f32,                                                 // offset 528
+    pub shadow_cascade_splits: [f32; SHADOW_CASCADE_COUNT], // offset 512 (view-space Z distances, positive)
+    pub shadow_bias: f32,                                   // offset 528
     pub ibl_flags: u32, // offset 532 — voir [`IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE`]
     /// Atténuation du **diffuse IBL** (carte d’irradiance × `albedo` × `kd_ibl`). `1` = neutre.
     pub ibl_diffuse_scale: f32, // offset 536
-    pub _pad3: f32,             // offset 540
+    pub _pad3: f32,     // offset 540
 } // total: 544 bytes

@@ -15,14 +15,13 @@ use w3drs_input::{winit_adapter::input_event_from_winit, InputAccumulator};
 use w3drs_render_graph::RenderGraphDocument;
 use w3drs_renderer::{
     active_camera_vpc, build_entity_list, build_frame_uniforms_for_viewer, camera_system,
-    derive_shadow_batches,
-    encode_render_graph_passes_v0, encode_render_graph_passes_v0_with_wgsl_host,
-    light_uniforms_for_cascades, parse_render_graph_json, transform_system,
-    validate_render_graph_exec_v0, AssetRegistry, BloomParams, CullPass, CullUniforms, DrawEntity,
-    DrawIndexedIndirectArgs, GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec,
-    MaterialTextures, PostProcessPass, RenderGraphExecError, RenderGraphGpuRegistry,
-    RenderGraphV0Host, RenderState, ShadowBatch, ShadowPass, Texture2dGpu, TonemapParams,
-    MAX_CULL_ENTITIES, SHADOW_CASCADE_COUNT, SHADOW_SIZE,
+    derive_shadow_batches, encode_render_graph_passes_v0,
+    encode_render_graph_passes_v0_with_wgsl_host, light_uniforms_for_cascades,
+    parse_render_graph_json, transform_system, validate_render_graph_exec_v0, AssetRegistry,
+    BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, GpuContext,
+    HdrTarget, HizPass, IblContext, IblGenerationSpec, MaterialTextures, PostProcessPass,
+    RenderGraphExecError, RenderGraphGpuRegistry, RenderGraphV0Host, RenderState, ShadowBatch,
+    ShadowPass, Texture2dGpu, TonemapParams, MAX_CULL_ENTITIES, SHADOW_CASCADE_COUNT, SHADOW_SIZE,
 };
 use winit::{
     application::ApplicationHandler,
@@ -1068,7 +1067,11 @@ impl State {
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_pass.depth_pipeline);
-            rp.set_bind_group(0, &self.shadow_pass.shadow_light_bind_groups[cascade_idx], &[]);
+            rp.set_bind_group(
+                0,
+                &self.shadow_pass.shadow_light_bind_groups[cascade_idx],
+                &[],
+            );
             rp.set_bind_group(1, &self.render_state.instance_bind_group, &[]);
             for batch in shadow_batches {
                 let Some(m) = self.asset_registry.get_mesh(batch.mesh_id) else {

@@ -23,8 +23,7 @@ use w3drs_renderer::{
     BloomParams, CullPass, CullUniforms, DrawEntity, DrawIndexedIndirectArgs, FrameUniforms,
     GpuContext, HdrTarget, HizPass, IblContext, IblGenerationSpec, LightUniforms, MaterialTextures,
     PostProcessPass, RenderState, ShadowPass, TonemapParams, DEPTH_FORMAT, HDR_FORMAT,
-    IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE,
-    SHADOW_CASCADE_COUNT,
+    IBL_FLAG_DISABLE_IRRADIANCE_DIFFUSE, SHADOW_CASCADE_COUNT,
 };
 use winit::{
     application::ApplicationHandler,
