@@ -117,6 +117,7 @@ impl HdrTarget {
     ) -> wgpu::RenderPassColorAttachment<'_> {
         wgpu::RenderPassColorAttachment {
             view: self.main_color_attachment(),
+            depth_slice: None,
             resolve_target: self.resolve_target(),
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(clear),
@@ -159,7 +160,7 @@ mod tests {
         }))
         .expect("adapter");
         let (device, _queue) =
-            pollster::block_on(adapter.request_device(&Default::default(), None)).expect("device");
+            pollster::block_on(adapter.request_device(&Default::default())).expect("device");
         let t = HdrTarget::new(&device, 16, 16, 1);
         assert_eq!(t.samples, 1);
         assert!(t.msaa_view.is_none());

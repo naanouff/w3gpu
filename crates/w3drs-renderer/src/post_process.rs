@@ -419,6 +419,7 @@ impl PostProcessPass {
                 label: Some("bloom_stub_clear"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.bloom.view_a,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -435,6 +436,7 @@ impl PostProcessPass {
                 label: Some("tonemap"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: swapchain_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -459,6 +461,7 @@ impl PostProcessPass {
                 label: Some("bloom_prefilter"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.bloom.view_a,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -481,6 +484,7 @@ impl PostProcessPass {
                     label: Some("bloom_h"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.bloom.view_b,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -501,6 +505,7 @@ impl PostProcessPass {
                     label: Some("bloom_v"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &self.bloom.view_a,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -523,6 +528,7 @@ impl PostProcessPass {
                 label: Some("tonemap"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: swapchain_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),

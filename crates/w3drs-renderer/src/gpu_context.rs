@@ -30,7 +30,7 @@ impl GpuContext {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or(EngineError::NoAdapter)?;
+            .map_err(|_| EngineError::NoAdapter)?;
 
         let (device, queue) = adapter
             .request_device(
@@ -41,8 +41,8 @@ impl GpuContext {
                     // in vertex shaders are required for instanced draw indirect (Phase 4).
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                     memory_hints: wgpu::MemoryHints::default(),
+                    ..Default::default()
                 },
-                None,
             )
             .await?;
 

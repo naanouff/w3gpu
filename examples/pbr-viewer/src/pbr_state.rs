@@ -575,8 +575,16 @@ impl PbrState {
             None,
             Some(max_tex),
         );
-        let egui_renderer =
-            EguiRenderer::new(&context.device, context.surface_format, None, 1, false);
+        let egui_renderer = EguiRenderer::new(
+            &context.device,
+            context.surface_format,
+            egui_wgpu::RendererOptions {
+                msaa_samples: 1,
+                depth_stencil_format: None,
+                dithering: false,
+                ..Default::default()
+            },
+        );
 
         let live_ibl_diffuse = pav.ibl_diffuse_scale;
         let live_ibl_tier = pav.ibl_tier.clone();
@@ -1053,7 +1061,10 @@ impl PbrState {
         let (frustum_rejected, hiz_rejected) = {
             let slice = self.cull_stats_readback_buf.slice(..CULL_STATS_SIZE);
             slice.map_async(wgpu::MapMode::Read, |_| {});
-            self.context.device.poll(wgpu::Maintain::Wait);
+            let _ = self
+                .context
+                .device
+                .poll(wgpu::PollType::wait_indefinitely());
             let pair: [u32; 2] = {
                 let view = slice.get_mapped_range();
                 let s: &[u32] = bytemuck::cast_slice(&view);
@@ -1080,7 +1091,10 @@ impl PbrState {
         let bytes = n as u64 * stride;
         let slice = self.readback_buf.slice(..bytes);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        self.context.device.poll(wgpu::Maintain::Wait);
+        let _ = self
+            .context
+            .device
+            .poll(wgpu::PollType::wait_indefinitely());
         let visible: u32 = {
             let view = slice.get_mapped_range();
             let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
@@ -1430,6 +1444,7 @@ impl PbrState {
                 label: Some("egui_overlay"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

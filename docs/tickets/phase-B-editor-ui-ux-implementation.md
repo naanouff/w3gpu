@@ -8,13 +8,26 @@
 | **Statut** | À faire |
 | **Ticket parent / infrastructure** | [Phase K — Éditeur, workspaces, extensions](phase-K-editeur-workspaces.md) (workspace, extensions, thème / layout data-driven) |
 
+**Rappel (produit, inchangé)** : la **feuille de route** et la règle [`.cursor/rules/w3drs-native-editor-priority.mdc`](../../.cursor/rules/w3drs-native-editor-priority.mdc) : jalons **shell / workspace / hi-fi** = **d’abord** le binaire **`w3d-editor`** ([`editor/`](../../editor/)), **`www/`** = **parité d’ergonomie** légère + CI WASM, **pas** l’inversion de priorité. Toute avancée utile côté web (ex. outliner WASM) se lit comme **itération / preuve** à **reporter** sur l’hôte **natif**, pas comme substitut.
+
 ## Référence design (source de vérité UX)
 
 - **Maquette** : [`docs/design/Mode-based v3 hi-fi.html`](../design/Mode-based%20v3%20hi-fi.html) (titre onglet : *w3d editor — Mode-based v3 (hi-fi)*).
-- **Styles** : [`docs/design/v3-hifi.css`](../design/v3-hifi.css) (importée par le HTML).
-- **Dette doc mineure (optionnel)** : l’intro de la page peut encore mentionner *v2* dans le H1 alors que le fichier / titre document sont *v3 hi-fi* — à harmoniser quand on touche le fichier pour une retouche produit, sans bloquer l’implémentation.
+- **Styles** : [`docs/design/v3-hifi.css`](../design/v3-hifi.css) (importée par le HTML) — **source de vérité visuelle** pour l’implémentation (pas les seuls blocs *sketch* en tête du HTML, qui divergent : voir ci-dessous).
+- **Logo** : [`docs/design/w3d_logo.svg`](../design/w3d_logo.svg) (également servi côté `www/` en copie statique) — la marque rail n’est **pas** un carré texte « w3 » : c’est le logo vectoriel.
+- **Dette doc mineure (optionnel)** : l’intro de la page peut encore mentionner *v2* dans le H1 — à harmoniser en retouche produit.
 
-L’**implémentation** cible l’**équivalence de flux** et de structure (rails, modes, raccourcis, grilles de panneaux), pas une recopie pixel-perfect du HTML statique.
+### Fidélité visuelle — **reproduction hi-fi dès maintenant**
+
+**Objectif** (ordre **intention** = ordre **livraison**) : aligner **d’abord** le shell **natif** (`w3d-editor` / **egui** + mêmes tokens) puis le shell **`www/`** (CSS / thème data-driven) sur la fiche **v3-hifi**, au plus près du **rendu** de **`v3-hifi.css`** (tailles, rayons, ombres, couleurs sémantiques, rail 48px, modes icône seule, état actif ambre, stage 36px, viewport, FAB, mode Play assombri, etc.).
+
+- **Contrainte** : toute PR sur l’enveloppe éditeur **doit** cibler en **priorité** l’**UI native** quand le jalon y est (rail, outliner, viewport) ; le **web** suit ou duplique pour parité, sans **déplacer** la priorité. Vérification **hi-fi** : mêmes **variables** / règles que `v3-hifi.css` (egui : table de couleurs / style équivalent) — l’intention est **zéro écart volontaire** ; écarts **documentés** en revue.
+- **Validation** : comparaison manuelle page maquette (onglets / variantes) + **à terme** tests de **régression visuelle** (snapshots de composants, ou diff image ciblé en CI) dès qu’il existe un pipeline retenu.
+- **Note** le bloc CSS **inline** au début de `Mode-based v3 hi-fi.html` (rail 72px, tirets, inversé encre/papier sur le mode actif) est un **wireframe** ; l’**override** `v3-hifi.css` (rail compact, icône seule, sélection ambre) est celle qu’on **reproduit** — ce ticket ne vise **pas** la recopie de l’ancienne armature *sketch* seule.
+
+### Après le shell — intégration auteur (hors DOD de ce ticket pour le premier merge)
+
+- **Arbre ECS** dans l’**outliner**, **sélection** outliner ↔ **viewport** (surbrillance / *outline*), : jalons **suivants** une fois le [workspace Phase K](phase-K-editeur-workspaces.md) en place (données projet) — le ticket Phase B reste la **coquille** et l’**alignement hi-fi** ; le branchement scène/ECS est tracé côté architecture + tickets de suivi.
 
 ## Axes prioritaires (alignement [phase-transverses](phase-transverses.md) et [Phase K](phase-K-editeur-workspaces.md))
 
@@ -32,7 +45,7 @@ L’**implémentation** cible l’**équivalence de flux** et de structure (rail
 
 ### Transversal — rail de modes (8) + tête d’espace
 
-- **Rail gauche** (~72px) : marque **w3d**, **huit modes** (Build, Paint, Sculpt, Logic, Animate, Light, Play, Ship) avec **raccourcis** affichés (pastilles) ; l’**état actif** du mode est explicite.
+- **Rail gauche** : largeur **data-driven** ; défaut **48px** aligné **v3-hifi** (pas 72px wireframe) ; marque **w3d** = **logo SVG** ; **huit modes** avec raccourcis (pastilles) ; état actif = style **ambre** hi-fi.
 - **Stage** : en-tête avec **titre** (Caveat / hiérarchie visuelle) + **fil / crumb** (piste d’aide 1 ligne).
 - **Mode Play** : **plein écran** côté stage ; seul le rail (skin plus sombre) reste en surface lisible.
 - **IA** : **bouton flottant** ✦ ; **panneau chat** contextuel ; **nudge** (suggestion de changement de mode quand l’intention ne colle pas).
@@ -48,6 +61,7 @@ L’**implémentation** cible l’**équivalence de flux** et de structure (rail
 
 - **Grille** : **outliner** + **viewport** + **inspector** (primitives, transform, props) — pas de fuite des outils des autres modes (peinture, logique) dans le périmètre serré Build.
 - Raccourcis **clavier** alignés sur les **pastilles** du rail (B, P, S, L, etc. selon spec retenue en PR).
+- **Jalon (impl.)** : outliner alimenté par le même modèle de scène que l’hôte moteur (**`SceneHandles`** / entités) ; **cible de livraison = éditeur natif** ; un **prototype** existe aujourd’hui côté **`www/`** (WASM) — à **porter en priorité** sur `w3d-editor` (panneau latéral, sélection) ; légende **sélection** en bas de viewport côté web en attendant la parité **egui**. **Picking 3D / surbrillance mesh** = API moteur (natif + WASM) — pas de faux picking sans rayon.
 
 ### Onglet 03 — Paint
 
@@ -97,7 +111,7 @@ flowchart LR
 
 ## Definition of Ready (DOR)
 
-- [ ] **Maquette v3** + **`v3-hifi.css`** présents sous [`docs/design/`](../design/README.md) (déjà le cas) ; référence lue en revue.
+- [ ] **Maquette v3** + **`v3-hifi.css`** + logo **`w3d_logo.svg`** présents sous [`docs/design/`](../design/README.md) ; cible = **fiche hi-fi** (voir section *Fidélité visuelle*), pas l’ancienne armature *sketch* seule.
 - [ ] **Ordre de priorité** des **jalons d’écran** : **d’abord sur l’éditeur natif** (souvent : rail + Build + Play, puis Onboarding, Paint, Logic, transition) ; **ensuite** / en parallèle le shell `www/` — **écrit** dans le ticket ou l’issue fille.
 - [ ] **Schéma** ou spec **fichier** thème + layout (même brouillon) s’il manque, ou tâche explicite d’en produire un avant le premier merge layout.
 - [ ] `cargo xtask check` vert sur la branche de base.
@@ -107,6 +121,7 @@ flowchart LR
 
 ## Definition of Done (DOD)
 
+- [ ] **Shell** : **d’abord** le **natif** (rail / stage / FAB / thème / variantes de mode) — revue **conforme `v3-hifi`** (ou équivalent **egui** documenté) ; *pixel hi-fi* comme objectif ; **`www/`** en **parité** sans anticiper le natif, écarts listés s’il y en a.
 - [ ] Pour chaque **jalon** livré : **tests** (Rust et/ou TypeScript) exécutant le **code modifié** (politique [CONTRIBUTING — Testing](../../CONTRIBUTING.md#testing-policy)) ; en priorité **tests client natif** / `examples/` quand le jalon est l’éditeur **natif** ; **E2E** `www/` (thirtyfour / chromiumoxide) si le jalon touche **aussi** le shell web.
 - [ ] Aucun **flux** de la section *Périmètre* marqué *fait* **sans** critère de reproductibilité (fixture, config, test).
 - [ ] Mise à jour de [`docs/journal.md`](../journal.md) lors d’un jalon **significatif** (stack UI, preuve d’écran, lien PR).

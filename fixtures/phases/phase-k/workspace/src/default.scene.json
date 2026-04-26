@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "id": "default",
+  "label": "Scène témoin (Phase K — placeholder)",
+  "note": "Remplacé par le format de scène .w3s / package w3d lorsqu’exposé par le compileur — fichier JSON pour tests et docs uniquement."
+}

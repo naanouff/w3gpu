@@ -236,7 +236,7 @@ mod tests {
         let p = path_fixture();
         let d = load_editor_config_from_path(&p).expect("parse fixture");
         assert_eq!(d.shell.appearance, Appearance::Dark);
-        assert_eq!(d.shell.layout.rail_width_css_px, 72);
+        assert_eq!(d.shell.layout.rail_width_css_px, 48);
         assert_eq!(d.modes[0].id, "build");
         assert_eq!(d.modes[7].id, "ship");
     }

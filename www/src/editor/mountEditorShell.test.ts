@@ -25,6 +25,8 @@ describe('mountEditorShell', () => {
     document.body.append(h);
     const s = mountEditorShell(h, loadDoc(), 'build');
     expect(s.getMode()).toBe('build');
+    const img = h.querySelector('.w3d-rail__logo') as HTMLImageElement | null;
+    expect(img?.getAttribute('src')).toBe('/w3d_logo.svg');
     expect(h.querySelector('#w3drs-canvas')).toBeTruthy();
     expect(h.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1);
     s.setMode('play');

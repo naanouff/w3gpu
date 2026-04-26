@@ -27,9 +27,10 @@ fn try_gpu() -> Option<Gpu> {
                 compatible_surface: None,
                 force_fallback_adapter: false,
             })
-            .await?;
+            .await
+            .ok()?;
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .ok()?;
         Some(Gpu { device, queue })

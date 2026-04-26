@@ -11,14 +11,14 @@ const pathFixture = path.resolve(__dirname, '../../../fixtures/phases/phase-k/ed
 const ev = (code: string, key: string) => ({ code, key, ctrlKey: false, altKey: false, metaKey: false });
 
 describe('parseEditorUiV1 (phase-k editor-ui.json)', () => {
-  it('parse le JSON fixture (8 modes, dark, rail 72)', () => {
+  it('parse le JSON fixture (8 modes, dark, rail 48 — maquette v3 hi-fi)', () => {
     const raw: unknown = JSON.parse(fs.readFileSync(pathFixture, 'utf8'));
     const d = parseEditorUiV1(raw);
     expect(d.modes).toHaveLength(8);
     expect(d.modes[0]!.id).toBe('build');
     expect(d.modes[7]!.id).toBe('ship');
     expect(d.shell.appearance).toBe('dark');
-    expect(d.shell.layout.railWidthCssPx).toBe(72);
+    expect(d.shell.layout.railWidthCssPx).toBe(48);
   });
 
   it('rejette document invalide (branches d’erreur)', () => {

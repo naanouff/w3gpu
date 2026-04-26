@@ -49,17 +49,16 @@ fn try_gpu() -> Option<(wgpu::Device, wgpu::Queue)> {
                 compatible_surface: None,
                 force_fallback_adapter: false,
             })
-            .await?;
+            .await
+            .ok()?;
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("phase-b-graph"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("phase-b-graph"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                memory_hints: wgpu::MemoryHints::default(),
+                ..Default::default()
+            })
             .await
             .ok()?;
         Some((device, queue))

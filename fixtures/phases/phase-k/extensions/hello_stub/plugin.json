@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "id": "w3d.phase_k.hello_stub",
+  "name": "Hello (stub)",
+  "description": "Extension témoin — manifeste seul ; point d'entrée dynamique à câbler avec register_editor(api) / activate.",
+  "entry_symbol": "w3d_plugin_hello_register"
+}

@@ -67,9 +67,12 @@ Les outils doivent permettre une **revalidation** sur machine propre ou en CI sa
 | I | [phase-I-rendu-hybride.md](phase-I-rendu-hybride.md) | Hybrid raster / path |
 | J | [phase-J-reseau-gameplay.md](phase-J-reseau-gameplay.md) | Réseau & gameplay |
 | K | [phase-K-editeur-workspaces.md](phase-K-editeur-workspaces.md) | Éditeur natif & workspaces |
+| K (assistant LLM) | [phase-K-assistant-llm-ollama-integration.md](phase-K-assistant-llm-ollama-integration.md) | **LLM local** (Ollama / compatible) **→ assistant IA** éditeur (optionnel) — **ID** `PHASE-K-ASSISTANT-LLM` ; [Phase K](phase-K-editeur-workspaces.md) + [UI v3](phase-B-editor-ui-ux-implementation.md) (✦ / chat) |
 | L | [phase-L-industrialisation.md](phase-L-industrialisation.md) | Prod, CI, sécurité, livraisons |
 
 *Deux entrées **B*** : le ticket **render graph** ([`PHASE-B`](phase-B-graphe-rendu-compute.md)) relève de la [Roadmap § B](../ROADMAP.md#phase-b--graphe-de-rendu--compute-équivalent-rendergraph-w3dts). Le ticket **[éditeur UI/UX](phase-B-editor-ui-ux-implementation.md)** (ID `PHASE-B-EDITOR-UI`) décrit l’implémentation UI/UX de la maquette w3d **v3 hi-fi** et se rattache surtout à la [Phase K](../ROADMAP.md) (*Éditeur natif, workspaces…*).
+
+*Deux entrées **K*** : le ticket **[workspaces & extensions](phase-K-editeur-workspaces.md)** (ID `PHASE-K`) couvre l’éditeur hôte ; le ticket **[assistant LLM Ollama](phase-K-assistant-llm-ollama-integration.md)** (ID `PHASE-K-ASSISTANT-LLM`) vise l’**intégration d’un LLM local** pour alimenter l’**assistant IA** (sidecar HTTP, `assistant.json`, V1/V2), **sans** dépendre du moteur PBR/ECS.
 
 ## Scène ou projet de test (obligatoire par ticket / phase)
 

@@ -32,9 +32,10 @@ fn try_gpu() -> Option<Gpu> {
                 compatible_surface: None,
                 force_fallback_adapter: false,
             })
-            .await?;
+            .await
+            .ok()?;
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .ok()?;
         Some(Gpu { device, queue })
@@ -162,7 +163,9 @@ fn run_cull(
     let instance_count = {
         let slice = readback.slice(..n as u64 * stride);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        gpu.device.poll(wgpu::Maintain::Wait);
+        let _ = gpu
+            .device
+            .poll(wgpu::PollType::wait_indefinitely());
         let view = slice.get_mapped_range();
         let args: &[DrawIndexedIndirectArgs] = bytemuck::cast_slice(&view);
         let r: Vec<u32> = args[..n].iter().map(|a| a.instance_count).collect();
@@ -173,7 +176,9 @@ fn run_cull(
     let (frustum_rejected, hiz_rejected) = {
         let slice = stats_readback.slice(..CULL_STATS_SIZE);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        gpu.device.poll(wgpu::Maintain::Wait);
+        let _ = gpu
+            .device
+            .poll(wgpu::PollType::wait_indefinitely());
         let view = slice.get_mapped_range();
         let s: &[u32] = bytemuck::cast_slice(&view);
         let r = (s[0], s[1]);

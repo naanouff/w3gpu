@@ -18,7 +18,7 @@ env_logger = "0.11"
 pollster = { version = "0.4" }
 winit = "0.30"
 wgpu = { workspace = true, features = ["wgsl", "dx12", "metal", "vulkan-portability"] }
-egui = "0.31"
-egui-winit = "0.31"
-egui-wgpu = "0.31"
+egui = "0.33"
+egui-winit = "0.33"
+egui-wgpu = "0.33"
 rfd = "0.15"

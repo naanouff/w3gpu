@@ -11,6 +11,10 @@
 - **Implémentation d’abord côté éditeur natif** (binaire desktop, intégration moteur `wgpu` / chemin `cargo xtask client` → évolution vers l’hôte auteur) : workspace, shell mode-based, thème & layout data-driven, bus UI ↔ moteur.
 - **`www/`** : **même** ergonomie cible en **allégé** (second sur l’ordre de *ship* des jalons ; utile parité WASM, démo, E2E navigateur). Ne **remplace** pas le natif sur la feuille de route produit.
 
+## Prochaine étape produit (après workspace sur disque)
+
+- **Onglet / mode Build (PHASE-B-EDITOR-UI)** : intégration de l’**arbre ECS** dans l’**outliner**, **sélection** synchronisée **outliner ↔ viewport** (mise en évidence / *outline* 3D). Prérequis : ce ticket — **chemin** `fixtures/phases/phase-k/workspace/` ouvert par l’éditeur, même jeu de fichiers côté tests.
+
 ## Axes prioritaires
 
 - **Data-driven** : **thème** et **layout** éditeur depuis fichiers ; workspaces comme dans [Goals.md](../Goals.md) ; bake `.w3db` scriptable.
@@ -72,25 +76,26 @@ Spec de `fixtures/phases/phase-k/` : **workspace** + extension **hello**.
 
 ### Critères de scène (DOR / DOD)
 
-- **DOR** : [ ] fixtures/phases/phase-k/ décrit dans le README (ou PR) avec reproduction **documentée** ; hachages / LFS pour gros binaires.
-- **DOD** : [ ] au moins un **test** (cargo test / E2E) **référence** ce chemin ; toute validation manuelle = **checklist** copiable dans la PR ; natif et web utilisent les **mêmes** assets lorsque les deux cibles sont dans le périmètre.
+- **DOR** : [x] `fixtures/phases/phase-k/` : README de repro + **workspace/** (arborescence [Goals.md](../Goals.md) réduite) + `extensions/hello_stub/` (manifeste stub) + `expected.md` — [README fixture](../../fixtures/phases/phase-k/README.md) ; hachages / LFS pour gros binaires.
+- **DOD** : [x] test **cargo** (crate `w3d-editor` ou autre) qui **résout** l’arborescence sur disque ; le reste (bake **`.w3db`**, hook d’extension réel) reste à faire selon l’outillage.
 
 
 ---
 
 ## Definition of Ready (DOR)
 
-- [ ] Maquette(s) [`docs/design/`](../design/README.md) présente(s) dans le dépôt, dont la **v3 hi-fi** pour l’**implémentation UI/UX** détaillée dans le ticket [PHASE-B-EDITOR-UI](phase-B-editor-ui-ux-implementation.md).
-- [ ] **Workspace exemple** versionné sous `examples/` ou `fixtures/editor-workspace/` avec arborescence Goals.
-- [ ] API extension **draft** en `docs/` ou ADR.
+- [x] Maquette(s) [`docs/design/`](../design/README.md) présente(s) dans le dépôt, dont la **v3 hi-fi** pour l’**implémentation UI/UX** — [PHASE-B-EDITOR-UI](phase-B-editor-ui-ux-implementation.md) (**fidélité** `v3-hifi.css`).
+- [x] **Workspace exemple** : [`fixtures/phases/phase-k/workspace/`](../../fixtures/phases/phase-k/workspace/) (tranche de [Goals.md](../Goals.md) : `assets/`, `src/`, `shaders/`, `dist/`, `.w3cache/`) — le même répertoire est la cible d’ouverture « Ouvrir workspace… » côté éditeur quand l’hôte le permettra.
+- [ ] API extension **draft** en `docs/` ou ADR (le stub `hello_stub` + [`architecture.md`](../architecture.md) *Plugins* ne suffit pas seul : reste un schéma *plugin.json* figé en PR dédiée).
 
 ---
 
 ## Definition of Done (DOD)
 
-- [ ] Ouverture workspace exemple → édition **sans crash** ; bake → `.w3db` ; reload runtime : **test d’intégration** ou script E2E décrit (étapes numérotées + asserts sur fichiers produits).
-- [ ] Extension tierce **hello** chargeable sans recompiler le cœur : test automatisé (charge + hook appelé ≥ 1 fois).
-- [ ] Thème / layout : fichier modifié → rendu UI différence **mesurable** (snapshot test ou hash config chargée).
+- [ ] (global Phase K) Ouverture workspace exemple → édition **sans crash** ; bake → `.w3db` ; reload runtime : **test d’intégration** ou script E2E décrit.
+- [ ] (global) Extension tierce **hello** chargeable sans recompiler le cœur : test automatisé (charge + hook appelé ≥ 1 fois).
+- [x] (jalon 2026) Arborescence [`fixtures/.../phase-k/workspace/`](../../fixtures/phases/phase-k/workspace/) + `extensions/hello_stub/` + test [**cargo** `w3d-editor` — `phase_k_workspace`](../../editor/src/phase_k_workspace.rs).
+- [ ] (global) Thème / layout : fichier modifié → rendu UI différence **mesurable** (snapshot / hash) — le shell [PHASE-B-EDITOR-UI](phase-B-editor-ui-ux-implementation.md) suit **v3-hifi** pour l’enveloppe.
 
 ### Outils de validation
 

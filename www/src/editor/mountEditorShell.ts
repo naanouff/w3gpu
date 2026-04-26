@@ -28,6 +28,10 @@ export type MountedEditorShell = {
   onKeyNavigateMode: (e: KeyboardEvent) => void;
   root: HTMLElement;
   sidePanelHost: HTMLElement;
+  /** Conteneur des lignes d’arbre (mode Build) — alimenté par l’hôte (ECS / `SceneHandles`). */
+  outlinerBody: HTMLElement;
+  /** Légende sélection (viewport) : pas de picking 3D tant que le moteur n’expose pas d’outline. */
+  selectionHint: HTMLElement;
   setStageMeta: (title: string, crumb: string) => void;
   applyConfig: (doc: EditorUiV1) => void;
 };
@@ -87,7 +91,17 @@ export function mountEditorShell(
 
   const editor = h('div', 'w3d-editor', { id: 'w3d-editor' });
   const nav = h('nav', 'w3d-rail', { ariaLabel: "Modes d'édition" });
-  nav.appendChild(h('div', 'w3d-rail__brand', { html: 'w3d' }));
+  const brand = h('div', 'w3d-rail__brand');
+  brand.setAttribute('role', 'img');
+  brand.setAttribute('aria-label', 'w3d');
+  const logo = document.createElement('img');
+  logo.className = 'w3d-rail__logo';
+  logo.src = '/w3d_logo.svg';
+  logo.width = 32;
+  logo.height = 32;
+  logo.alt = '';
+  brand.appendChild(logo);
+  nav.appendChild(brand);
 
   for (const m of config.modes) {
     const btn = h('button', 'w3d-rail__btn', {
@@ -98,6 +112,8 @@ export function mountEditorShell(
     btn.type = 'button';
     btn.setAttribute('aria-pressed', 'false');
     btn.dataset.mode = m.id;
+    btn.setAttribute('title', m.label);
+    btn.dataset.tooltip = m.label;
     btn.setAttribute('aria-label', `${m.label} (${m.id})`);
     btn.addEventListener('click', () => {
       setMode(m.id);
@@ -113,19 +129,23 @@ export function mountEditorShell(
   const body = h('div', 'w3d-stage__body') as HTMLElement;
 
   const surface = h('div', 'w3d-surface') as HTMLElement;
-  const outliner = h('aside', 'w3d-outliner', { ariaLabel: "Hiérarchie d'entités (placeholder)" });
-  outliner.innerHTML =
-    '<h3>Outliner</h3>' +
-    '<div class="w3d-outliner__row w3d-outliner__row--sel"><span>Scene</span></div>' +
-    '<div class="w3d-outliner__row">Mesh root</div>';
+  const outliner = h('aside', 'w3d-outliner', { ariaLabel: "Hiérarchie d'entités" });
+  outliner.appendChild(h('h3', 'w3d-outliner__title', { html: 'Outliner' }));
+  const outlinerBody = h('div', 'w3d-outliner__body', { id: 'w3d-outliner-body' });
+
+  outliner.appendChild(outlinerBody);
 
   const view = h('div', 'w3d-viewport', { id: 'w3d-canvas-wrap', ariaLabel: 'Viewport 3D' });
   const canvas = h('canvas', 'canvas', { id: 'w3drs-canvas' }) as HTMLCanvasElement;
   canvas.setAttribute('width', '800');
   canvas.setAttribute('height', '600');
+  const selectionHint = h('div', 'w3d-viewport__selhint', { id: 'w3d-selection-hint' });
+  selectionHint.setAttribute('hidden', '');
+  selectionHint.setAttribute('role', 'status');
   const overlay = h('div', 'w3d-mode-overlay', { id: 'w3d-mode-overlay' });
   overlay.setAttribute('hidden', '');
   view.appendChild(canvas);
+  view.appendChild(selectionHint);
   view.appendChild(overlay);
 
   const sidePanelHost = h('div', 'w3d-inspector', { id: 'w3d-side' });
@@ -149,7 +169,7 @@ export function mountEditorShell(
   const fab = h('button', 'w3d-ai-fab', {}) as HTMLButtonElement;
   fab.type = 'button';
   fab.setAttribute('aria-label', "Assistant (non câblé)");
-  fab.textContent = '✦';
+  /* Icône ✦ en CSS (::after), aligné maquette v3 hi-fi */
   fab.addEventListener('click', () => {
     // jalon : pas de câblage produit
   });
@@ -214,6 +234,8 @@ export function mountEditorShell(
     onKeyNavigateMode,
     root: editor,
     sidePanelHost,
+    outlinerBody,
+    selectionHint,
     setStageMeta,
     applyConfig,
   };

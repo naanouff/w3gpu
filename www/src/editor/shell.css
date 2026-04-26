@@ -1,29 +1,85 @@
-/* w3d shell www — inspired by Mode-based v3 hi-fi, tokens from editor-ui.json (apparence) */
+/* w3d shell www — aligné maquette v3 hi-fi (docs/design/v3-hifi.css) + layout data-driven (editor-ui.json) */
 
 :root {
-  --w3d-rail: 72px;
-  --w3d-paper: #1c1b18;
-  --w3d-ink: #e8e2d5;
-  --w3d-ink-2: #8b8377;
-  --w3d-line: #2e2b27;
-  --w3d-chrome: #1c1b18;
-  --w3d-panel: #1f1d1a;
-  --w3d-hud: rgba(12, 11, 9, 0.55);
+  --f-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 8px;
+  --r-4: 12px;
+  --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+
+  /* Dark (Zed warm gray + ambre) — voir v3-hifi .dark */
+  --w3d-rail: 48px;
+  --bg-app: #161513;
+  --bg-chrome: #1c1b18;
+  --bg-panel: #1f1d1a;
+  --bg-panel-2: #232120;
+  --bg-sunken: #131210;
+  --bg-hover: #2a2724;
+  --bg-viewport: #100f0d;
+  --fg: #e8e2d5;
+  --fg-strong: #f5efde;
+  --fg-2: #c5bfb1;
+  --fg-soft: #8b8377;
+  --fg-faint: #595348;
+  --line: #2e2b27;
+  --line-soft: #25231f;
+  --brand: #e08562;
+  --brand-2: #c96a45;
+  --brand-fg: #1a0e08;
+  --brand-soft: #3a2418;
+  --selection: #3a2a1c;
+  /* legacy aliases pour panneau viewer hérité */
+  --w3d-paper: var(--bg-app);
+  --w3d-ink: var(--fg);
+  --w3d-ink-2: var(--fg-soft);
+  --w3d-line: var(--line);
+  --w3d-chrome: var(--bg-chrome);
+  --w3d-panel: var(--bg-panel);
+  --w3d-hud: rgba(12, 11, 9, 0.65);
 }
 
 html.w3d-ui-light {
-  --w3d-paper: #faf8f5;
-  --w3d-ink: #1f1b16;
-  --w3d-ink-2: #7d7569;
-  --w3d-line: #ddd5c6;
-  --w3d-chrome: #f3efe9;
-  --w3d-panel: #ffffff;
-  --w3d-hud: rgba(250, 248, 245, 0.6);
+  --bg-app: #faf8f5;
+  --bg-chrome: #f3efe9;
+  --bg-panel: #ffffff;
+  --bg-panel-2: #f7f3ec;
+  --bg-sunken: #ece7df;
+  --bg-hover: #efeae1;
+  --bg-viewport: #ece7df;
+  --fg: #1f1b16;
+  --fg-strong: #0f0c08;
+  --fg-2: #4a4339;
+  --fg-soft: #7d7569;
+  --fg-faint: #a59c8c;
+  --line: #ddd5c6;
+  --line-soft: #e7e1d3;
+  --brand: #d97757;
+  --brand-2: #c45a36;
+  --brand-fg: #ffffff;
+  --brand-soft: #f6e3d8;
+  --selection: #f6dcc3;
+  --w3d-paper: var(--bg-app);
+  --w3d-ink: var(--fg);
+  --w3d-ink-2: var(--fg-2);
+  --w3d-line: var(--line);
+  --w3d-chrome: var(--bg-chrome);
+  --w3d-panel: var(--bg-panel);
+  --w3d-hud: rgba(250, 248, 245, 0.72);
 }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
+  font-family: var(--f-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #w3d-shell-host {
@@ -31,9 +87,8 @@ html, body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  color: var(--w3d-ink);
-  font-family: "Segoe UI", system-ui, sans-serif;
-  background: var(--w3d-paper);
+  color: var(--fg);
+  background: var(--bg-app);
 }
 
 #w3d-app-wrap,
@@ -41,9 +96,10 @@ html, body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--w3d-paper, #1c1b18);
+  background: var(--bg-app);
 }
 
+/* --- Grille éditeur (rail = token --w3d-rail) --- */
 .w3d-editor {
   display: grid;
   grid-template-columns: var(--w3d-rail) minmax(0, 1fr);
@@ -51,58 +107,112 @@ html, body {
   min-height: 0;
   height: 100%;
   max-height: 100%;
+  background: var(--bg-app);
 }
 
+/* Play : rail + chrome plus sombres (maquette v5) */
 .w3d-editor--play {
-  /* Rail plus sombre en mode Play (maquette) */
-  --w3d-rail-skin: #100f0d;
+  --rail-play: #0d0c0a;
 }
 
 .w3d-editor--play .w3d-rail {
-  background: var(--w3d-rail-skin);
-  border-color: #25231f;
+  background: var(--rail-play);
+  border-color: #1a1714;
 }
 
-/* Left rail */
+.w3d-editor--play .w3d-rail__btn {
+  color: #6b6359;
+}
+
+.w3d-editor--play .w3d-rail__btn[aria-pressed="true"] {
+  color: var(--brand-2);
+  background: var(--brand-soft);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.w3d-editor--play .w3d-rail__brand {
+  background: color-mix(in oklab, var(--rail-play) 92%, var(--line));
+  box-shadow: none;
+}
+
+.w3d-editor--play .w3d-stage__head {
+  background: var(--rail-play);
+  border-color: #1a1714;
+}
+
+.w3d-editor--play .w3d-stage__title {
+  color: var(--brand);
+}
+
+.w3d-editor--play .w3d-stage__crumb {
+  color: #6b6359;
+}
+
+/* Left rail (hi-fi : 48px, pastille + icônes seules) */
 .w3d-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 12px 6px 16px;
-  border-right: 1px solid var(--w3d-line);
-  background: var(--w3d-chrome);
+  gap: 2px;
+  padding: 6px 4px 12px;
+  border-right: 1px solid var(--line);
+  background: var(--bg-chrome);
   z-index: 2;
+  box-sizing: border-box;
 }
 
+/* Marque : logo vecteur (docs + www/public), pas le carré « w3 » type wireframe v3 seul. */
 .w3d-rail__brand {
-  font-weight: 700;
-  font-size: 0.9rem;
-  line-height: 1.1;
-  padding: 0 0 8px;
+  width: 32px;
+  height: 32px;
+  margin: 0 0 6px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-2);
+  background: var(--bg-panel);
+  user-select: none;
+  box-shadow: var(--shadow-1);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.w3d-rail__logo {
   width: 100%;
-  text-align: center;
-  border-bottom: 1px solid var(--w3d-line);
-  margin-bottom: 4px;
-  letter-spacing: 0.02em;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .w3d-rail__btn {
-  width: 100%;
-  max-width: 56px;
-  padding: 8px 0 6px;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 36px;
+  padding: 0;
   margin: 0;
-  border: 1px solid var(--w3d-line);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
   background: transparent;
-  color: var(--w3d-ink);
+  color: var(--fg-soft);
   cursor: pointer;
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  place-items: center;
+  place-content: center;
   font: inherit;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.w3d-rail__btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.w3d-rail__btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .w3d-rail__btn svg {
@@ -111,71 +221,132 @@ html, body {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
 }
 
+/* Libellé masqué (v3 hi-fi) ; titre natif = attribut title */
 .w3d-rail__name {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--w3d-ink-2);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
+/* Raccourci clé : bas-droite, discret, maquette v3 */
 .w3d-rail__key {
   position: absolute;
-  top: 2px;
-  right: 4px;
-  font-size: 8px;
-  color: var(--w3d-ink-2);
-  border: 1px solid var(--w3d-line);
-  border-radius: 2px;
-  padding: 0 2px;
-  line-height: 1.2;
+  bottom: 1px;
+  right: 2px;
+  top: auto;
+  font-family: var(--f-mono);
+  font-size: 7px;
+  line-height: 1.1;
+  color: var(--fg-faint);
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
 }
 
+/* Mode actif = .mode.on (ambre) */
 .w3d-rail__btn[aria-pressed="true"] {
-  background: var(--w3d-ink);
-  color: var(--w3d-paper);
-  border-color: var(--w3d-ink);
-}
-.w3d-rail__btn[aria-pressed="true"] .w3d-rail__name,
-.w3d-rail__btn[aria-pressed="true"] .w3d-rail__key {
-  color: var(--w3d-paper);
-  border-color: color-mix(in oklab, var(--w3d-paper) 50%, transparent);
-}
-.w3d-rail__btn[aria-pressed="true"] svg {
-  stroke: var(--w3d-paper);
-}
-.w3d-rail__btn:hover {
-  filter: brightness(1.08);
+  color: var(--brand-2);
+  background: var(--brand-soft);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
-/* Stage (column) */
+.w3d-rail__btn[aria-pressed="true"] .w3d-rail__key {
+  color: var(--fg-faint);
+  opacity: 0.9;
+}
+
+.w3d-rail__btn[aria-pressed="true"] svg {
+  stroke: currentColor;
+}
+
+/* Survol : infobulle maquette (nom du mode) */
+.w3d-rail__btn:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  padding: 4px 8px;
+  background: var(--fg-strong);
+  color: var(--bg-app);
+  font-family: var(--f-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  border-radius: var(--r-1);
+  box-shadow: var(--shadow-pop);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: w3d-tooltip-fade 0.12s ease;
+}
+
+@media (max-width: 600px) {
+  .w3d-rail__btn:hover::after {
+    content: none;
+  }
+}
+
+@keyframes w3d-tooltip-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Stage (colonne) */
 .w3d-stage {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--w3d-paper);
+  background: var(--bg-app);
+  overflow: hidden;
 }
 
 .w3d-stage__head {
-  padding: 10px 16px 8px;
-  border-bottom: 1px solid var(--w3d-line);
-  background: var(--w3d-chrome);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-chrome);
   flex: 0 0 auto;
+  box-sizing: border-box;
 }
 
 .w3d-stage__title {
-  font-size: 1.35rem;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   margin: 0;
+  color: var(--fg-strong);
+  letter-spacing: -0.01em;
 }
 
 .w3d-stage__crumb {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--w3d-ink-2);
+  margin: 0 0 0 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-soft);
+  line-height: 1.2;
 }
 
 .w3d-stage__body {
@@ -186,7 +357,7 @@ html, body {
   flex-direction: column;
 }
 
-/* Grille 3 col (Build) vs viewport seul (Play, autres) */
+/* Grille 3 col (Build) */
 .w3d-surface {
   flex: 1;
   min-height: 0;
@@ -209,124 +380,226 @@ html, body {
     grid-template-columns: 1fr;
     grid-template-areas: "view";
   }
-  .w3d-editor--build .w3d-outliner { display: none; }
-  .w3d-editor--build .w3d-inspector { display: none; }
+  .w3d-editor--build .w3d-outliner {
+    display: none;
+  }
+  .w3d-editor--build .w3d-inspector {
+    display: none;
+  }
 }
 
-.w3d-outliner { grid-area: out; }
-.w3d-viewport { grid-area: view; }
-.w3d-inspector { grid-area: ins; }
+.w3d-outliner {
+  grid-area: out;
+}
+.w3d-viewport {
+  grid-area: view;
+}
+.w3d-inspector {
+  grid-area: ins;
+}
 
-/* Hors Build : seule la cellule centrale, panneaux latéraux cachés */
 .w3d-editor--build .w3d-outliner,
-.w3d-editor--build .w3d-inspector { display: flex; }
+.w3d-editor--build .w3d-inspector {
+  display: flex;
+}
 .w3d-editor:not(.w3d-editor--build) .w3d-outliner,
-.w3d-editor:not(.w3d-editor--build) .w3d-inspector { display: none; }
+.w3d-editor:not(.w3d-editor--build) .w3d-inspector {
+  display: none;
+}
 
-/* Build: outliner + viewport + inspector (legacy class removed) */
-.w3d-build { display: none; }
+.w3d-build {
+  display: none;
+}
 
 .w3d-outliner {
-  border-right: 1px solid var(--w3d-line);
-  background: var(--w3d-panel);
+  border-right: 1px solid var(--line);
+  background: var(--bg-panel);
   font-size: 12px;
-  padding: 8px;
+  font-family: var(--f-ui);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-height: 0;
   overflow: auto;
+  box-shadow: var(--shadow-1);
 }
 
-.w3d-outliner h3 {
+.w3d-outliner h3,
+.w3d-outliner__title {
+  font-family: var(--f-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--w3d-ink-2);
-  margin: 0 0 4px;
+  color: var(--fg-soft);
+  margin: 0 0 6px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.w3d-outliner__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .w3d-outliner__row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
-  color: var(--w3d-ink);
-  padding: 2px 4px;
-  border-radius: 4px;
+  color: var(--fg-2);
+  padding: 3px 6px;
+  border-radius: var(--r-1);
+  line-height: 1.3;
   cursor: default;
-}
-.w3d-outliner__row--sel {
-  background: #3a2a1c;
+  flex: 0 0 auto;
 }
 
+.w3d-outliner__row[role="button"] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.w3d-outliner__row[role="button"]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.w3d-outliner__row--hdr {
+  color: var(--fg-soft) !important;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent !important;
+  padding: 5px 6px 2px;
+}
+
+.w3d-outliner__row:not(.w3d-outliner__row--hdr):hover {
+  background: var(--bg-hover);
+}
+
+.w3d-outliner__row--sel {
+  background: var(--selection) !important;
+  color: var(--fg-strong);
+  font-weight: 500;
+}
+
+/* Viewport = cadre hi-fi (grille légère) */
 .w3d-viewport {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: #0f0e0c;
+  margin: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background-color: var(--bg-viewport);
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  overflow: hidden;
 }
 
-/* Inspector (droit) — panneau existant s’y greffe */
+.w3d-editor--play .w3d-viewport {
+  background: #050403;
+  background-image: none;
+  border-color: #1a1714;
+}
+
+/* Légende sélection (synchro outliner) — z-index au-dessus de la grille de fond, sous l’overlay mode. */
+.w3d-viewport__selhint {
+  position: absolute;
+  z-index: 2;
+  left: 10px;
+  bottom: 8px;
+  right: 10px;
+  max-width: 90%;
+  padding: 4px 8px;
+  border-radius: var(--r-1);
+  font-size: 10px;
+  line-height: 1.3;
+  font-family: var(--f-mono);
+  color: var(--fg-2);
+  background: color-mix(in oklab, var(--bg-sunken) 88%, transparent);
+  border: 1px solid var(--line);
+  pointer-events: none;
+  box-shadow: var(--shadow-1);
+}
+
+/* Inspector (droit) */
 .w3d-inspector {
-  border-left: 1px solid var(--w3d-line);
-  background: var(--w3d-panel);
+  border-left: 1px solid var(--line);
+  background: var(--bg-panel);
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  box-shadow: var(--shadow-1);
 }
 
 #w3d-footer {
   padding: 4px 12px 6px 16px;
-  font-size: 11px;
-  color: var(--w3d-ink-2);
-  border-top: 1px solid var(--w3d-line);
-  background: var(--w3d-chrome);
+  font-size: 10px;
+  font-family: var(--f-mono);
+  color: var(--fg-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-top: 1px solid var(--line);
+  background: var(--bg-chrome);
   flex: 0 0 auto;
 }
 
 #status {
-  font-size: 11px;
-  color: var(--w3d-ink-2);
+  font: inherit;
+  color: var(--fg-soft);
 }
 
-/* Placeholder modes (non-Build) */
+/* Placeholder modes (hors Build) */
 .w3d-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 1;
   min-height: 200px;
-  color: var(--w3d-ink-2);
+  color: var(--fg-soft);
   font-size: 0.95rem;
 }
 
-/* Play: HUD + rail plus sombre (surface inchangé : même canvas) */
+/* Play HUD */
 .w3d-play__hud {
   position: absolute;
   z-index: 3;
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: 999px;
   background: var(--w3d-hud);
   color: #f0e8dc;
-  font-size: 12px;
+  font-family: var(--f-mono);
+  font-size: 10px;
   pointer-events: none;
-  border: 1px solid #3d3933;
+  border: 1px solid #1a1714;
+  box-shadow: var(--shadow-1);
 }
 
 .w3d-play__hud kbd {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  border: 1px solid #555;
+  font-family: var(--f-mono);
+  font-size: 9px;
+  color: #6b6359;
+  border: 1px solid #3d3933;
   padding: 1px 4px;
   border-radius: 2px;
   margin-left: 4px;
+  background: rgba(0, 0, 0, 0.2);
 }
 
-/* Bande d’intention (modes hors Build/Play) : au-dessus du viewport, sans couper le rendu */
+/* Bande d’intention (modes hors Build/Play) */
 .w3d-mode-overlay {
   position: absolute;
   z-index: 2;
@@ -335,16 +608,23 @@ html, body {
   transform: translateX(-50%);
   max-width: 90%;
   padding: 6px 12px;
-  border-radius: 6px;
-  background: rgba(12, 10, 8, 0.7);
-  color: #d8d0c4;
+  border-radius: var(--r-2);
+  background: color-mix(in oklab, var(--bg-sunken) 85%, var(--fg));
+  color: var(--fg-2);
   font-size: 12px;
   text-align: center;
   pointer-events: none;
+  border: 1px solid var(--line);
+  font-family: var(--f-ui);
+  box-shadow: var(--shadow-1);
 }
 .w3d-editor--build .w3d-mode-overlay,
-.w3d-editor--play .w3d-mode-overlay { display: none; }
-.w3d-editor--play .w3d-mode-overlay[hidden] { display: none !important; }
+.w3d-editor--play .w3d-mode-overlay {
+  display: none;
+}
+.w3d-editor--play .w3d-mode-overlay[hidden] {
+  display: none !important;
+}
 
 .canvas {
   position: absolute;
@@ -353,43 +633,71 @@ html, body {
   height: 100%;
   touch-action: none;
   cursor: grab;
+  background: transparent;
+  border-radius: 6px;
 }
 .canvas:active {
   cursor: grabbing;
 }
 
-/* Panneau viewer hérité (classes existantes) */
+/* Panneau viewer hérité (classes internes) */
 .w3d-panel {
   max-height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 10px 20px;
+  padding: 10px 10px 16px;
   font-size: 12px;
+  color: var(--fg-2);
+  font-family: var(--f-ui);
 }
 
 .w3d-panel__title {
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-strong);
   margin-bottom: 8px;
+  letter-spacing: 0;
 }
 
-/* Bouton flottant IA (jalon visuel) */
+/* FAB assistant = maquette v3 hi-fi (.ai-fab) */
 .w3d-ai-fab {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: 48px;
+  right: 16px;
   width: 40px;
   height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--w3d-line);
-  background: var(--w3d-panel);
-  color: var(--w3d-ink);
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border: none;
+  background: var(--brand);
+  color: var(--brand-fg);
+  display: grid;
+  place-items: center;
   cursor: pointer;
   z-index: 5;
-  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  box-shadow: var(--shadow-pop);
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  transition: filter 0.12s ease, transform 0.1s ease;
 }
-.w3d-editor--play .w3d-ai-fab { opacity: 0.4; }
-.w3d-ai-fab:hover { filter: brightness(1.1); }
+.w3d-ai-fab::after {
+  content: "✦";
+  font-size: 18px;
+  line-height: 1;
+  color: var(--brand-fg);
+}
+.w3d-editor--play .w3d-ai-fab {
+  opacity: 0.45;
+}
+.w3d-ai-fab:hover {
+  filter: brightness(1.06) saturate(1.05);
+}
+.w3d-ai-fab:focus-visible {
+  outline: 2px solid var(--fg-strong);
+  outline-offset: 3px;
+}
+.w3d-ai-fab:active {
+  transform: scale(0.97);
+}

@@ -533,6 +533,7 @@ fn encode_raster_like_pass(
         label: Some(id),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view,
+            depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: color_load,
@@ -1655,7 +1656,7 @@ async fn run_graph_v0_readback_and_checksum(
     queue.submit(std::iter::once(encoder.finish()));
     // Soumet la copie sur la file (natif) ; côté Web, `poll` n’y fait pas le mapping — voir le .await
     // ci-dessous.
-    device.poll(wgpu::Maintain::Wait);
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
 
     let (tx, rx) = oneshot::channel();
     readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -1664,7 +1665,7 @@ async fn run_graph_v0_readback_and_checksum(
     #[cfg(not(target_arch = "wasm32"))]
     {
         // Natif: le callback s’exécute pendant le poll, avant le await.
-        device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
     let map_res = rx
         .await

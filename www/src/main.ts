@@ -1,5 +1,6 @@
 import init, { W3drsEngine, w3drsValidateRenderGraphV0 } from '../pkg/w3drs_wasm.js';
 import editorUiJson from '../../fixtures/phases/phase-k/editor-ui.json' with { type: 'json' };
+import { createOutlinerController } from './editor/outliner.js';
 import { parseEditorUiV1 } from './editor/editorConfig.js';
 import { mountEditorShell } from './editor/mountEditorShell.js';
 import { loadHdrWithTimings } from './hdrLoadTimings.js';
@@ -18,6 +19,8 @@ const shellHost = document.getElementById('w3d-shell-host')!;
 const editorDoc = parseEditorUiV1(editorUiJson);
 const shell = mountEditorShell(shellHost, editorDoc, 'build');
 const side = shell.sidePanelHost;
+/** Synchro outliner / hint après `init()` (assigné en tête de `main()`). */
+let outlinerBuild: ReturnType<typeof createOutlinerController> | null = null;
 
 type ViewerModel = { id: string; url: string };
 type ViewerManifest = { version: number; models: ViewerModel[] };
@@ -101,9 +104,11 @@ function updateStatusLine(): void {
     el.checked = cullEnabled;
   }
   const mode = shell.getMode();
+  const en = outlinerBuild?.getSelectedEntity();
+  const enPart = en != null ? ` · entité ${String(en)}` : '';
   status.textContent =
     `w3drs v${W3drsEngine.version()}  ${lastModelHint}` +
-    `— mode: ${String(mode)} — Hi-Z: ${c}  [H]  ←/→ modèles  ` +
+    `— mode: ${String(mode)} — Hi-Z: ${c}  [H]  ←/→ modèles${enPart}  ` +
     '— B/P/…/Espace modes · Cam: orbite / pan / zoom  ';
 }
 
@@ -114,6 +119,13 @@ function canvasAspect(): number {
 
 async function main(): Promise<void> {
   await init();
+  outlinerBuild = createOutlinerController(
+    shell.outlinerBody,
+    shell.selectionHint,
+    () => {
+      updateStatusLine();
+    },
+  );
 
   let phaseBJsonText: string | null = null;
   try {
@@ -232,7 +244,12 @@ async function main(): Promise<void> {
 
   let lastGltfScene: SceneHandles | null = null;
 
-  const rebuildFromGltf = async (bytes: Uint8Array, hint: string): Promise<void> => {
+  const rebuildFromGltf = async (
+    bytes: Uint8Array,
+    hint: string,
+    /** Libellé « modèle » dans l’outliner (fichier GLB / id manifeste). */
+    nameForOutliner: string = modelId,
+  ): Promise<void> => {
     status.textContent = 'Chargement GLB…';
     engine.clearSceneForNewGltf();
     const ids = Array.from(engine.load_gltf(bytes));
@@ -245,6 +262,7 @@ async function main(): Promise<void> {
     // Comme `pbr_state::reframe_camera_on_scene` (union AABB des meshes GLB seuls).
     reframeOnModelEntities(engine, lastGltfScene.modelEntities);
     lastModelHint = hint;
+    outlinerBuild?.sync(lastGltfScene, nameForOutliner);
     updateStatusLine();
   };
 
@@ -294,9 +312,9 @@ async function main(): Promise<void> {
       stats.free();
     },
     onGlbFile: async (file) => {
-      const b   = new Uint8Array(await file.arrayBuffer());
-      const id  = file.name.replace(/\.glb$/i, '');
-      await rebuildFromGltf(b, ` ${id}  (fichier)  `);
+      const b  = new Uint8Array(await file.arrayBuffer());
+      const id = file.name.replace(/\.glb$/i, '');
+      await rebuildFromGltf(b, ` ${id}  (fichier)  `, id);
     },
   };
   mountViewerPanel(side, initialLive, cbs);

@@ -3,11 +3,11 @@
   "shell": {
     "appearance": "dark",
     "layout": {
-      "railWidthCssPx": 72
+      "railWidthCssPx": 48
     }
   },
   "stage": {
-    "title": "Caveat",
+    "title": "w3d",
     "defaultBreadcrumb": "w3d · build · pbr sample"
   },
   "modes": [

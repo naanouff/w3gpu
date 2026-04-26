@@ -3,6 +3,10 @@ name = "khronos-pbr-sample"
 edition.workspace = true
 version.workspace = true
 
+[lib]
+name = "khronos_pbr"
+path = "src/lib.rs"
+
 [[bin]]
 name = "khronos-pbr-sample"
 path = "src/main.rs"

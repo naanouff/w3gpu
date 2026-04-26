@@ -57,15 +57,13 @@ fn main() {
             .expect("no adapter (GPU / pilote requis pour ce bench)");
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("hdr-ibl-bench"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("hdr-ibl-bench"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                memory_hints: wgpu::MemoryHints::default(),
+                ..Default::default()
+            })
             .await
             .expect("request_device");
 
